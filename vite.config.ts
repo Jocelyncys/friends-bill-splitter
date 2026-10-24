@@ -5,5 +5,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   base: './',
   plugins: [react()],
-  test: { environment: 'jsdom', setupFiles: './src/test/setup.ts' },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    // Dummy values so createClient() does not throw at import time in tests.
+    env: { VITE_SUPABASE_URL: 'http://127.0.0.1:54321', VITE_SUPABASE_PUBLISHABLE_KEY: 'test-publishable-key' },
+  },
 })

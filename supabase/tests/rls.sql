@@ -1,5 +1,5 @@
 begin;
-select plan(49);
+select plan(72);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -167,6 +167,68 @@ select throws_ok($$update public.events set revision = 99 where id = 'eeeeeeee-e
   '42501', null, 'owner cannot set revision directly');
 select is(pg_temp.upd_count($q$update public.events set name = 'Renamed' where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'$q$),
   1, 'owner can rename the event');
+reset role;
+
+-- Task 4: create_event / join_event RPCs -----------------------------------
+select is((select has_function_privilege('anon', 'public.create_event(text, public.event_mode, text)', 'execute')),
+  false, 'anon cannot execute create_event');
+select is((select has_function_privilege('anon', 'public.join_event(text, text)', 'execute')),
+  false, 'anon cannot execute join_event');
+select is((select has_function_privilege('authenticated', 'public.create_event(text, public.event_mode, text)', 'execute')),
+  true, 'authenticated can execute create_event');
+select is((select has_function_privilege('authenticated', 'public.join_event(text, text)', 'execute')),
+  true, 'authenticated can execute join_event');
+
+create temp table rpc_result (event_id uuid, invite_token text);
+grant all on rpc_result to public;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+insert into rpc_result select * from public.create_event('RPC Trip', 'trip_event', 'MYR');
+select is((select count(*)::int from rpc_result), 1, 'create_event returns one row');
+select ok((select char_length(invite_token) = 43 and invite_token ~ '^[A-Za-z0-9_-]+$' from rpc_result), 'token is 43-char Base64URL');
+select throws_ok($$select * from public.create_event('Bad', 'trip_event', 'USD')$$, null, null, 'non-MYR currency rejected');
+select throws_ok($$select * from public.create_event('   ', 'trip_event', 'MYR')$$, null, null, 'blank event name rejected');
+reset role;
+
+select is((select role::text from public.event_members m join rpc_result r on r.event_id = m.event_id
+  where m.user_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd'), 'owner', 'create_event makes the caller owner');
+select is((select e.invite_token_hash from public.events e join rpc_result r on r.event_id = e.id),
+  (select encode(extensions.digest(invite_token, 'sha256'), 'hex') from rpc_result), 'stored hash is sha256 hex of the returned token');
+select is((select count(*)::int from public.events e join rpc_result r on r.event_id = e.id where e.invite_token_hash = r.invite_token),
+  0, 'plain token is not stored');
+
+-- join_event
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select * from public.join_event('not-a-real-token', 'Cee')$$, 'P0002', 'invalid_invite', 'invalid token rejected');
+select throws_ok($$select * from public.join_event((select invite_token from rpc_result), '   ')$$, null, null, 'whitespace display name rejected');
+select throws_ok($$select * from public.join_event((select invite_token from rpc_result), '')$$, null, null, 'empty display name rejected');
+select throws_ok($$select * from public.join_event((select invite_token from rpc_result), repeat('x', 41))$$, null, null, 'display name over 40 chars rejected');
+select is((select event_id from public.join_event((select invite_token from rpc_result), '  Cee  ')),
+  (select event_id from rpc_result), 'join_event returns the event id');
+select lives_ok($$select * from public.join_event((select invite_token from rpc_result), 'Cee2')$$, 'duplicate join is idempotent');
+reset role;
+select is((select count(*)::int from public.event_members m join rpc_result r on r.event_id = m.event_id
+  where m.user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'), 1, 'duplicate join leaves exactly one membership row');
+select is((select display_name from public.event_members m join rpc_result r on r.event_id = m.event_id
+  where m.user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'), 'Cee2', 'duplicate join updates the display name');
+select is((select role::text from public.event_members m join rpc_result r on r.event_id = m.event_id
+  where m.user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'), 'participant', 'joiner is a participant');
+
+-- owner re-joining keeps owner role
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select lives_ok($$select * from public.join_event((select invite_token from rpc_result), 'Dee')$$, 'owner can re-join');
+reset role;
+select is((select role::text from public.event_members m join rpc_result r on r.event_id = m.event_id
+  where m.user_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd'), 'owner', 'owner re-join does not downgrade the role');
+
+-- non-open event
+update public.events set state = 'settled' where id = (select event_id from rpc_result);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select throws_ok($$select * from public.join_event((select invite_token from rpc_result), 'Bee')$$, 'P0002', 'invalid_invite', 'join of a non-open event rejected');
 reset role;
 
 select * from finish();
