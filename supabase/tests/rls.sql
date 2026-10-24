@@ -1,5 +1,5 @@
 begin;
-select plan(119);
+select plan(175);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -405,6 +405,232 @@ select lives_ok($$delete from public.events where id = '5ae00000-0000-0000-0000-
   'deleting a settled event still cascades through the trigger');
 select is((select count(*)::int from public.expense_items where expense_id = '5a000000-0000-0000-0000-000000000004'), 0,
   'event delete cascaded to expense items');
+
+-- Task 7a: claim / unclaim / assign / close-claiming / role RPCs + realtime ---
+select is((select count(*)::int from unnest(array[
+    'public.claim_item(uuid)', 'public.unclaim_item(uuid)', 'public.assign_item(uuid, uuid)',
+    'public.set_claiming_closed(uuid, boolean)', 'public.set_member_role(uuid, uuid, public.event_role)']) as f(sig)
+  where has_function_privilege('anon', f.sig, 'execute')), 0, 'anon cannot execute any claim/role RPC');
+select is((select count(*)::int from unnest(array[
+    'public.claim_item(uuid)', 'public.unclaim_item(uuid)', 'public.assign_item(uuid, uuid)',
+    'public.set_claiming_closed(uuid, boolean)', 'public.set_member_role(uuid, uuid, public.event_role)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute')), 5, 'authenticated can execute the claim/role RPCs');
+select is((select count(*)::int from unnest(array['public.resplit_item_claims(uuid)', 'public.lock_item_expense(uuid, uuid)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute') or has_function_privilege('anon', f.sig, 'execute')),
+  0, 'clients cannot execute the internal claim helpers');
+select is((select array_agg(tablename::text order by tablename) from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public'
+      and tablename in ('allocations', 'event_members', 'events', 'expense_items', 'expenses')),
+  array['allocations', 'event_members', 'events', 'expense_items', 'expenses'], 'core tables are in the supabase_realtime publication');
+
+-- F: a second participant in the seed event.
+insert into auth.users (id, instance_id, aud, role)
+values ('ffffffff-ffff-ffff-ffff-ffffffffffff', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated');
+insert into public.event_members (event_id, user_id, display_name, role)
+values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'F', 'participant');
+create temp table rev7 (n bigint);
+grant all on rev7 to public;
+
+-- C creates an item_claim expense X1: I1 = 1001, I2 = 500.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.exp('7a000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '1501', 'item_claim',
+    jsonb_build_array(pg_temp.it('7a100000-0000-0000-0000-000000000001', 1001, 0), pg_temp.it('7a100000-0000-0000-0000-000000000002', 500, 1)), '[]'))$$,
+  'participant creates an item_claim expense');
+reset role;
+insert into rev7 select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000001')$$, 'participant claims an item');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = '7a100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 1001::bigint, 'self_claim')$$,
+  'a sole claimer gets the full item amount as self_claim');
+select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7),
+  'claim bumps the event revision');
+select is((select metadata from public.activity_log where action = 'item_claimed' order by id desc limit 1),
+  jsonb_build_object('expense_id', '7a000000-0000-0000-0000-000000000001', 'item_id', '7a100000-0000-0000-0000-000000000001'),
+  'claim activity is redacted to ids');
+update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000001')$$, 'claiming twice is accepted');
+reset role;
+select is((select count(*)::int from public.allocations where item_id = '7a100000-0000-0000-0000-000000000001'), 1,
+  'a repeated claim leaves one allocation');
+select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n from rev7),
+  'a repeated claim is a no-op');
+
+-- A shares I1 with C: 1001 -> 501 / 500, extra cent to the lower participant id.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000001')$$, 'a second member claims the same item');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = '7a100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 501::bigint, 'self_claim'), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 500::bigint, 'self_claim')$$,
+  'a shared item is re-split equally and every cent is kept');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.unclaim_item('7a100000-0000-0000-0000-000000000001')$$, 'a claimer unclaims');
+select lives_ok($$select public.unclaim_item('7a100000-0000-0000-0000-000000000001')$$, 'unclaiming twice is accepted');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = '7a100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 1001::bigint, 'self_claim')$$,
+  'unclaim re-splits the item among the remaining claimers');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.claim_item('5a100000-0000-0000-0000-000000000001')$$,
+  '22023', 'not_claimable', 'items of a non item_claim expense cannot be self-claimed');
+select throws_ok($$select public.claim_item('7a100000-0000-0000-0000-0000000000ff')$$,
+  '22023', 'item_not_found', 'claiming a missing item is rejected');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select throws_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000001')$$,
+  '22023', 'item_not_found', 'a non-member cannot claim (the item stays hidden)');
+reset role;
+
+-- F: participant who did not create X1.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select throws_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000001', true)$$,
+  '22023', 'not_allowed', 'a non-creator participant cannot close claiming');
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$,
+  '22023', 'not_allowed', 'a participant cannot assign another person');
+reset role;
+
+-- C (creator) closes claiming, then still assigns.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000001', true)$$, 'the creator closes claiming on their own expense');
+select throws_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000002')$$,
+  '22023', 'claiming_closed', 'participants cannot claim after closing');
+select throws_ok($$select public.unclaim_item('7a100000-0000-0000-0000-000000000001')$$,
+  '22023', 'claiming_closed', 'participants cannot unclaim after closing');
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'dddddddd-dddd-dddd-dddd-dddddddddddd')$$,
+  '22023', 'not_member', 'the creator cannot assign a non-member');
+select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')$$,
+  'the creator assigns an item on their own expense after closing');
+reset role;
+select is((select claiming_closed from public.expenses where id = '7a000000-0000-0000-0000-000000000001'), true, 'claiming is closed');
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = '7a100000-0000-0000-0000-000000000002' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500::bigint, 'expense_creator')$$,
+  'a creator assignment gives the full item to the assignee');
+
+-- B: cohost assigns on someone else's expense.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000001', 'dddddddd-dddd-dddd-dddd-dddddddddddd')$$,
+  '22023', 'not_member', 'managers cannot assign a non-member');
+select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000001', 'ffffffff-ffff-ffff-ffff-ffffffffffff')$$,
+  'a cohost assigns an item of another member''s expense');
+select lives_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000001', false)$$, 'a cohost reopens claiming');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = '7a100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('ffffffff-ffff-ffff-ffff-ffffffffffff', 1001::bigint, 'cohost')$$,
+  'an assignment replaces the item allocations, including self-claims');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000001')$$,
+  '22023', 'not_claimable', 'an assigned item cannot be self-claimed');
+reset role;
+
+-- Roles.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select throws_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cohost')$$,
+  '22023', 'not_allowed', 'a cohost cannot promote roles');
+select throws_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'participant')$$,
+  '22023', 'not_allowed', 'a cohost cannot demote the owner');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cohost')$$,
+  '22023', 'not_allowed', 'a participant cannot change roles');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cohost')$$,
+  'the owner promotes a participant to cohost');
+select is((select role::text from public.event_members where event_id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' and user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+  'cohost', 'the participant is now a cohost');
+select lives_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'participant')$$,
+  'the owner demotes the cohost back');
+select throws_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'participant')$$,
+  '22023', 'invalid_role_change', 'the owner row can never be changed');
+select throws_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'owner')$$,
+  '22023', 'invalid_role_change', 'no one can be made owner');
+select throws_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'cohost')$$,
+  '22023', 'not_member', 'only members can get a role');
+reset role;
+select results_eq($$select user_id::text, role::text from public.event_members
+    where event_id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' and role <> 'participant' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'owner'), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cohost')$$,
+  'roles end as owner A and cohost B only');
+select is((select metadata from public.activity_log where action = 'member_role_changed' order by id desc limit 1),
+  jsonb_build_object('member_id', 'cccccccc-cccc-cccc-cccc-cccccccccccc'), 'role activity is redacted to ids');
+
+-- Carry-forward: save_expense keeps self-claims of surviving items.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.exp('7a000000-0000-0000-0000-000000000003', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '1300', 'item_claim',
+    jsonb_build_array(pg_temp.it('7a100000-0000-0000-0000-000000000031', 1000, 0), pg_temp.it('7a100000-0000-0000-0000-000000000032', 300, 1)), '[]'));
+  select public.claim_item('7a100000-0000-0000-0000-000000000031');
+  select public.claim_item('7a100000-0000-0000-0000-000000000032')$$,
+  'the creator saves X3 and claims both items');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000031')$$, 'A shares item J1');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.exp('7a000000-0000-0000-0000-000000000003', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '1300', 'item_claim',
+    jsonb_build_array(pg_temp.it('7a100000-0000-0000-0000-000000000031', 1000, 0), pg_temp.it('7a100000-0000-0000-0000-000000000032', 300, 1)),
+    jsonb_build_array(pg_temp.al('7a100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 1000))))$$,
+  '22023', 'item_has_claims', 'a save cannot also allocate an item that has self-claims');
+select lives_ok($$select public.save_expense(pg_temp.exp('7a000000-0000-0000-0000-000000000003', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '1001', 'item_claim',
+    jsonb_build_array(jsonb_build_object('id', '7a100000-0000-0000-0000-000000000031', 'description', 'Satay', 'quantity', 1, 'total_cents', 1001, 'sort_order', 0)),
+    '[]'))$$,
+  'the creator renames J1, changes its amount and removes J2');
+reset role;
+select is((select description from public.expense_items where id = '7a100000-0000-0000-0000-000000000031'), 'Satay', 'the item was renamed');
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where expense_id = '7a000000-0000-0000-0000-000000000003' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 501::bigint, 'self_claim'), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 500::bigint, 'self_claim')$$,
+  'claims survive an item rename and are re-split to the new item total; claims on the removed item are gone');
+
+-- Every RPC is rejected once the event is not open.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('7ae00000-0000-0000-0000-000000000009', 'Settled', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash7');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('7ae00000-0000-0000-0000-000000000009', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner'),
+  ('7ae00000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant');
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+values ('7a000000-0000-0000-0000-000000000009', '7ae00000-0000-0000-0000-000000000009',
+  'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Kopi', current_date, 100, 'item_claim');
+insert into public.expense_items (id, expense_id, description, total_cents)
+values ('7a100000-0000-0000-0000-000000000009', '7a000000-0000-0000-0000-000000000009', 'Kopi', 100);
+update public.events set state = 'settled' where id = '7ae00000-0000-0000-0000-000000000009';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.claim_item('7a100000-0000-0000-0000-000000000009')$$, '22023', 'event_not_open', 'claim on a settled event is rejected');
+select throws_ok($$select public.unclaim_item('7a100000-0000-0000-0000-000000000009')$$, '22023', 'event_not_open', 'unclaim on a settled event is rejected');
+select throws_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000009', true)$$, '22023', 'event_not_open', 'closing claiming on a settled event is rejected');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$, '22023', 'event_not_open', 'assign on a settled event is rejected');
+select throws_ok($$select public.set_member_role('7ae00000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cohost')$$, '22023', 'event_not_open', 'role change on a settled event is rejected');
+reset role;
 
 select * from finish();
 rollback;

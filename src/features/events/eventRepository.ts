@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import type { EventMode, EventRole, EventState } from '../../domain/types'
 import { EXPENSE_SUMMARY_COLUMNS, toExpenseSummary, type ExpenseRow, type ExpenseSummary } from '../expenses/expenseRepository'
+import { callAction } from '../expenses/claimRepository'
 
 export type CreateEventInput = { name: string; mode: EventMode; currency: 'MYR'; displayName: string }
 
@@ -48,6 +49,9 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       localStorage.setItem('preferredName', name)
       return row.event_id
     },
+    // Owner only, participant <-> cohost; failures throw ClaimActionError.
+    setMemberRole: (eventId: string, memberId: string, role: Exclude<EventRole, 'owner'>) =>
+      callAction(client, 'set_member_role', { event_id: eventId, member_id: memberId, role }),
     // Plain RLS-protected reads; a non-member gets no rows.
     async getEventHome(eventId: string): Promise<EventHome> {
       const [session, eventResult, membersResult, expensesResult] = await Promise.all([

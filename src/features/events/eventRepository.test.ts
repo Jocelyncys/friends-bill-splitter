@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createEventRepository } from './eventRepository'
+import { ClaimActionError } from '../expenses/claimRepository'
 
 type Result = { data: unknown; error: unknown }
 type Builder = { select(): Builder; eq(): Builder; order(): Builder; maybeSingle(): Builder; then(resolve: (r: Result) => unknown): Promise<unknown> }
@@ -110,5 +111,20 @@ describe('eventRepository', () => {
     const getSession = vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-9' } } }, error: null })
     const repository = createEventRepository({ from, auth: { getSession } } as never)
     await expect(repository.getEventHome('event-1')).rejects.toThrow('not_member')
+  })
+
+  it('changes a member role through set_member_role', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null })
+    const repository = createEventRepository({ rpc } as never)
+    await repository.setMemberRole('event-1', 'user-2', 'cohost')
+    expect(rpc).toHaveBeenCalledWith('set_member_role', { event_id: 'event-1', member_id: 'user-2', role: 'cohost' })
+  })
+
+  it('maps set_member_role 22023 keys to a typed error', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: '22023', message: 'invalid_role_change' } })
+    const repository = createEventRepository({ rpc } as never)
+    const error = await repository.setMemberRole('event-1', 'user-1', 'participant').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ClaimActionError)
+    expect((error as ClaimActionError).code).toBe('invalid_role_change')
   })
 })
