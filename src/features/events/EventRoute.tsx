@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatMoney } from '../../domain/money'
+import { DraftList } from '../offline/DraftList'
+import { useDrafts } from '../offline/useDrafts'
 import { EventHomePage } from './EventHomePage'
 import { EventStatus } from './EventStatus'
 import { InvitePanel } from './InvitePanel'
@@ -13,6 +15,7 @@ export function EventRoute() {
   const navigate = useNavigate()
   const [showInvite, setShowInvite] = useState(false)
   const state = useEventHome(eventId)
+  const drafts = useDrafts(eventId)
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
   const attention = home.attention.map(item => ({
@@ -33,8 +36,10 @@ export function EventRoute() {
       onInvite={() => setShowInvite(shown => !shown)}
       settled={settled}
       onSettle={canSettle ? () => navigate(`/event/${eventId}/settle`) : undefined}
+      settleBlockedReason={drafts.length > 0 ? t('drafts.settleBlocked') : undefined}
       onViewPayments={() => navigate(`/event/${eventId}/payments`)}
     >
+      <DraftList eventId={eventId} currency={home.event.currency} />
       {showInvite && <InvitePanel eventId={eventId} />}
     </EventHomePage>
   )

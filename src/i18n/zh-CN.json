@@ -31,7 +31,8 @@
       "participant": "参与者"
     },
     "makeCohost": "设为共同主持：{{name}}",
-    "makeParticipant": "设为参与者：{{name}}"
+    "makeParticipant": "设为参与者：{{name}}",
+    "offline": "你目前离线。更改角色需要网络连接。"
   },
   "create": {
     "title": "创建活动",
@@ -119,7 +120,8 @@
       "reviewHint": "请检查项目和价格，然后确认。",
       "confirm": "确认项目",
       "failed": "无法识别此收据，请手动输入项目。"
-    }
+    },
+    "offlineHint": "你目前离线。这笔支出会先保存在此设备上，恢复联网后自动发送。"
   },
   "expenseError": {
     "payer_not_allowed": "你不能记录由他人支付的开销。",
@@ -145,7 +147,8 @@
     "event_mismatch": "此开销属于另一个活动。",
     "not_allowed": "你无权修改此开销。",
     "not_authenticated": "登录已过期，请刷新后重试。",
-    "save_failed": "无法保存开销，请重试。"
+    "save_failed": "无法保存开销，请重试。",
+    "draft_failed": "无法将支出保存到此设备，请重试。"
   },
   "realtime": {
     "offline": "正在重新连接…数据可能已过时。"
@@ -301,5 +304,17 @@
       "account_number": "账号必须为 4 到 34 个字符。",
       "generic": "请检查信息后重试。"
     }
+  },
+  "drafts": {
+    "title": "尚未同步",
+    "note": "已保存在此设备上，等待同步。在同步完成前，请勿清除浏览器数据，否则这些支出会丢失。",
+    "pending": "等待同步",
+    "syncing": "正在同步…",
+    "failed": "同步失败，请检查",
+    "review": "检查",
+    "discard": "放弃",
+    "discardTitle": "放弃这笔支出？",
+    "discardBody": "它只保存在此设备上，放弃后将无法找回。",
+    "settleBlocked": "结算前需要先同步保存在此设备上的支出。"
   }
 }

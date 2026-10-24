@@ -31,7 +31,8 @@
       "participant": "Participant"
     },
     "makeCohost": "Make co-host: {{name}}",
-    "makeParticipant": "Make participant: {{name}}"
+    "makeParticipant": "Make participant: {{name}}",
+    "offline": "You are offline. Role changes need an internet connection."
   },
   "create": {
     "title": "Create an event",
@@ -119,7 +120,8 @@
       "reviewHint": "Check the items and prices, then confirm.",
       "confirm": "Confirm items",
       "failed": "Could not read this receipt. Enter the items by hand."
-    }
+    },
+    "offlineHint": "You are offline. The expense will be saved on this device and sent when you are back online."
   },
   "expenseError": {
     "payer_not_allowed": "You cannot record an expense paid by someone else.",
@@ -145,7 +147,8 @@
     "event_mismatch": "This expense belongs to a different event.",
     "not_allowed": "You are not allowed to change this expense.",
     "not_authenticated": "Your session has expired. Please reload and try again.",
-    "save_failed": "Could not save the expense. Please try again."
+    "save_failed": "Could not save the expense. Please try again.",
+    "draft_failed": "Could not save the expense on this device. Please try again."
   },
   "realtime": {
     "offline": "Reconnecting… data may be out of date."
@@ -301,5 +304,17 @@
       "account_number": "The account number must be 4 to 34 characters.",
       "generic": "Please check the details and try again."
     }
+  },
+  "drafts": {
+    "title": "Not synced yet",
+    "note": "Saved on this device — waiting to sync. Don’t clear your browser data until these have synced, or they will be lost.",
+    "pending": "Waiting to sync",
+    "syncing": "Syncing…",
+    "failed": "Couldn’t sync — review",
+    "review": "Review",
+    "discard": "Discard",
+    "discardTitle": "Discard this expense?",
+    "discardBody": "It is only saved on this device and will be lost.",
+    "settleBlocked": "Settling needs the expenses saved on this device to sync first."
   }
 }

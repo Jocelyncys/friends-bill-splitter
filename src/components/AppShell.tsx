@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet, useParams } from 'react-router-dom'
 import { useEventRealtime } from '../features/events/useEventRealtime'
+import { useUnsyncedWarning } from '../features/offline/useDrafts'
+import { useDraftSync } from '../features/offline/useDraftSync'
 import type { ShellContext } from './shellContext'
 
 const LANGUAGES = [
@@ -16,7 +18,9 @@ export function AppShell() {
   const [refreshKey, setRefreshKey] = useState(0)
   const refresh = useCallback(() => setRefreshKey(key => key + 1), [])
   const realtimeStatus = useEventRealtime(eventId, refresh)
-  const context: ShellContext = { setEventName, refreshKey, refresh, realtimeStatus }
+  const syncDrafts = useDraftSync(refresh)
+  useUnsyncedWarning()
+  const context: ShellContext = { setEventName, refreshKey, refresh, realtimeStatus, syncDrafts }
 
   useEffect(() => {
     document.documentElement.lang = i18n.language

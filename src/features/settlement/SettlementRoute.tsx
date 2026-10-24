@@ -6,6 +6,7 @@ import { useOnline } from '../../lib/useOnline'
 import { EventStatus } from '../events/EventStatus'
 import { displayNames } from '../events/memberNames'
 import { useEventHome } from '../events/useEventHome'
+import { useDrafts } from '../offline/useDrafts'
 import { PaymentDetailsForm } from '../payments/PaymentDetailsForm'
 import { createPaymentRepository } from '../payments/paymentRepository'
 import { buildPreview, type PreviewData } from './previewPlans'
@@ -23,6 +24,7 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
   const shell = useOutletContext<ShellContext | undefined>()
   const refreshKey = shell?.refreshKey ?? 0
   const online = useOnline()
+  const unsyncedDrafts = useDrafts(eventId).length > 0
   const state = useEventHome(eventId)
   const [inputs, setInputs] = useState<Loaded<SettlementInputs> | null>(null)
   const [settlement, setSettlement] = useState<Loaded<Settlement | null> | null>(null)
@@ -100,9 +102,11 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
       ? t('settlement.offline')
       : shell && shell.realtimeStatus !== 'live'
         ? t('settlement.notLive')
-        : current.totals.length === 0
-          ? t('settlement.noExpenses')
-          : undefined
+        : unsyncedDrafts
+          ? t('drafts.settleBlocked')
+          : current.totals.length === 0
+            ? t('settlement.noExpenses')
+            : undefined
 
     const settle = async (method: SettlementMethod, coordinatorId: string | null) => {
       setBusy(true)

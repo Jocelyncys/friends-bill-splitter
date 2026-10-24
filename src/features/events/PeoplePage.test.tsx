@@ -66,4 +66,13 @@ describe('PeoplePage', () => {
     await screen.findByText('Cam (you)')
     expect(screen.queryByRole('button', { name: /Make (co-host|participant)/ })).not.toBeInTheDocument()
   })
+
+  it('disables role changes while offline', async () => {
+    const spy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    mocks.getEventHome.mockResolvedValue(home('o'))
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Make participant: Cam' })).toBeDisabled()
+    expect(screen.getByText(/You are offline/)).toBeInTheDocument()
+    spy.mockRestore()
+  })
 })

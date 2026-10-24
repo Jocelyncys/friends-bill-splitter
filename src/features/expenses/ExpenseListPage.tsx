@@ -6,6 +6,7 @@ import { formatMoney } from '../../domain/money'
 import { displayNames } from '../events/memberNames'
 import { EventStatus } from '../events/EventStatus'
 import { useEventHome } from '../events/useEventHome'
+import { DraftList } from '../offline/DraftList'
 import { createExpenseRepository, type ExpenseSummary } from './expenseRepository'
 
 type Loaded = { eventId: string; expenses: ExpenseSummary[] } | { eventId: string; failed: true }
@@ -40,6 +41,7 @@ export function ExpenseListPage() {
     <main>
       <h1>{t('expenses.title')}</h1>
       {home.event.state !== 'settled' && <Link className="button primary" to={`/event/${eventId}/expenses/new`}>{t('expenses.add')}</Link>}
+      <DraftList eventId={eventId} currency={home.event.currency} />
       {!current && <p role="status">{t('common.loading')}</p>}
       {current && 'failed' in current && <p role="alert">{t('event.loadFailed')}</p>}
       {current && 'expenses' in current && expenses.length === 0 && <p>{t('expenses.empty')}</p>}

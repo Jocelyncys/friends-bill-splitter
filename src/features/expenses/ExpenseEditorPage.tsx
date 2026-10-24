@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
+import type { ShellContext } from '../../components/shellContext'
+import { useOnline } from '../../lib/useOnline'
+import { deleteDraft, getDraft, saveDraft } from '../offline/draftDb'
+import { isTransientSaveError } from '../offline/syncDrafts'
 import { formatMoney } from '../../domain/money'
 import type { EventHome } from '../events/eventRepository'
 import { EventStatus } from '../events/EventStatus'
@@ -8,7 +12,9 @@ import { displayNames } from '../events/memberNames'
 import { useEventHome } from '../events/useEventHome'
 import {
   buildPayload,
+  centsToText,
   customDifference,
+  draftFromPayload,
   parseMoneyToCents,
   validateDraft,
   type DraftItem,
@@ -16,7 +22,7 @@ import {
   type ExpenseDraft,
   type FormErrors,
 } from './expenseForm'
-import { createExpenseRepository, ExpenseSaveError } from './expenseRepository'
+import { createExpenseRepository, ExpenseSaveError, type SaveExpensePayload } from './expenseRepository'
 import { recognizeReceipt } from '../ocr/ocrEngine'
 import { parseReceiptLines } from './receiptParser'
 
@@ -30,29 +36,45 @@ function today(): string {
 
 type OcrState = 'idle' | 'recognizing' | 'review' | 'failed'
 
-// integer cents -> "12.50" without float maths
-const centsToText = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
-
 const isUntouched = (items: DraftItem[]) => items.length === 1 && items[0].description === '' && items[0].price === ''
 
 const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', price: '', assigneeId: '' })
 
 export function ExpenseEditorPage() {
   const { eventId = '' } = useParams()
+  const { t } = useTranslation()
+  const draftId = useSearchParams()[0].get('draft')
   const state = useEventHome(eventId)
+  // A saved draft being reopened (?draft=id). A missing draft opens a blank form.
+  const [saved, setSaved] = useState<{ id: string; payload: SaveExpensePayload | null } | null>(null)
+  useEffect(() => {
+    if (!draftId) return
+    let cancelled = false
+    getDraft(draftId).then(
+      found => !cancelled && setSaved({ id: draftId, payload: found?.payload ?? null }),
+      () => !cancelled && setSaved({ id: draftId, payload: null }),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [draftId])
   if (state.status !== 'ready') return <EventStatus state={state} />
-  return <EditorForm home={state.home} />
+  if (draftId && saved?.id !== draftId) return <p role="status">{t('common.loading')}</p>
+  return <EditorForm key={draftId ?? 'new'} home={state.home} saved={draftId ? saved?.payload ?? null : null} />
 }
 
-function EditorForm({ home }: { home: EventHome }) {
+function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayload | null }) {
   const labels = displayNames(home.members)
   const nameOf = (userId: string, fallback: string) => labels.get(userId) ?? fallback
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const eventId = home.event.id
-  const [expenseId] = useState(() => crypto.randomUUID())
-  const [draft, setDraft] = useState<ExpenseDraft>(() => ({
+  const online = useOnline()
+  const syncDrafts = useOutletContext<ShellContext | undefined>()?.syncDrafts
+  // A reopened draft keeps its id: the server treats the resend as the same expense.
+  const [expenseId] = useState(() => saved?.id ?? crypto.randomUUID())
+  const [draft, setDraft] = useState<ExpenseDraft>(() => saved ? draftFromPayload(saved) : {
     description: '',
     amount: '',
     payerUserId: home.me.userId,
@@ -61,7 +83,7 @@ function EditorForm({ home }: { home: EventHome }) {
     participantIds: home.members.map(m => m.userId),
     shares: {},
     items: [blankItem()],
-  }))
+  })
   const [errors, setErrors] = useState<FormErrors>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -133,10 +155,25 @@ function EditorForm({ home }: { home: EventHome }) {
     if (!result.ok) return setErrors(result.errors)
     setErrors({})
     setBusy(true)
+    const payload = buildPayload({ id: expenseId, eventId }, result.values)
+    // Offline (or the network dropped mid-save): keep the reviewed payload on this device. Images are never stored.
+    const keepOnDevice = async () => {
+      try {
+        await saveDraft(payload)
+        navigate(`/event/${eventId}`)
+      } catch {
+        setServerError(t('expenseError.draft_failed'))
+        setBusy(false)
+      }
+    }
+    if (!online) return keepOnDevice()
     try {
-      await createExpenseRepository().saveExpense(buildPayload({ id: expenseId, eventId }, result.values))
+      await createExpenseRepository().saveExpense(payload)
+      if (saved) await deleteDraft(expenseId).catch(() => undefined)
       navigate(`/event/${eventId}`)
+      void syncDrafts?.()
     } catch (err) {
+      if (isTransientSaveError(err)) return keepOnDevice()
       const code = err instanceof ExpenseSaveError ? err.formError.code : 'save_failed'
       setServerError(t(`expenseError.${code}`, { defaultValue: t('expenseError.save_failed') }))
       setBusy(false)
@@ -146,6 +183,7 @@ function EditorForm({ home }: { home: EventHome }) {
   return (
     <main>
       <h1>{t('editor.title')}</h1>
+      {!online && <p role="status" className="muted">{t('editor.offlineHint')}</p>}
       <form className="form" onSubmit={e => void submit(e)} noValidate>
         <label>
           {t('editor.description')}

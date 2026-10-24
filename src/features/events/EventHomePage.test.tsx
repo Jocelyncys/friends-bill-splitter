@@ -38,3 +38,12 @@ describe('EventHomePage settlement entry points', () => {
     expect(screen.queryByRole('button', { name: /Settle now/ })).not.toBeInTheDocument()
   })
 })
+
+describe('EventHomePage unsynced drafts', () => {
+  it('disables Settle now and explains why while expenses are unsynced', () => {
+    const reason = 'Settling needs the expenses saved on this device to sync first.'
+    render(<EventHomePage eventName="Trip" expenses={[{ id: '1', description: 'Petrol', totalCents: 9000 }]} attention={[]} onSettle={() => undefined} settleBlockedReason={reason} />)
+    expect(screen.getByRole('button', { name: 'Settle now' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(reason)
+  })
+})

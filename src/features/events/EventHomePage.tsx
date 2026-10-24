@@ -14,13 +14,15 @@ type Props = {
   onInvite?: () => void
   /** Owner/co-host with expenses on an open event. */
   onSettle?: () => void
+  /** Why Settle now is disabled (e.g. unsynced drafts); only meaningful with onSettle. */
+  settleBlockedReason?: string
   /** Event is settled: expenses are read-only and payments take over. */
   settled?: boolean
   onViewPayments?: () => void
   children?: ReactNode
 }
 
-export function EventHomePage({ eventName, expenses, attention, currency = 'MYR', onScanReceipt, onAddExpense, onInvite, onSettle, settled = false, onViewPayments, children }: Props) {
+export function EventHomePage({ eventName, expenses, attention, currency = 'MYR', onScanReceipt, onAddExpense, onInvite, onSettle, settleBlockedReason, settled = false, onViewPayments, children }: Props) {
   const { t, i18n } = useTranslation()
   const empty = expenses.length === 0
   return (
@@ -31,9 +33,10 @@ export function EventHomePage({ eventName, expenses, attention, currency = 'MYR'
         {!settled && <button type="button" onClick={onScanReceipt} disabled={!onScanReceipt}><span aria-hidden="true">📷</span> {t('event.scanReceipt')}</button>}
         {!settled && <button type="button" onClick={onAddExpense} disabled={!onAddExpense}><span aria-hidden="true">✏️</span> {t('event.addSimple')}</button>}
         <button type="button" onClick={onInvite} disabled={!onInvite}><span aria-hidden="true">🔗</span> {t('event.invite')}</button>
-        {!settled && onSettle && <button type="button" className="primary" onClick={onSettle}><span aria-hidden="true">💸</span> {t('event.settleNow')}</button>}
+        {!settled && onSettle && <button type="button" className="primary" onClick={onSettle} disabled={!!settleBlockedReason}><span aria-hidden="true">💸</span> {t('event.settleNow')}</button>}
         {settled && <button type="button" className="primary" onClick={onViewPayments} disabled={!onViewPayments}><span aria-hidden="true">💸</span> {t('event.viewPayments')}</button>}
       </section>
+      {!settled && onSettle && settleBlockedReason && <p role="status" className="muted">{settleBlockedReason}</p>}
       {settled && <p className="muted">{t('event.settledNote')}</p>}
       {children}
       {attention.length > 0 && (

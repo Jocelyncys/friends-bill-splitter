@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPayload, customDifference, parseMoneyToCents, validateDraft, type ExpenseDraft } from './expenseForm'
+import { buildPayload, customDifference, draftFromPayload, parseMoneyToCents, validateDraft, type ExpenseDraft } from './expenseForm'
 
 describe('parseMoneyToCents', () => {
   it.each([
@@ -113,5 +113,28 @@ describe('validateDraft + buildPayload', () => {
 
   it('requires a description', () => {
     expect(validateDraft({ ...base, description: '  ' })).toMatchObject({ ok: false, errors: { description: 'description_required' } })
+  })
+})
+
+describe('draftFromPayload', () => {
+  const head = { description: 'Dinner', payerUserId: 'u-a', expenseDate: '2026-10-25', amount: '', participantIds: ['u-a', 'u-b'], shares: {} }
+  const roundTrip = (draft: ExpenseDraft) => {
+    const first = validateDraft(draft)
+    if (!first.ok) throw new Error('fixture invalid')
+    const payload = buildPayload({ id: 'e1', eventId: 'ev' }, first.values)
+    const again = validateDraft(draftFromPayload(payload))
+    if (!again.ok) throw new Error('refilled form invalid')
+    expect(buildPayload({ id: 'e1', eventId: 'ev' }, again.values)).toEqual(payload)
+  }
+  const items = [
+    { id: 'i1', description: 'Noodles', price: '8.10', assigneeId: 'u-b' },
+    { id: 'i2', description: 'Tea', price: '2.35', assigneeId: 'u-a' },
+  ]
+
+  it('refills every split method so saving again yields the identical payload', () => {
+    roundTrip({ ...head, splitMethod: 'equal', amount: '10.01', items: [] })
+    roundTrip({ ...head, splitMethod: 'custom', amount: '10.00', shares: { 'u-a': '4.00', 'u-b': '6.00' }, items: [] })
+    roundTrip({ ...head, splitMethod: 'items', items })
+    roundTrip({ ...head, splitMethod: 'host_assignment', items })
   })
 })

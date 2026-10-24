@@ -14,6 +14,9 @@ export function parseMoneyToCents(text: string): number | null {
   return Number.isSafeInteger(cents) && cents >= 1 ? cents : null
 }
 
+/** integer cents -> "12.50" without float maths */
+export const centsToText = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
+
 // ---- draft (what the inputs hold: strings) ----
 
 export type DraftSplitMethod = 'equal' | 'custom' | 'items' | 'host_assignment'
@@ -168,5 +171,34 @@ export function buildPayload(ctx: { id: string; eventId: string }, values: Expen
         allocations: values.items.map(item => ({ itemId: item.id, participantUserId: item.assigneeId, amountCents: item.priceCents })),
       }
     }
+  }
+}
+
+/** Inverse of buildPayload: refills the form from a saved payload, keeping the same ids. */
+export function draftFromPayload(payload: SaveExpensePayload): ExpenseDraft {
+  const base = { description: payload.description, payerUserId: payload.payerUserId, expenseDate: payload.expenseDate }
+  const ids = payload.allocations.map(a => a.participantUserId)
+  if (payload.splitMethod === 'item_claim' || payload.splitMethod === 'host_assignment') {
+    return {
+      ...base,
+      amount: '',
+      splitMethod: payload.splitMethod === 'item_claim' ? 'items' : 'host_assignment',
+      participantIds: [],
+      shares: {},
+      items: payload.items.map(item => ({
+        id: item.id,
+        description: item.description,
+        price: centsToText(item.totalCents),
+        assigneeId: payload.allocations.find(a => a.itemId === item.id)?.participantUserId ?? '',
+      })),
+    }
+  }
+  return {
+    ...base,
+    amount: centsToText(payload.totalCents),
+    splitMethod: payload.splitMethod,
+    participantIds: payload.splitMethod === 'equal' ? ids : [],
+    shares: payload.splitMethod === 'custom' ? Object.fromEntries(payload.allocations.map(a => [a.participantUserId, centsToText(a.amountCents)])) : {},
+    items: [{ id: crypto.randomUUID(), description: '', price: '', assigneeId: '' }],
   }
 }

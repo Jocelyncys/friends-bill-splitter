@@ -9,6 +9,14 @@ import '../../i18n'
 const saveExpense = vi.fn()
 const getEventHome = vi.fn()
 const recognizeReceipt = vi.fn()
+const saveDraft = vi.fn()
+const getDraft = vi.fn()
+const deleteDraft = vi.fn()
+vi.mock('../offline/draftDb', () => ({
+  saveDraft: (...args: unknown[]) => saveDraft(...args),
+  getDraft: (...args: unknown[]) => getDraft(...args),
+  deleteDraft: (...args: unknown[]) => deleteDraft(...args),
+}))
 vi.mock('../ocr/ocrEngine', () => ({ recognizeReceipt: (...args: unknown[]) => recognizeReceipt(...args) }))
 vi.mock('./expenseRepository', async importOriginal => ({
   ...(await importOriginal<typeof import('./expenseRepository')>()),
@@ -48,6 +56,9 @@ beforeEach(() => {
   saveExpense.mockReset()
   getEventHome.mockReset()
   recognizeReceipt.mockReset()
+  saveDraft.mockReset().mockResolvedValue(undefined)
+  getDraft.mockReset()
+  deleteDraft.mockReset().mockResolvedValue(undefined)
   URL.createObjectURL = vi.fn()
   URL.revokeObjectURL = vi.fn()
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:receipt')
@@ -90,6 +101,89 @@ describe('ExpenseEditorPage', () => {
     await fillSimple()
     await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('The split does not add up to the total.')
+  })
+
+  describe('offline drafts', () => {
+    const save = () => userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
+
+    it('saves a draft on this device instead of calling the server while offline', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      renderEditor()
+      expect(await screen.findByText(/You are offline/)).toBeInTheDocument()
+      await fillSimple()
+      await save()
+      expect(await screen.findByText('event home')).toBeInTheDocument()
+      expect(saveExpense).not.toHaveBeenCalled()
+      expect(saveDraft).toHaveBeenCalledTimes(1)
+      expect(saveDraft.mock.calls[0][0]).toMatchObject({ eventId: 'ev-1', description: 'Dinner', totalCents: 1001, splitMethod: 'equal' })
+    })
+
+    it('keeps a draft when the network fails mid-save, with the same id the server saw', async () => {
+      saveExpense.mockRejectedValue(new TypeError('Failed to fetch'))
+      renderEditor()
+      await fillSimple()
+      await save()
+      expect(await screen.findByText('event home')).toBeInTheDocument()
+      expect(saveDraft.mock.calls[0][0].id).toBe(saveExpense.mock.calls[0][0].id)
+    })
+
+    it('treats the repository catch-all save_failed as retryable', async () => {
+      saveExpense.mockRejectedValue(new ExpenseSaveError({ code: 'save_failed' }, new Error('x')))
+      renderEditor()
+      await fillSimple()
+      await save()
+      expect(await screen.findByText('event home')).toBeInTheDocument()
+      expect(saveDraft).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not keep a draft when the server rejects the expense', async () => {
+      saveExpense.mockRejectedValue(new ExpenseSaveError({ code: 'event_not_open' }, new Error('x')))
+      renderEditor()
+      await fillSimple()
+      await save()
+      expect(await screen.findByRole('alert')).toHaveTextContent('This event is closed')
+      expect(saveDraft).not.toHaveBeenCalled()
+    })
+
+    it('says so when the draft cannot be stored on this device', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      saveDraft.mockRejectedValue(new Error('quota'))
+      renderEditor()
+      await fillSimple()
+      await save()
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not save the expense on this device')
+    })
+
+    it('reopens a failed draft prefilled, resends it with the same id and removes it', async () => {
+      getDraft.mockResolvedValue({
+        id: 'draft-9',
+        eventId: 'ev-1',
+        status: 'failed',
+        updatedAt: 1,
+        payload: {
+          id: 'draft-9',
+          eventId: 'ev-1',
+          payerUserId: 'u-a',
+          description: 'Lunch',
+          expenseDate: '2026-10-20',
+          totalCents: 2000,
+          splitMethod: 'equal',
+          items: [],
+          allocations: [
+            { itemId: null, participantUserId: 'u-a', amountCents: 1000 },
+            { itemId: null, participantUserId: 'u-b', amountCents: 1000 },
+          ],
+        },
+      })
+      saveExpense.mockResolvedValue({ id: 'draft-9' })
+      renderEditor('/event/ev-1/expenses/new?draft=draft-9')
+      expect(await screen.findByLabelText('Description')).toHaveValue('Lunch')
+      expect(screen.getByLabelText('Amount')).toHaveValue('20.00')
+      await save()
+      expect(await screen.findByText('event home')).toBeInTheDocument()
+      expect(saveExpense).toHaveBeenCalledWith(expect.objectContaining({ id: 'draft-9', totalCents: 2000 }))
+      expect(deleteDraft).toHaveBeenCalledWith('draft-9')
+    })
   })
 
   describe('receipt scan', () => {
