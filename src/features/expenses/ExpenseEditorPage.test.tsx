@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExpenseEditorPage } from './ExpenseEditorPage'
 import { ExpenseSaveError } from './expenseRepository'
 import '../../i18n'
@@ -48,8 +48,15 @@ beforeEach(() => {
   saveExpense.mockReset()
   getEventHome.mockReset()
   recognizeReceipt.mockReset()
-  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:receipt'), revokeObjectURL: vi.fn() }))
+  URL.createObjectURL = vi.fn()
+  URL.revokeObjectURL = vi.fn()
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:receipt')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   getEventHome.mockResolvedValue(home)
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('ExpenseEditorPage', () => {
@@ -87,13 +94,13 @@ describe('ExpenseEditorPage', () => {
 
   describe('receipt scan', () => {
     const photo = () => new File(['x'], 'receipt.jpg', { type: 'image/jpeg' })
-    const pick = async () => userEvent.upload(await screen.findByLabelText('Scan a receipt'), photo())
+    const pick = async () => userEvent.upload(await screen.findByLabelText(/Scan a receipt|Choose receipt photo/), photo())
 
     it('opens itemized with a receipt picker when scan=1', async () => {
       renderEditor('/event/ev-1/expenses/new?scan=1')
       const input = await screen.findByLabelText('Scan a receipt')
       expect(input).toHaveAttribute('accept', 'image/*')
-      expect(input).toHaveAttribute('capture', 'environment')
+      expect(input).not.toHaveAttribute('capture')
     })
 
     it('disables save while recognizing', async () => {
@@ -130,6 +137,40 @@ describe('ExpenseEditorPage', () => {
         totalCents: 1650,
         items: [{ description: 'NASI LEMAK', totalCents: 1250 }, { description: 'TEH O', totalCents: 400 }],
       })
+    })
+
+    it('lets the user save again after switching away from itemized during review', async () => {
+      recognizeReceipt.mockResolvedValue(['TEH O 3.00'])
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+      await screen.findByRole('button', { name: 'Confirm items' })
+      await userEvent.selectOptions(screen.getByLabelText('Split method'), 'equal')
+      expect(screen.getByRole('button', { name: 'Save expense' })).toBeEnabled()
+    })
+
+    it('cancels an in-flight scan when switching away from itemized', async () => {
+      let finish: (lines: string[]) => void = () => {}
+      recognizeReceipt.mockReturnValue(new Promise<string[]>(r => { finish = r }))
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+      await userEvent.selectOptions(screen.getByLabelText('Split method'), 'equal')
+      expect(screen.getByRole('button', { name: 'Save expense' })).toBeEnabled()
+      finish(['TEH O 3.00'])
+      await userEvent.selectOptions(screen.getByLabelText('Split method'), 'items')
+      expect(screen.queryByDisplayValue('TEH O')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save expense' })).toBeEnabled()
+    })
+
+    it('does not wipe rows the user already typed', async () => {
+      recognizeReceipt.mockRejectedValueOnce(new Error('x')).mockResolvedValueOnce(['TEH O 3.00'])
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await userEvent.type(await screen.findByLabelText('Item 1 name'), 'Kopi')
+      await pick()
+      await screen.findByText('Could not read this receipt. Enter the items by hand.')
+      expect(screen.getByLabelText('Item 1 name')).toHaveValue('Kopi')
+      await pick()
+      expect(await screen.findByDisplayValue('TEH O')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('Kopi')).toBeInTheDocument()
     })
 
     it('announces a failure, keeps the preview and falls back to an empty manual row', async () => {

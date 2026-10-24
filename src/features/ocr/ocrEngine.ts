@@ -10,8 +10,8 @@ let enginePromise: Promise<Engine> | undefined
  * paddle-model-ecology.bj.bcebos.com and onnxruntime-web from cdn.jsdelivr.net.
  */
 export async function recognizeReceipt(file: File, onProgress?: (phase: OcrPhase) => void): Promise<string[]> {
-  onProgress?.('loading')
   if (!enginePromise) {
+    onProgress?.('loading')
     enginePromise = import('@paddleocr/paddleocr-js')
       .then(({ PaddleOCR }) =>
         PaddleOCR.create({

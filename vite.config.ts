@@ -5,6 +5,15 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  build: {
+    rolldownOptions: {
+      // The OCR SDK's opencv-js has Node-only imports it never reaches in the browser; hide only those warnings.
+      onLog(level, log, handler) {
+        if (log.message.includes('opencv-js') && /Module "(fs|path|crypto)" has been externalized/.test(log.message)) return
+        handler(level, log)
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',

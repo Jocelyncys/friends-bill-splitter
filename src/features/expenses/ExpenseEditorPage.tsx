@@ -32,6 +32,8 @@ type OcrState = 'idle' | 'recognizing' | 'review' | 'failed'
 // integer cents -> "12.50" without float maths
 const centsToText = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
 
+const isUntouched = (items: DraftItem[]) => items.length === 1 && items[0].description === '' && items[0].price === ''
+
 const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', price: '', assigneeId: '' })
 
 export function ExpenseEditorPage() {
@@ -71,6 +73,15 @@ function EditorForm({ home }: { home: EventHome }) {
     if (receiptUrlRef.current) URL.revokeObjectURL(receiptUrlRef.current)
   }, [])
 
+  const changeMethod = (method: DraftSplitMethod) => {
+    if (method !== 'items' && method !== 'host_assignment') {
+      scanRun.current += 1 // drop any in-flight scan; the scan UI is going away
+      setOcrState('idle')
+      setOcrMessage('')
+    }
+    set('splitMethod', method)
+  }
+
   const scanReceipt = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -89,15 +100,12 @@ function EditorForm({ home }: { home: EventHome }) {
       if (run !== scanRun.current) return
       const parsed = parseReceiptLines(lines)
       if (parsed.length === 0) throw new Error('no items')
-      setDraft(d => ({
-        ...d,
-        items: parsed.map(item => ({ id: crypto.randomUUID(), description: item.description, price: centsToText(item.totalCents), assigneeId: '' })),
-      }))
+      const scanned = parsed.map(item => ({ id: crypto.randomUUID(), description: item.description, price: centsToText(item.totalCents), assigneeId: '' }))
+      setDraft(d => ({ ...d, items: isUntouched(d.items) ? scanned : [...d.items, ...scanned] }))
       setOcrMessage(t('editor.scan.reviewHint'))
       setOcrState('review')
     } catch {
       if (run !== scanRun.current) return
-      setDraft(d => ({ ...d, items: [blankItem()] }))
       setOcrMessage(t('editor.scan.failed'))
       setOcrState('failed')
     }
@@ -111,6 +119,7 @@ function EditorForm({ home }: { home: EventHome }) {
 
   const canPickPayer = home.me.role !== 'participant'
   const itemized = draft.splitMethod === 'items' || draft.splitMethod === 'host_assignment'
+  const reviewing = itemized && ocrState === 'review'
   const itemsTotal = draft.items.reduce((sum, item) => sum + (parseMoneyToCents(item.price) ?? 0), 0)
   const difference = customDifference(draft.amount, draft.shares)
 
@@ -173,7 +182,7 @@ function EditorForm({ home }: { home: EventHome }) {
 
         <label>
           {t('editor.splitMethod')}
-          <select value={draft.splitMethod} onChange={e => set('splitMethod', e.target.value as DraftSplitMethod)}>
+          <select value={draft.splitMethod} onChange={e => changeMethod(e.target.value as DraftSplitMethod)}>
             {METHODS.map(m => (
               <option key={m} value={m}>{t(`editor.method.${m}`)}</option>
             ))}
@@ -223,7 +232,7 @@ function EditorForm({ home }: { home: EventHome }) {
             <legend>{t('editor.items')}</legend>
             <label className="file-pick">
               {receiptUrl ? t('editor.scan.choose') : t('editor.scan.scan')}
-              <input type="file" accept="image/*" capture="environment" onChange={e => void scanReceipt(e)} />
+              <input type="file" accept="image/*" onChange={e => void scanReceipt(e)} />
             </label>
             {receiptUrl && <img className="receipt-preview" src={receiptUrl} alt={t('editor.scan.previewAlt')} />}
             <p aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
@@ -258,7 +267,7 @@ function EditorForm({ home }: { home: EventHome }) {
             <button type="button" onClick={() => set('items', [...draft.items, blankItem()])}>{t('editor.addItem')}</button>
             <p>{t('editor.total')}: <strong>{money(itemsTotal)}</strong></p>
             {fieldError('items')}
-            {ocrState === 'review' && (
+            {reviewing && (
               <button type="button" className="primary" onClick={() => { setOcrState('idle'); setOcrMessage('') }}>
                 {t('editor.scan.confirm')}
               </button>
@@ -267,8 +276,8 @@ function EditorForm({ home }: { home: EventHome }) {
         )}
 
         {serverError && <p role="alert" className="form-error">{serverError}</p>}
-        {ocrState !== 'review' && (
-          <button type="submit" className="primary" disabled={busy || ocrState === 'recognizing'}>{busy ? t('editor.saving') : t('editor.save')}</button>
+        {!reviewing && (
+          <button type="submit" className="primary" disabled={busy || (itemized && ocrState === 'recognizing')}>{busy ? t('editor.saving') : t('editor.save')}</button>
         )}
       </form>
     </main>
