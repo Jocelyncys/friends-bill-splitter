@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "vite",
     "test": "vitest",
+    "prebuild": "node scripts/fetch-ocr-models.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:sw": "node scripts/check-sw.mjs",
+    "fetch:ocr": "node scripts/fetch-ocr-models.mjs",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@paddleocr/paddleocr-js": "^0.4.2",

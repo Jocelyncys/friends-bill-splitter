@@ -1,29 +1,35 @@
+import { Suspense, type ReactNode } from 'react'
 import { createHashRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
-import { CreateEventPage } from '../features/events/CreateEventPage'
-import { EventRoute } from '../features/events/EventRoute'
-import { JoinEventPage } from '../features/events/JoinEventPage'
-import { PeoplePage } from '../features/events/PeoplePage'
-import { ClaimItemsRoute } from '../features/expenses/ClaimItemsRoute'
-import { ExpenseEditorPage } from '../features/expenses/ExpenseEditorPage'
-import { ExpenseListPage } from '../features/expenses/ExpenseListPage'
-import { SettlementRoute } from '../features/settlement/SettlementRoute'
 import { HomePage } from './HomePage'
+import {
+  ClaimItemsRoute,
+  CreateEventPage,
+  EventRoute,
+  ExpenseEditorPage,
+  ExpenseListPage,
+  JoinEventPage,
+  PageLoading,
+  PeoplePage,
+  SettlementRoute,
+} from './lazyPages'
+
+const suspend = (element: ReactNode) => <Suspense fallback={<PageLoading />}>{element}</Suspense>
 
 export const router = createHashRouter([
   {
     element: <AppShell />,
     children: [
       { path: '/', element: <HomePage /> },
-      { path: '/new/:mode', element: <CreateEventPage /> },
-      { path: '/join/:token', element: <JoinEventPage /> },
-      { path: '/event/:eventId', element: <EventRoute /> },
-      { path: '/event/:eventId/expenses', element: <ExpenseListPage /> },
-      { path: '/event/:eventId/expenses/new', element: <ExpenseEditorPage /> },
-      { path: '/event/:eventId/expenses/:expenseId/claim', element: <ClaimItemsRoute /> },
-      { path: '/event/:eventId/people', element: <PeoplePage /> },
-      { path: '/event/:eventId/settle', element: <SettlementRoute phase="preview" /> },
-      { path: '/event/:eventId/payments', element: <SettlementRoute phase="payment" /> },
+      { path: '/new/:mode', element: suspend(<CreateEventPage />) },
+      { path: '/join/:token', element: suspend(<JoinEventPage />) },
+      { path: '/event/:eventId', element: suspend(<EventRoute />) },
+      { path: '/event/:eventId/expenses', element: suspend(<ExpenseListPage />) },
+      { path: '/event/:eventId/expenses/new', element: suspend(<ExpenseEditorPage />) },
+      { path: '/event/:eventId/expenses/:expenseId/claim', element: suspend(<ClaimItemsRoute />) },
+      { path: '/event/:eventId/people', element: suspend(<PeoplePage />) },
+      { path: '/event/:eventId/settle', element: suspend(<SettlementRoute phase="preview" />) },
+      { path: '/event/:eventId/payments', element: suspend(<SettlementRoute phase="payment" />) },
     ],
   },
 ])

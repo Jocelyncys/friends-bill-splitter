@@ -28,3 +28,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# OCR models and runtime, downloaded by scripts/fetch-ocr-models.mjs
+public/ocr-models/

@@ -1,0 +1,30 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --run
+      - uses: actions/cache@v4
+        with:
+          path: public/ocr-models
+          key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.mjs') }}
+      - run: node scripts/fetch-ocr-models.mjs
+      - run: npm run build
+      - run: node scripts/check-sw.mjs
+  supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npx supabase start
+      - run: npx supabase test db
+      - if: always()
+        run: npx supabase stop --no-backup
