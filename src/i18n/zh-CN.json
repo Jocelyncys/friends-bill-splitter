@@ -1,8 +1,112 @@
 {
   "language": { "label": "语言" },
+  "app": { "name": "朋友分账" },
+  "common": { "loading": "加载中…", "copy": "复制", "copied": "已复制", "yourName": "你的名字" },
   "home": {
     "chooseMode": "你想怎样分账？",
     "singleBill": "单次账单",
     "tripEvent": "旅行或活动"
+  },
+  "nav": { "label": "主导航", "home": "首页", "expenses": "开销", "people": "成员" },
+  "people": { "comingSoon": "成员与角色功能即将推出。" },
+  "create": {
+    "title": "创建活动",
+    "eventName": "活动名称",
+    "submit": "创建活动",
+    "submitting": "创建中…",
+    "failed": "无法创建活动，请重试。",
+    "nameRequired": "请填写两个名称。"
+  },
+  "join": {
+    "title": "加入活动",
+    "submit": "加入",
+    "submitting": "加入中…",
+    "invalidInvite": "此邀请链接无效或已过期。",
+    "failed": "无法加入活动，请重试。",
+    "nameRequired": "请填写你的名字。"
+  },
+  "event": {
+    "loadFailed": "无法加载此活动。",
+    "notMember": "你不是此活动的成员，请向朋友索取邀请链接。",
+    "emptyTitle": "来记第一笔开销吧",
+    "activeTitle": "你想做什么？",
+    "scanReceipt": "扫描收据",
+    "addSimple": "添加简单开销",
+    "invite": "邀请朋友",
+    "needsAttention": "需要你处理",
+    "latestExpenses": "最新开销",
+    "viewAll": "查看全部开销",
+    "unclaimed": "{{description}}：{{amount}} 尚未分配",
+    "inviteLinkLabel": "邀请链接",
+    "inviteOnlyOnCreatorDevice": "邀请链接仅在创建此活动的设备上可用",
+    "scanSoon": "收据扫描功能即将推出。"
+  },
+  "expenses": {
+    "title": "开销",
+    "add": "添加开销",
+    "empty": "还没有开销。",
+    "paidBy": "由 {{name}} 支付"
+  },
+  "editor": {
+    "title": "添加开销",
+    "description": "说明",
+    "amount": "金额",
+    "payer": "付款人",
+    "date": "日期",
+    "splitMethod": "分摊方式",
+    "method": {
+      "equal": "平均分摊",
+      "custom": "自定义金额",
+      "items": "按项目（朋友自行认领）",
+      "host_assignment": "按项目（由我分配）"
+    },
+    "participants": "分摊对象",
+    "shareFor": "{{name}} 的金额",
+    "remaining": "剩余：{{amount}}",
+    "items": "项目",
+    "itemDescription": "项目 {{n}} 名称",
+    "itemPrice": "项目 {{n}} 价格",
+    "itemAssignee": "项目 {{n}} 分配给",
+    "chooseMember": "选择成员",
+    "addItem": "添加项目",
+    "removeItem": "删除项目 {{n}}",
+    "total": "合计",
+    "save": "保存开销",
+    "saving": "保存中…",
+    "errors": {
+      "description_required": "请输入说明。",
+      "amount_invalid": "请输入至少 0.01 的金额，最多两位小数。",
+      "payer_required": "请选择付款人。",
+      "date_invalid": "请选择有效日期。",
+      "participants_required": "请至少选择一位分摊对象。",
+      "shares_mismatch": "各项金额之和必须等于总额。",
+      "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。"
+    }
+  },
+  "expenseError": {
+    "payer_not_allowed": "你不能记录由他人支付的开销。",
+    "payer_not_member": "付款人不是此活动的成员。",
+    "invalid_description": "说明无效。",
+    "invalid_category": "类别无效。",
+    "invalid_date": "日期无效。",
+    "invalid_total": "总额必须至少为 0.01。",
+    "invalid_split_method": "分摊方式无效。",
+    "invalid_item": "其中一个项目无效。",
+    "duplicate_item_id": "提交了重复的项目。",
+    "items_not_allowed": "此分摊方式不使用项目。",
+    "items_required": "此分摊方式至少需要一个项目。",
+    "item_total_mismatch": "项目价格之和与总额不符。",
+    "invalid_allocation": "其中一份分摊无效。",
+    "duplicate_allocation": "同一个人在分摊中出现了两次。",
+    "not_member": "分摊对象中有人不是此活动的成员。",
+    "allocation_mismatch": "分摊总和与总额不符。",
+    "allocation_exceeds_item": "某个项目的分配金额超过了它的价格。",
+    "invalid_payload": "无法读取此开销，请重试。",
+    "not_event_member": "你不是此活动的成员。",
+    "event_not_open": "此活动已结束，无法再修改开销。",
+    "event_mismatch": "此开销属于另一个活动。",
+    "not_allowed": "你无权修改此开销。",
+    "not_authenticated": "登录已过期，请刷新后重试。",
+    "save_failed": "无法保存开销，请重试。"
   }
 }

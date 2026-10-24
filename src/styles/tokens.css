@@ -9,9 +9,3 @@
   --color-warning-bg: #fff6e8;
   --radius-card: 1rem;
 }
-
-body {
-  margin: 0;
-  background: var(--color-surface);
-  color: var(--color-text);
-}

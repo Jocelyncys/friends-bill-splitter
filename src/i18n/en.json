@@ -1,8 +1,112 @@
 {
   "language": { "label": "Language" },
+  "app": { "name": "Friends Bill Splitter" },
+  "common": { "loading": "Loading…", "copy": "Copy", "copied": "Copied", "yourName": "Your name" },
   "home": {
     "chooseMode": "What would you like to split?",
     "singleBill": "Single Bill",
     "tripEvent": "Trip or Event"
+  },
+  "nav": { "label": "Main", "home": "Home", "expenses": "Expenses", "people": "People" },
+  "people": { "comingSoon": "People and roles are coming soon." },
+  "create": {
+    "title": "Create an event",
+    "eventName": "Event name",
+    "submit": "Create event",
+    "submitting": "Creating…",
+    "failed": "Could not create the event. Please try again.",
+    "nameRequired": "Please enter both names."
+  },
+  "join": {
+    "title": "Join an event",
+    "submit": "Join",
+    "submitting": "Joining…",
+    "invalidInvite": "This invite link is not valid or has expired.",
+    "failed": "Could not join the event. Please try again.",
+    "nameRequired": "Please enter your name."
+  },
+  "event": {
+    "loadFailed": "Could not load this event.",
+    "notMember": "You are not a member of this event. Ask a friend for an invite link.",
+    "emptyTitle": "Let’s add the first expense",
+    "activeTitle": "What do you want to do?",
+    "scanReceipt": "Scan a receipt",
+    "addSimple": "Add simple expense",
+    "invite": "Invite friends",
+    "needsAttention": "Needs your attention",
+    "latestExpenses": "Latest expenses",
+    "viewAll": "View all expenses",
+    "unclaimed": "{{description}}: {{amount}} not yet assigned",
+    "inviteLinkLabel": "Invite link",
+    "inviteOnlyOnCreatorDevice": "Invite link is only available on the device that created the event",
+    "scanSoon": "Receipt scanning is coming soon."
+  },
+  "expenses": {
+    "title": "Expenses",
+    "add": "Add expense",
+    "empty": "No expenses yet.",
+    "paidBy": "Paid by {{name}}"
+  },
+  "editor": {
+    "title": "Add expense",
+    "description": "Description",
+    "amount": "Amount",
+    "payer": "Paid by",
+    "date": "Date",
+    "splitMethod": "Split method",
+    "method": {
+      "equal": "Split equally",
+      "custom": "Custom amounts",
+      "items": "Itemized (friends claim items)",
+      "host_assignment": "Itemized (I assign items)"
+    },
+    "participants": "Split between",
+    "shareFor": "Amount for {{name}}",
+    "remaining": "Remaining: {{amount}}",
+    "items": "Items",
+    "itemDescription": "Item {{n}} name",
+    "itemPrice": "Item {{n}} price",
+    "itemAssignee": "Item {{n}} assigned to",
+    "chooseMember": "Choose a person",
+    "addItem": "Add item",
+    "removeItem": "Remove item {{n}}",
+    "total": "Total",
+    "save": "Save expense",
+    "saving": "Saving…",
+    "errors": {
+      "description_required": "Please enter a description.",
+      "amount_invalid": "Enter an amount of at least 0.01 with up to 2 decimal places.",
+      "payer_required": "Please choose who paid.",
+      "date_invalid": "Please choose a valid date.",
+      "participants_required": "Choose at least one person to split with.",
+      "shares_mismatch": "The amounts must add up to the total.",
+      "items_invalid": "Every item needs a name, a valid price and (if required) an assignee."
+    }
+  },
+  "expenseError": {
+    "payer_not_allowed": "You cannot record an expense paid by someone else.",
+    "payer_not_member": "The payer is not a member of this event.",
+    "invalid_description": "The description is not valid.",
+    "invalid_category": "The category is not valid.",
+    "invalid_date": "The date is not valid.",
+    "invalid_total": "The total must be at least 0.01.",
+    "invalid_split_method": "The split method is not valid.",
+    "invalid_item": "One of the items is not valid.",
+    "duplicate_item_id": "Duplicate items were submitted.",
+    "items_not_allowed": "This split method does not use items.",
+    "items_required": "This split method needs at least one item.",
+    "item_total_mismatch": "The item prices do not add up to the total.",
+    "invalid_allocation": "One of the shares is not valid.",
+    "duplicate_allocation": "A person appears twice in the split.",
+    "not_member": "Someone in the split is not a member of this event.",
+    "allocation_mismatch": "The split does not add up to the total.",
+    "allocation_exceeds_item": "An item is assigned for more than its price.",
+    "invalid_payload": "The expense could not be read. Please try again.",
+    "not_event_member": "You are not a member of this event.",
+    "event_not_open": "This event is closed, so expenses can no longer be changed.",
+    "event_mismatch": "This expense belongs to a different event.",
+    "not_allowed": "You are not allowed to change this expense.",
+    "not_authenticated": "Your session has expired. Please reload and try again.",
+    "save_failed": "Could not save the expense. Please try again."
   }
 }

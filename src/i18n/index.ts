@@ -5,9 +5,12 @@ import zhCN from './zh-CN.json'
 
 const STORAGE_KEY = 'preferredLanguage'
 
+const SUPPORTED = ['en', 'zh-CN']
+
 function readSaved(): string | null {
   try {
-    return localStorage.getItem(STORAGE_KEY)
+    const saved = localStorage.getItem(STORAGE_KEY)
+    return saved && SUPPORTED.includes(saved) ? saved : null
   } catch {
     return null
   }
