@@ -20,6 +20,8 @@ export function EventRoute() {
     label: t('event.unclaimed', { description: item.description, amount: formatMoney(item.unallocatedCents, home.event.currency, i18n.language) }),
     onSelect: () => navigate(`/event/${eventId}/expenses/${item.expenseId}/claim`),
   }))
+  const settled = home.event.state === 'settled'
+  const canSettle = !settled && home.me.role !== 'participant' && home.expenses.length > 0
   return (
     <EventHomePage
       eventName={home.event.name}
@@ -29,6 +31,9 @@ export function EventRoute() {
       onScanReceipt={() => navigate(`/event/${eventId}/expenses/new?scan=1`)}
       onAddExpense={() => navigate(`/event/${eventId}/expenses/new`)}
       onInvite={() => setShowInvite(shown => !shown)}
+      settled={settled}
+      onSettle={canSettle ? () => navigate(`/event/${eventId}/settle`) : undefined}
+      onViewPayments={() => navigate(`/event/${eventId}/payments`)}
     >
       {showInvite && <InvitePanel eventId={eventId} />}
     </EventHomePage>

@@ -7,6 +7,7 @@ import { PeoplePage } from '../features/events/PeoplePage'
 import { ClaimItemsRoute } from '../features/expenses/ClaimItemsRoute'
 import { ExpenseEditorPage } from '../features/expenses/ExpenseEditorPage'
 import { ExpenseListPage } from '../features/expenses/ExpenseListPage'
+import { SettlementRoute } from '../features/settlement/SettlementRoute'
 import { HomePage } from './HomePage'
 
 export const router = createHashRouter([
@@ -21,6 +22,8 @@ export const router = createHashRouter([
       { path: '/event/:eventId/expenses/new', element: <ExpenseEditorPage /> },
       { path: '/event/:eventId/expenses/:expenseId/claim', element: <ClaimItemsRoute /> },
       { path: '/event/:eventId/people', element: <PeoplePage /> },
+      { path: '/event/:eventId/settle', element: <SettlementRoute phase="preview" /> },
+      { path: '/event/:eventId/payments', element: <SettlementRoute phase="payment" /> },
     ],
   },
 ])

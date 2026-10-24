@@ -39,7 +39,7 @@ export function ExpenseListPage() {
   return (
     <main>
       <h1>{t('expenses.title')}</h1>
-      <Link className="button primary" to={`/event/${eventId}/expenses/new`}>{t('expenses.add')}</Link>
+      {home.event.state !== 'settled' && <Link className="button primary" to={`/event/${eventId}/expenses/new`}>{t('expenses.add')}</Link>}
       {!current && <p role="status">{t('common.loading')}</p>}
       {current && 'failed' in current && <p role="alert">{t('event.loadFailed')}</p>}
       {current && 'expenses' in current && expenses.length === 0 && <p>{t('expenses.empty')}</p>}

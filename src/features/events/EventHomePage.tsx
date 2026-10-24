@@ -12,10 +12,15 @@ type Props = {
   onScanReceipt?: () => void
   onAddExpense?: () => void
   onInvite?: () => void
+  /** Owner/co-host with expenses on an open event. */
+  onSettle?: () => void
+  /** Event is settled: expenses are read-only and payments take over. */
+  settled?: boolean
+  onViewPayments?: () => void
   children?: ReactNode
 }
 
-export function EventHomePage({ eventName, expenses, attention, currency = 'MYR', onScanReceipt, onAddExpense, onInvite, children }: Props) {
+export function EventHomePage({ eventName, expenses, attention, currency = 'MYR', onScanReceipt, onAddExpense, onInvite, onSettle, settled = false, onViewPayments, children }: Props) {
   const { t, i18n } = useTranslation()
   const empty = expenses.length === 0
   return (
@@ -23,10 +28,13 @@ export function EventHomePage({ eventName, expenses, attention, currency = 'MYR'
       <p className="event-name">{eventName}</p>
       <h1>{empty ? t('event.emptyTitle') : t('event.activeTitle')}</h1>
       <section className={empty ? 'guided-actions guided-actions--large' : 'guided-actions'}>
-        <button type="button" onClick={onScanReceipt} disabled={!onScanReceipt}>📷 {t('event.scanReceipt')}</button>
-        <button type="button" onClick={onAddExpense} disabled={!onAddExpense}>✏️ {t('event.addSimple')}</button>
+        {!settled && <button type="button" onClick={onScanReceipt} disabled={!onScanReceipt}>📷 {t('event.scanReceipt')}</button>}
+        {!settled && <button type="button" onClick={onAddExpense} disabled={!onAddExpense}>✏️ {t('event.addSimple')}</button>}
         <button type="button" onClick={onInvite} disabled={!onInvite}>🔗 {t('event.invite')}</button>
+        {!settled && onSettle && <button type="button" className="primary" onClick={onSettle}>💸 {t('event.settleNow')}</button>}
+        {settled && <button type="button" className="primary" onClick={onViewPayments} disabled={!onViewPayments}>💸 {t('event.viewPayments')}</button>}
       </section>
+      {settled && <p className="muted">{t('event.settledNote')}</p>}
       {children}
       {attention.length > 0 && (
         <section className="attention">

@@ -217,3 +217,23 @@ fieldset {
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
+
+.muted { color: var(--color-text-muted); font-size: 0.9rem; }
+
+.plan-cards { display: grid; gap: 0.75rem; margin: 1rem 0; }
+.plan-card { border: 2px solid var(--color-accent); border-radius: 12px; padding: 0.75rem 1rem; }
+.plan-card--selected { border-color: var(--color-primary); }
+.plan-card__title { display: flex; align-items: center; gap: 0.5rem; }
+.plan-card h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
+
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem; background: var(--color-warning-bg); color: var(--color-primary-strong); }
+.badge--confirmed { background: var(--color-primary); color: #fff; }
+
+.settlement__footer { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.transfer { border: 1px solid var(--color-accent); border-radius: 12px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+.payment-details__qr { max-width: 100%; width: 14rem; height: auto; }
+.payment-form .field, .override .field { display: grid; gap: 0.25rem; margin: 0.5rem 0; }
+
+.dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 0.5); }
+.dialog { width: min(28rem, 100%); max-height: 90vh; overflow: auto; padding: 1rem 1.25rem; border-radius: 12px; background: var(--color-surface); color: var(--color-text); }
+.dialog__actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }

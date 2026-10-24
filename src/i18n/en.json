@@ -1,16 +1,35 @@
 {
-  "language": { "label": "Language" },
-  "app": { "name": "Friends Bill Splitter" },
-  "common": { "loading": "Loading…", "copy": "Copy", "copied": "Copied", "yourName": "Your name" },
+  "language": {
+    "label": "Language"
+  },
+  "app": {
+    "name": "Friends Bill Splitter"
+  },
+  "common": {
+    "loading": "Loading…",
+    "copy": "Copy",
+    "copied": "Copied",
+    "yourName": "Your name",
+    "back": "Back"
+  },
   "home": {
     "chooseMode": "What would you like to split?",
     "singleBill": "Single Bill",
     "tripEvent": "Trip or Event"
   },
-  "nav": { "label": "Main", "home": "Home", "expenses": "Expenses", "people": "People" },
+  "nav": {
+    "label": "Main",
+    "home": "Home",
+    "expenses": "Expenses",
+    "people": "People"
+  },
   "people": {
     "you": "{{name}} (you)",
-    "role": { "owner": "Owner", "cohost": "Co-host", "participant": "Participant" },
+    "role": {
+      "owner": "Owner",
+      "cohost": "Co-host",
+      "participant": "Participant"
+    },
     "makeCohost": "Make co-host: {{name}}",
     "makeParticipant": "Make participant: {{name}}"
   },
@@ -43,13 +62,16 @@
     "viewAll": "View all expenses",
     "unclaimed": "{{description}}: {{amount}} not yet assigned",
     "inviteLinkLabel": "Invite link",
-    "inviteOnlyOnCreatorDevice": "Invite link is only available on the device that created the event"
+    "inviteOnlyOnCreatorDevice": "Invite link is only available on the device that created the event",
+    "settleNow": "Settle now",
+    "viewPayments": "View payments",
+    "settledNote": "This event is settled. Expenses are now read-only."
   },
   "expenses": {
     "title": "Expenses",
     "add": "Add expense",
     "empty": "No expenses yet.",
-    "paidBy": "Paid by {{name}}",
+    "paidBy": "Paid by {{name}}",
     "claimItems": "Claim items",
     "viewItems": "View items"
   },
@@ -124,8 +146,10 @@
     "not_allowed": "You are not allowed to change this expense.",
     "not_authenticated": "Your session has expired. Please reload and try again.",
     "save_failed": "Could not save the expense. Please try again."
-  },
-  "realtime": { "offline": "Reconnecting… data may be out of date." },
+  },
+  "realtime": {
+    "offline": "Reconnecting… data may be out of date."
+  },
   "claim": {
     "title": "Claim items",
     "claimForMe": "Claim for me",
@@ -155,5 +179,124 @@
     "not_authenticated": "Your session has expired. Please reload and try again.",
     "expense_not_found": "This expense could not be found.",
     "action_failed": "Something went wrong. Please try again."
+  },
+  "settlement": {
+    "previewTitle": "Settle up",
+    "previewHint": "Compare the three ways to settle, then choose one. Nothing is locked until you confirm.",
+    "methodGroup": "Settlement method",
+    "method": {
+      "original": "Pay original payers",
+      "optimized": "Optimized direct settlement",
+      "coordinator": "Settlement coordinator"
+    },
+    "methodHint": {
+      "original": "Everyone pays the person who paid for each expense they shared.",
+      "optimized": "The fewest direct payments between friends.",
+      "coordinator": "Everyone pays one person, who then pays the others."
+    },
+    "recommended": "Recommended",
+    "coordinator": "Coordinator",
+    "totalPaid": "Total paid: {{amount}}",
+    "totalOwed": "Total owed: {{amount}}",
+    "balance": {
+      "receives": "{{name}} receives {{amount}}",
+      "pays": "{{name}} pays {{amount}}",
+      "even": "{{name}} is settled up"
+    },
+    "transfersTitle": "Payments",
+    "transferCount": "Transfers: {{count}}",
+    "transferLine": "{{payer}} pays {{receiver}} {{amount}}",
+    "unresolvedTitle": "Some expenses are not fully assigned",
+    "unresolvedHint": "Settlement cannot begin with unresolved expenses. Open each one to finish assigning it.",
+    "settleNow": "Settle now",
+    "later": "Later",
+    "cancel": "Cancel",
+    "confirmTitle": "Settle this event?",
+    "confirm": "Confirm and settle",
+    "confirmMethod": "Method: {{method}}",
+    "confirmReadOnly": "After this, expenses become read-only and the payments below are fixed.",
+    "offline": "You are offline. Settling needs an internet connection.",
+    "notLive": "Reconnecting… wait until the connection is back before settling.",
+    "notAllowed": "Only the owner or a co-host can settle this event.",
+    "noExpenses": "There are no expenses to settle yet.",
+    "staleRevision": "Something changed. Review the updated preview.",
+    "previewFailed": "Could not build the preview."
+  },
+  "settlementError": {
+    "stale_revision": "Something changed. Review the updated preview.",
+    "unresolved_expenses": "Some expenses are not fully assigned yet.",
+    "no_expenses": "There are no expenses to settle yet.",
+    "coordinator_required": "Choose a coordinator.",
+    "coordinator_not_creditor": "The coordinator must be someone who is owed money.",
+    "already_settled": "This event is already settled.",
+    "event_not_open": "This event is closed, so nothing can be changed.",
+    "not_allowed": "You are not allowed to do that.",
+    "invalid_transition": "This payment cannot move to that status.",
+    "invalid_reason": "Please enter a reason (up to 500 characters).",
+    "invalid_payment_details": "The payment details are not valid.",
+    "not_authenticated": "Your session has expired. Please reload and try again.",
+    "transfer_not_found": "This payment could not be found.",
+    "event_not_settled": "This event has not been settled yet.",
+    "invalid_payload": "The request could not be read. Please try again.",
+    "action_failed": "Something went wrong. Please try again."
+  },
+  "payments": {
+    "title": "Payments",
+    "onlyYours": "Only payments that involve you are listed.",
+    "notSettled": "This event has not been settled yet.",
+    "empty": "No payments to show.",
+    "youPay": "Pay {{amount}} to {{name}}",
+    "paysYou": "{{name}} pays you {{amount}}",
+    "pays": "{{payer}} pays {{receiver}} {{amount}}",
+    "state": {
+      "pending": "Pending",
+      "sent": "Sent",
+      "confirmed": "Received"
+    },
+    "showDetails": "Show payment details",
+    "detailsFailed": "Could not load the payment details.",
+    "waitingForDetails": "Waiting for {{name}} to add receiving details",
+    "qrAlt": "Payment QR code",
+    "bankName": "Bank",
+    "accountHolder": "Account holder",
+    "accountNumber": "Account number",
+    "reference": "Payment reference",
+    "markSent": "I've sent the payment",
+    "confirmReceived": "Payment received",
+    "override": "Mark as received",
+    "reason": "Reason",
+    "reasonRequired": "Please enter a reason (up to 500 characters).",
+    "overrideConfirm": "Confirm override",
+    "addDetails": "Add receiving details"
+  },
+  "paymentForm": {
+    "title": "Your receiving details",
+    "intro": "Friends who owe you will see these details. Add a QR code, bank details, or both.",
+    "qr": "Payment QR image (PNG, JPEG or WebP, up to 5 MB)",
+    "qrKept": "Using the QR image saved on this device.",
+    "bankName": "Bank name",
+    "accountHolder": "Account holder name",
+    "accountNumber": "Account number",
+    "reference": "Payment reference (optional)",
+    "preferred": "Preferred method",
+    "preferredQr": "QR code",
+    "preferredBank": "Bank transfer",
+    "remember": "Remember these payment details on this device",
+    "rememberWarning": "Anyone who can use this unlocked browser profile can see remembered details.",
+    "forget": "Forget my payment details",
+    "forgotten": "Removed from this device.",
+    "save": "Save details",
+    "saving": "Saving…",
+    "saved": "Saved.",
+    "saveFailed": "Could not save the details. Please try again.",
+    "changeWarningTitle": "Change your receiving details?",
+    "changeWarning": "Someone has already marked a payment to you as sent. They may have used your current details.",
+    "changeConfirm": "Save changes",
+    "errors": {
+      "method_required": "Add a QR image, or the bank name, account holder and account number.",
+      "qr_type": "The QR image must be PNG, JPEG or WebP.",
+      "qr_size": "The QR image must be 5 MB or smaller.",
+      "account_number": "The account number must be 4 to 34 characters."
+    }
   }
 }
