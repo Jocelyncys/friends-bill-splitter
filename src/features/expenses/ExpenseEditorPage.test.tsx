@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,8 @@ import '../../i18n'
 
 const saveExpense = vi.fn()
 const getEventHome = vi.fn()
+const recognizeReceipt = vi.fn()
+vi.mock('../ocr/ocrEngine', () => ({ recognizeReceipt: (...args: unknown[]) => recognizeReceipt(...args) }))
 vi.mock('./expenseRepository', async importOriginal => ({
   ...(await importOriginal<typeof import('./expenseRepository')>()),
   createExpenseRepository: () => ({ saveExpense }),
@@ -26,9 +28,9 @@ const home = {
   attention: [],
 }
 
-function renderEditor() {
+function renderEditor(entry = '/event/ev-1/expenses/new') {
   render(
-    <MemoryRouter initialEntries={['/event/ev-1/expenses/new']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/event/:eventId/expenses/new" element={<ExpenseEditorPage />} />
         <Route path="/event/:eventId" element={<p>event home</p>} />
@@ -45,6 +47,8 @@ async function fillSimple() {
 beforeEach(() => {
   saveExpense.mockReset()
   getEventHome.mockReset()
+  recognizeReceipt.mockReset()
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:receipt'), revokeObjectURL: vi.fn() }))
   getEventHome.mockResolvedValue(home)
 })
 
@@ -79,5 +83,66 @@ describe('ExpenseEditorPage', () => {
     await fillSimple()
     await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('The split does not add up to the total.')
+  })
+
+  describe('receipt scan', () => {
+    const photo = () => new File(['x'], 'receipt.jpg', { type: 'image/jpeg' })
+    const pick = async () => userEvent.upload(await screen.findByLabelText('Scan a receipt'), photo())
+
+    it('opens itemized with a receipt picker when scan=1', async () => {
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      const input = await screen.findByLabelText('Scan a receipt')
+      expect(input).toHaveAttribute('accept', 'image/*')
+      expect(input).toHaveAttribute('capture', 'environment')
+    })
+
+    it('disables save while recognizing', async () => {
+      recognizeReceipt.mockReturnValue(new Promise(() => {}))
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+      expect(await screen.findByText(/Loading the text reader/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save expense' })).toBeDisabled()
+    })
+
+    it('reviews parsed rows, lets the user edit them, and saves only after Confirm + Save', async () => {
+      recognizeReceipt.mockResolvedValue(['NASI LEMAK 12.50', 'TEH O 3.00', 'TOTAL 15.50'])
+      saveExpense.mockResolvedValue({ id: 'x' })
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+
+      expect(await screen.findByDisplayValue('NASI LEMAK')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('12.50')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('TEH O')).toBeInTheDocument()
+      expect(screen.getByAltText('Receipt photo preview')).toHaveAttribute('src', 'blob:receipt')
+      expect(screen.queryByRole('button', { name: 'Save expense' })).not.toBeInTheDocument()
+
+      await userEvent.clear(screen.getByLabelText('Item 2 price'))
+      await userEvent.type(screen.getByLabelText('Item 2 price'), '4.00')
+      expect(saveExpense).not.toHaveBeenCalled()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Confirm items' }))
+      expect(saveExpense).not.toHaveBeenCalled()
+      await userEvent.type(screen.getByLabelText('Description'), 'Lunch')
+      await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
+
+      await waitFor(() => expect(saveExpense).toHaveBeenCalledTimes(1))
+      expect(saveExpense.mock.calls[0][0]).toMatchObject({
+        totalCents: 1650,
+        items: [{ description: 'NASI LEMAK', totalCents: 1250 }, { description: 'TEH O', totalCents: 400 }],
+      })
+    })
+
+    it('announces a failure, keeps the preview and falls back to an empty manual row', async () => {
+      recognizeReceipt.mockRejectedValue(new Error('model failed'))
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+
+      const note = await screen.findByText('Could not read this receipt. Enter the items by hand.')
+      expect(note).toHaveAttribute('aria-live', 'polite')
+      expect(screen.getByAltText('Receipt photo preview')).toBeInTheDocument()
+      expect(within(screen.getByRole('group', { name: 'Items' })).getByLabelText('Item 1 name')).toHaveValue('')
+      expect(screen.getByRole('button', { name: 'Save expense' })).toBeEnabled()
+      expect(saveExpense).not.toHaveBeenCalled()
+    })
   })
 })

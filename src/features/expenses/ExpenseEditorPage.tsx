@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { formatMoney } from '../../domain/money'
 import type { EventHome } from '../events/eventRepository'
 import { EventStatus } from '../events/EventStatus'
@@ -16,6 +16,8 @@ import {
   type FormErrors,
 } from './expenseForm'
 import { createExpenseRepository, ExpenseSaveError } from './expenseRepository'
+import { recognizeReceipt } from '../ocr/ocrEngine'
+import { parseReceiptLines } from './receiptParser'
 
 const METHODS: DraftSplitMethod[] = ['equal', 'custom', 'items', 'host_assignment']
 
@@ -24,6 +26,11 @@ function today(): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
+
+type OcrState = 'idle' | 'recognizing' | 'review' | 'failed'
+
+// integer cents -> "12.50" without float maths
+const centsToText = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
 
 const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', price: '', assigneeId: '' })
 
@@ -37,6 +44,7 @@ export function ExpenseEditorPage() {
 function EditorForm({ home }: { home: EventHome }) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const eventId = home.event.id
   const [expenseId] = useState(() => crypto.randomUUID())
   const [draft, setDraft] = useState<ExpenseDraft>(() => ({
@@ -44,7 +52,7 @@ function EditorForm({ home }: { home: EventHome }) {
     amount: '',
     payerUserId: home.me.userId,
     expenseDate: today(),
-    splitMethod: 'equal',
+    splitMethod: searchParams.get('scan') === '1' ? 'items' : 'equal',
     participantIds: home.members.map(m => m.userId),
     shares: {},
     items: [blankItem()],
@@ -52,6 +60,48 @@ function EditorForm({ home }: { home: EventHome }) {
   const [errors, setErrors] = useState<FormErrors>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [ocrState, setOcrState] = useState<OcrState>('idle')
+  const [ocrMessage, setOcrMessage] = useState('')
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
+  const receiptUrlRef = useRef<string | null>(null)
+  const scanRun = useRef(0)
+
+  useEffect(() => () => {
+    scanRun.current += 1 // ignore any OCR result that arrives after unmount
+    if (receiptUrlRef.current) URL.revokeObjectURL(receiptUrlRef.current)
+  }, [])
+
+  const scanReceipt = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    const run = ++scanRun.current
+    if (receiptUrlRef.current) URL.revokeObjectURL(receiptUrlRef.current)
+    const url = URL.createObjectURL(file)
+    receiptUrlRef.current = url
+    setReceiptUrl(url)
+    setOcrState('recognizing')
+    setOcrMessage(t('editor.scan.loadingModel'))
+    try {
+      const lines = await recognizeReceipt(file, phase => {
+        if (run === scanRun.current) setOcrMessage(t(phase === 'loading' ? 'editor.scan.loadingModel' : 'editor.scan.recognizing'))
+      })
+      if (run !== scanRun.current) return
+      const parsed = parseReceiptLines(lines)
+      if (parsed.length === 0) throw new Error('no items')
+      setDraft(d => ({
+        ...d,
+        items: parsed.map(item => ({ id: crypto.randomUUID(), description: item.description, price: centsToText(item.totalCents), assigneeId: '' })),
+      }))
+      setOcrMessage(t('editor.scan.reviewHint'))
+      setOcrState('review')
+    } catch {
+      if (run !== scanRun.current) return
+      setDraft(d => ({ ...d, items: [blankItem()] }))
+      setOcrMessage(t('editor.scan.failed'))
+      setOcrState('failed')
+    }
+  }
 
   const set = <K extends keyof ExpenseDraft>(key: K, value: ExpenseDraft[K]) => setDraft(d => ({ ...d, [key]: value }))
   const setItem = (index: number, patch: Partial<DraftItem>) =>
@@ -171,6 +221,12 @@ function EditorForm({ home }: { home: EventHome }) {
         {itemized && (
           <fieldset>
             <legend>{t('editor.items')}</legend>
+            <label className="file-pick">
+              {receiptUrl ? t('editor.scan.choose') : t('editor.scan.scan')}
+              <input type="file" accept="image/*" capture="environment" onChange={e => void scanReceipt(e)} />
+            </label>
+            {receiptUrl && <img className="receipt-preview" src={receiptUrl} alt={t('editor.scan.previewAlt')} />}
+            <p aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
             {draft.items.map((item, index) => (
               <div key={item.id} className="item-row">
                 <label>
@@ -202,11 +258,18 @@ function EditorForm({ home }: { home: EventHome }) {
             <button type="button" onClick={() => set('items', [...draft.items, blankItem()])}>{t('editor.addItem')}</button>
             <p>{t('editor.total')}: <strong>{money(itemsTotal)}</strong></p>
             {fieldError('items')}
+            {ocrState === 'review' && (
+              <button type="button" className="primary" onClick={() => { setOcrState('idle'); setOcrMessage('') }}>
+                {t('editor.scan.confirm')}
+              </button>
+            )}
           </fieldset>
         )}
 
         {serverError && <p role="alert" className="form-error">{serverError}</p>}
-        <button type="submit" className="primary" disabled={busy}>{busy ? t('editor.saving') : t('editor.save')}</button>
+        {ocrState !== 'review' && (
+          <button type="submit" className="primary" disabled={busy || ocrState === 'recognizing'}>{busy ? t('editor.saving') : t('editor.save')}</button>
+        )}
       </form>
     </main>
   )

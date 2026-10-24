@@ -24,6 +24,7 @@ export function EventRoute() {
       currency={home.event.currency}
       expenses={home.expenses}
       attention={attention}
+      onScanReceipt={() => navigate(`/event/${eventId}/expenses/new?scan=1`)}
       onAddExpense={() => navigate(`/event/${eventId}/expenses/new`)}
       onInvite={() => setShowInvite(shown => !shown)}
     >

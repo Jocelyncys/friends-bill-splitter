@@ -38,8 +38,7 @@
     "viewAll": "View all expenses",
     "unclaimed": "{{description}}: {{amount}} not yet assigned",
     "inviteLinkLabel": "Invite link",
-    "inviteOnlyOnCreatorDevice": "Invite link is only available on the device that created the event",
-    "scanSoon": "Receipt scanning is coming soon."
+    "inviteOnlyOnCreatorDevice": "Invite link is only available on the device that created the event"
   },
   "expenses": {
     "title": "Expenses",
@@ -81,6 +80,16 @@
       "participants_required": "Choose at least one person to split with.",
       "shares_mismatch": "The amounts must add up to the total.",
       "items_invalid": "Every item needs a name, a valid price and (if required) an assignee."
+    },
+    "scan": {
+      "scan": "Scan a receipt",
+      "choose": "Choose receipt photo",
+      "previewAlt": "Receipt photo preview",
+      "loadingModel": "Loading the text reader… the first time can take a while.",
+      "recognizing": "Reading your receipt…",
+      "reviewHint": "Check the items and prices, then confirm.",
+      "confirm": "Confirm items",
+      "failed": "Could not read this receipt. Enter the items by hand."
     }
   },
   "expenseError": {

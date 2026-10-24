@@ -38,8 +38,7 @@
     "viewAll": "查看全部开销",
     "unclaimed": "{{description}}：{{amount}} 尚未分配",
     "inviteLinkLabel": "邀请链接",
-    "inviteOnlyOnCreatorDevice": "邀请链接仅在创建此活动的设备上可用",
-    "scanSoon": "收据扫描功能即将推出。"
+    "inviteOnlyOnCreatorDevice": "邀请链接仅在创建此活动的设备上可用"
   },
   "expenses": {
     "title": "开销",
@@ -81,6 +80,16 @@
       "participants_required": "请至少选择一位分摊对象。",
       "shares_mismatch": "各项金额之和必须等于总额。",
       "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。"
+    },
+    "scan": {
+      "scan": "扫描收据",
+      "choose": "选择收据照片",
+      "previewAlt": "收据照片预览",
+      "loadingModel": "正在加载文字识别…首次可能需要一些时间。",
+      "recognizing": "正在识别收据…",
+      "reviewHint": "请检查项目和价格，然后确认。",
+      "confirm": "确认项目",
+      "failed": "无法识别此收据，请手动输入项目。"
     }
   },
   "expenseError": {
