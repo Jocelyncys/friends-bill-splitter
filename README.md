@@ -42,11 +42,19 @@ never routed through the service worker cache, so no payment data is stored by i
 ## Content-Security-Policy
 
 Production builds get a CSP `<meta>` tag (`src/lib/csp.ts`, injected by `vite.config.ts`):
-`default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval'`, `connect-src`/`img-src` limited to `'self'` plus
-the Supabase origin from `VITE_SUPABASE_URL` (and its `ws`/`wss` realtime origin), `worker-src 'self' blob:`,
-`object-src 'none'`, `base-uri 'self'`. The OCR SDK's opencv build needs `Function()`, which this policy
+`default-src 'self'`, `script-src 'self'`, `connect-src`/`img-src` limited to `'self'` plus
+the Supabase origin from `VITE_SUPABASE_URL` (and its `ws`/`wss` realtime origin), `worker-src 'self'`,
+`object-src 'none'`, `base-uri 'self'`. The build fails if the tag cannot be injected, and `check:sw` checks
+`dist/index.html` for it. The OCR SDK's opencv build needs `Function()` and compiles wasm, which this policy
 forbids on the page; that is why the SDK is only ever imported inside the OCR worker, which loads from its
-own URL and is not governed by the page's `<meta>` policy. The dev server has no CSP.
+own URL and is not governed by the page's `<meta>` policy. The worker only fetches same-origin files under
+`/ocr-models/`. The dev server has no CSP.
+
+## Supported browsers
+
+Receipt OCR needs module workers that can start nested workers: Safari / iOS 15.5+, Firefox 114+, and recent
+Chromium (Chrome, Edge, Samsung Internet). On older browsers the scan fails with an error message and the
+expense can still be entered by hand; everything else in the app works.
 
 ## Deployment (GitHub Pages)
 

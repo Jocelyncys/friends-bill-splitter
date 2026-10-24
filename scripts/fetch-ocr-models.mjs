@@ -41,7 +41,7 @@ function verify(label, buf, expected) {
 }
 
 async function download(url) {
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(120_000) })
   if (!res.ok) throw new Error(`Download failed ${url}: HTTP ${res.status}`)
   return Buffer.from(await res.arrayBuffer())
 }

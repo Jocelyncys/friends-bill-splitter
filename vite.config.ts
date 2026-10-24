@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react'
 import { loadEnv, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vitest/config'
-import { buildCsp } from './src/lib/csp.ts'
+import { buildCsp, injectCsp } from './src/lib/csp.ts'
 
 // OCR files are large and only needed when someone scans a receipt: keep them out of the precache
 // and cache them on first use instead. Bump the cache name when the pinned model/runtime files change.
@@ -11,11 +11,10 @@ const OCR_ASSETS = /\/(ocr-models\/|assets\/(ocr-|worker-entry-|ort-wasm-))/
 // Production-only CSP meta tag (Vite's dev server needs inline scripts and its own websocket).
 // Inserted right after <meta charset> so it precedes every script and stylesheet.
 function cspPlugin(supabaseUrl: string | undefined): Plugin {
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${buildCsp(supabaseUrl)}" />`
   return {
     name: 'csp-meta',
     apply: 'build',
-    transformIndexHtml: html => html.replace('<meta charset="UTF-8" />', `$&\n    ${meta}`),
+    transformIndexHtml: html => injectCsp(html, buildCsp(supabaseUrl)),
   }
 }
 
@@ -52,7 +51,8 @@ export default defineConfig(({ mode }) => ({
           {
             urlPattern: OCR_ASSETS,
             handler: 'CacheFirst',
-            options: { cacheName: 'ocr-assets-v1', cacheableResponse: { statuses: [200] } },
+            // 6 OCR files today (worker, SDK chunk, SDK worker, 2 models, wasm); the cap evicts stale hashed copies.
+            options: { cacheName: 'ocr-assets-v1', cacheableResponse: { statuses: [200] }, expiration: { maxEntries: 8 } },
           },
         ],
       },
