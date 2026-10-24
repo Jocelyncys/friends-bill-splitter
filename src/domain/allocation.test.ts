@@ -44,4 +44,33 @@ describe('allocation', () => {
       }
     }
   })
+
+  it('allocateEqual throws on duplicate participant ids', () => {
+    expect(() => allocateEqual(100, ['a', 'a', 'b'])).toThrow('Invalid equal allocation')
+  })
+
+  it('allocateProportionally validates total and weights up front', () => {
+    expect(() => allocateProportionally(-1, { a: 1 })).toThrow('Invalid proportional allocation')
+    expect(() => allocateProportionally(1.5, { a: 1 })).toThrow('Invalid proportional allocation')
+    expect(() => allocateProportionally(10, { a: -1, b: 2 })).toThrow('Invalid proportional allocation')
+    expect(() => allocateProportionally(10, { a: 1.5 })).toThrow('Invalid proportional allocation')
+    expect(() => allocateProportionally(10, {})).toThrow('Invalid proportional allocation')
+  })
+
+  it('allocateProportionally breaks exact-remainder ties by ascending id', () => {
+    expect(allocateProportionally(1, { a: 1, b: 1, c: 1 })).toEqual({ a: 1, b: 0, c: 0 })
+  })
+
+  it('allocateProportionally stays exact for products beyond MAX_SAFE_INTEGER', () => {
+    const total = 9_007_199_254_740_991
+    const result = allocateProportionally(total, { a: 3, b: 1 })
+    expect(result.a + result.b).toBe(total)
+    expect(result).toEqual({ a: 6_755_399_441_055_743, b: 2_251_799_813_685_248 })
+  })
+
+  it('validateCustomAllocation treats a negative or non-safe-integer total as invalid', () => {
+    expect(validateCustomAllocation(-100, { a: -100 }).valid).toBe(false)
+    expect(validateCustomAllocation(10.5, { a: 10.5 }).valid).toBe(false)
+    expect(validateCustomAllocation(-1, {}).valid).toBe(false)
+  })
 })
