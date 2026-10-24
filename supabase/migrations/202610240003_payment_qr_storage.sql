@@ -5,13 +5,22 @@ on conflict (id) do nothing;
 -- Object names are <event-id>/<receiver-user-id>/<uuid>. Returns the segment as uuid,
 -- or null when the path is malformed so a bad name never errors the query.
 create function public.payment_qr_path_uuid(object_name text, segment int) returns uuid
-language sql immutable set search_path = '' as $$
+language sql stable set search_path = '' as $$
   select case
     when (storage.foldername(object_name))[segment] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     then (storage.foldername(object_name))[segment]::uuid
   end;
 $$;
 
+-- Exactly <event>/<receiver>/<uuid>: two folders and a uuid file name.
+create function public.payment_qr_name_ok(object_name text) returns boolean
+language sql stable set search_path = '' as $$
+  select coalesce(array_length(storage.foldername(object_name), 1) = 2
+    and storage.filename(object_name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', false);
+$$;
+
+revoke execute on function public.payment_qr_name_ok(text) from public, anon;
+grant execute on function public.payment_qr_name_ok(text) to authenticated;
 revoke execute on function public.payment_qr_path_uuid(text, int) from public, anon;
 grant execute on function public.payment_qr_path_uuid(text, int) to authenticated;
 
@@ -28,6 +37,7 @@ create policy payment_qr_authorized_read on storage.objects for select to authen
 
 create policy payment_qr_receiver_insert on storage.objects for insert to authenticated with check (
   bucket_id = 'payment-qr'
+  and public.payment_qr_name_ok(name)
   and public.payment_qr_path_uuid(name, 2) = auth.uid()
   and public.is_event_member(public.payment_qr_path_uuid(name, 1))
 );
@@ -40,6 +50,7 @@ using (
 )
 with check (
   bucket_id = 'payment-qr'
+  and public.payment_qr_name_ok(name)
   and public.payment_qr_path_uuid(name, 2) = auth.uid()
   and public.is_event_member(public.payment_qr_path_uuid(name, 1))
 );

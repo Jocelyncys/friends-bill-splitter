@@ -101,7 +101,8 @@ create table public.payment_details (
   payment_reference text,
   delete_after timestamptz,
   primary key (event_id, receiver_user_id),
-  check (qr_storage_path is not null or account_number is not null)
+  check (qr_storage_path is not null or account_number is not null),
+  check (qr_storage_path is null or qr_storage_path like event_id::text || '/' || receiver_user_id::text || '/%')
 );
 
 create table public.activity_log (

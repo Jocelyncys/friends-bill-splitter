@@ -45,21 +45,36 @@ alter table public.activity_log enable row level security;
 create policy members_read_event on public.events for select using (public.is_event_member(id));
 create policy owner_updates_event on public.events for update using (owner_user_id = auth.uid()) with check (owner_user_id = auth.uid());
 create policy members_read_members on public.event_members for select using (public.is_event_member(event_id));
-create policy managers_update_members on public.event_members for update using (public.has_event_role(event_id, array['owner','cohost']::public.event_role[]));
+create policy managers_update_members on public.event_members for update
+  using (public.has_event_role(event_id, array['owner','cohost']::public.event_role[]))
+  with check (public.has_event_role(event_id, array['owner','cohost']::public.event_role[]));
 
 -- expenses -------------------------------------------------------------------
 create policy members_read_expenses on public.expenses for select using (public.is_event_member(event_id));
 create policy members_create_own_expense on public.expenses for insert with check (creator_user_id = auth.uid() and payer_user_id = auth.uid() and public.is_event_member(event_id));
-create policy creators_or_managers_update_expense on public.expenses for update using (creator_user_id = auth.uid() or public.has_event_role(event_id, array['owner','cohost']::public.event_role[]));
-create policy creators_or_managers_delete_expense on public.expenses for delete using (creator_user_id = auth.uid() or public.has_event_role(event_id, array['owner','cohost']::public.event_role[]));
+create policy creators_or_managers_update_expense on public.expenses for update
+  using (public.is_event_member(event_id)
+    and (creator_user_id = auth.uid() or public.has_event_role(event_id, array['owner','cohost']::public.event_role[])))
+  with check (public.is_event_member(event_id)
+    and (creator_user_id = auth.uid() or public.has_event_role(event_id, array['owner','cohost']::public.event_role[]))
+    and exists(select 1 from public.event_members m where m.event_id = expenses.event_id and m.user_id = expenses.payer_user_id));
+create policy creators_or_managers_delete_expense on public.expenses for delete
+  using (public.is_event_member(event_id)
+    and (creator_user_id = auth.uid() or public.has_event_role(event_id, array['owner','cohost']::public.event_role[])));
 
 create policy members_read_expense_items on public.expense_items for select using (
   exists(select 1 from public.expenses e where e.id = expense_items.expense_id and public.is_event_member(e.event_id))
 );
-create policy expense_writer_manages_items on public.expense_items for all
+create policy expense_writer_inserts_items on public.expense_items for insert
+  with check (exists(select 1 from public.expenses e where e.id = expense_items.expense_id
+    and (e.creator_user_id = auth.uid() or public.has_event_role(e.event_id, array['owner','cohost']::public.event_role[]))));
+create policy expense_writer_updates_items on public.expense_items for update
   using (exists(select 1 from public.expenses e where e.id = expense_items.expense_id
     and (e.creator_user_id = auth.uid() or public.has_event_role(e.event_id, array['owner','cohost']::public.event_role[]))))
   with check (exists(select 1 from public.expenses e where e.id = expense_items.expense_id
+    and (e.creator_user_id = auth.uid() or public.has_event_role(e.event_id, array['owner','cohost']::public.event_role[]))));
+create policy expense_writer_deletes_items on public.expense_items for delete
+  using (exists(select 1 from public.expenses e where e.id = expense_items.expense_id
     and (e.creator_user_id = auth.uid() or public.has_event_role(e.event_id, array['owner','cohost']::public.event_role[]))));
 
 -- allocations (writes only via Task 7 functions) -------------------------------
@@ -92,3 +107,23 @@ create policy receiver_updates_own_payment_details on public.payment_details for
 
 -- activity (insert-only from security-definer functions) -----------------------
 create policy members_read_activity on public.activity_log for select using (public.is_event_member(event_id));
+
+-- Table privileges ---------------------------------------------------------------
+-- Every user (including guests) is an authenticated anonymous-auth user; the anon
+-- role never needs direct table access.
+revoke all on all tables in schema public from anon;
+alter default privileges in schema public revoke all on tables from anon;
+-- truncate bypasses RLS, so clients never get it (nor references/trigger).
+revoke truncate, references, trigger on all tables in schema public from authenticated;
+
+-- Column-level UPDATE: identity, ownership, state and revision columns are only
+-- changed by security-definer functions (Tasks 4-9).
+revoke update on public.events, public.event_members, public.expenses,
+  public.expense_items, public.payment_details from authenticated;
+grant update (name) on public.events to authenticated;
+grant update (display_name) on public.event_members to authenticated;
+grant update (payer_user_id, description, category, expense_date, total_cents, split_method, claiming_closed)
+  on public.expenses to authenticated;
+grant update (description, quantity, total_cents, sort_order) on public.expense_items to authenticated;
+grant update (preferred_method, qr_storage_path, bank_name, account_holder_name, account_number, payment_reference, delete_after)
+  on public.payment_details to authenticated;
