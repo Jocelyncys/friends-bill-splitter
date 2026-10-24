@@ -1,7 +1,7 @@
 import type { AllocationMap } from './types'
 
 // Plain code-point comparison so id ordering never depends on the runtime locale.
-function compareIds(a: string, b: string): number {
+export function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
