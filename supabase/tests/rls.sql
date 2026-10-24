@@ -1,5 +1,5 @@
 begin;
-select plan(193);
+select plan(266);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -14,15 +14,16 @@ select policies_are('public', 'settlement_balances', array['members_read_balance
 select policies_are('public', 'settlement_transfers', array['transfer_parties_read_transfers'], 'settlement_transfers policies are exact');
 select policies_are('public', 'payment_details', array['authorized_read_payment_details', 'receiver_inserts_own_payment_details', 'receiver_updates_own_payment_details'], 'payment_details policies are exact');
 select policies_are('public', 'activity_log', array['members_read_activity'], 'activity_log policies are exact');
+select policies_are('public', 'payment_events', array['transfer_parties_read_payment_events'], 'payment_events policies are exact');
 
 select is(
   (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity),
-  10, 'RLS is enabled on all 10 public tables');
+  11, 'RLS is enabled on all 11 public tables');
 select is(
   (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r'),
-  10, 'there are exactly 10 public tables');
+  11, 'there are exactly 11 public tables');
 
 select row_eq(
   $$select public from storage.buckets where id = 'payment-qr'$$,
@@ -60,7 +61,7 @@ select is(
 -- No write policies on read-only tables (RLS default-deny for direct client writes).
 select is(
   (select count(*)::int from pg_policies where schemaname = 'public'
-    and tablename in ('allocations','settlements','settlement_balances','settlement_transfers','activity_log')
+    and tablename in ('allocations','settlements','settlement_balances','settlement_transfers','activity_log','payment_events')
     and cmd <> 'SELECT'),
   0, 'server-managed tables have no client write policies');
 
@@ -690,6 +691,379 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
 select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$, '22023', 'event_not_open', 'assign on a settled event is rejected');
 select throws_ok($$select public.set_member_role('7ae00000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cohost')$$, '22023', 'event_not_open', 'role change on a settled event is rejected');
+reset role;
+
+-- Task 9a: settlement confirmation and payment tracking ----------------------
+select is((select count(*)::int from unnest(array[
+    'public.confirm_settlement(uuid, public.settlement_method, uuid, bigint)', 'public.mark_payment_sent(uuid)',
+    'public.confirm_payment_received(uuid)', 'public.override_payment_state(uuid, public.payment_state, text)',
+    'public.get_receiver_details(uuid)']) as f(sig)
+  where has_function_privilege('anon', f.sig, 'execute')), 0, 'anon cannot execute any settlement/payment RPC');
+select is((select count(*)::int from unnest(array[
+    'public.confirm_settlement(uuid, public.settlement_method, uuid, bigint)', 'public.mark_payment_sent(uuid)',
+    'public.confirm_payment_received(uuid)', 'public.override_payment_state(uuid, public.payment_state, text)',
+    'public.get_receiver_details(uuid)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute')), 5, 'authenticated can execute the settlement/payment RPCs');
+select is((select count(*)::int from unnest(array[
+    'public.compute_settlement_balances(uuid)', 'public.compute_settlement_transfers(uuid, public.settlement_method, uuid)',
+    'public.schedule_payment_details_cleanup(uuid)', 'public.apply_payment_transition(uuid, text, public.payment_state, text)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute') or has_function_privilege('anon', f.sig, 'execute')),
+  0, 'clients cannot execute the internal settlement helpers');
+select is((select count(*)::int from unnest(array['public.settlements', 'public.settlement_balances',
+    'public.settlement_transfers', 'public.payment_events']) as t(name)
+  where has_table_privilege('authenticated', t.name, 'insert') or has_table_privilege('authenticated', t.name, 'update')
+    or has_table_privilege('authenticated', t.name, 'delete')),
+  0, 'clients have no insert/update/delete on settlement snapshot tables or payment_events');
+select is((select has_column_privilege('authenticated', 'public.payment_details', 'delete_after', 'update')),
+  false, 'clients cannot change payment_details.delete_after');
+
+-- S1: the Task 8 fixture. ali = A (owner), ben = B (cohost), cara = C, dan = F; D is an outsider.
+-- paid 80000/30000/0/0, owed 25000/20000/35000/30000.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('9ae00000-0000-0000-0000-000000000001', 'Trip', 'trip_event', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash9a1');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('9ae00000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Ali', 'owner'),
+  ('9ae00000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Ben', 'cohost'),
+  ('9ae00000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Cara', 'participant'),
+  ('9ae00000-0000-0000-0000-000000000001', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'Dan', 'participant');
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method) values
+  ('9a000000-0000-0000-0000-000000000011', '9ae00000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Hotel', current_date, 80000, 'custom'),
+  ('9a000000-0000-0000-0000-000000000012', '9ae00000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Car', current_date, 30000, 'custom');
+insert into public.allocations (expense_id, participant_user_id, amount_cents, source) values
+  ('9a000000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 25000, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000011', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 35000, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000011', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 20000, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000012', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 20000, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000012', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 10000, 'calculated');
+
+-- Server recompute == src/domain/settlement.test.ts expected lists (order included).
+select results_eq(
+  $$select user_id, paid_cents, owed_cents, net_cents from public.compute_settlement_balances('9ae00000-0000-0000-0000-000000000001')$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 80000::bigint, 25000::bigint, 55000::bigint),
+           ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 30000::bigint, 20000::bigint, 10000::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 0::bigint, 35000::bigint, -35000::bigint),
+           ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 0::bigint, 30000::bigint, -30000::bigint)$$,
+  'balances match calculateBalances for the Task 8 fixture');
+select results_eq(
+  $$select payer_user_id, receiver_user_id, amount_cents
+    from public.compute_settlement_transfers('9ae00000-0000-0000-0000-000000000001', 'optimized_direct', null)$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 35000::bigint),
+           ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 20000::bigint),
+           ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 10000::bigint)$$,
+  'optimized direct transfers match settleOptimizedDirect');
+select results_eq(
+  $$select payer_user_id, receiver_user_id, amount_cents
+    from public.compute_settlement_transfers('9ae00000-0000-0000-0000-000000000001', 'coordinator', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 35000::bigint),
+           ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 30000::bigint),
+           ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 10000::bigint)$$,
+  'coordinator(ali) transfers match settleViaCoordinator');
+
+-- S2: the two-expense original-payer fixture (plus e3 with a zero share). ali = A, ben = B, cara = C.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('9ae00000-0000-0000-0000-000000000002', 'Payers', 'trip_event', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash9a2');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('9ae00000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Ali', 'owner'),
+  ('9ae00000-0000-0000-0000-000000000002', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Ben', 'participant'),
+  ('9ae00000-0000-0000-0000-000000000002', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Cara', 'participant');
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method) values
+  ('9a000000-0000-0000-0000-000000000021', '9ae00000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'e1', current_date, 7500, 'custom'),
+  ('9a000000-0000-0000-0000-000000000022', '9ae00000-0000-0000-0000-000000000002', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'e2', current_date, 3000, 'custom'),
+  ('9a000000-0000-0000-0000-000000000023', '9ae00000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'e3', current_date, 500, 'custom');
+insert into public.allocations (expense_id, participant_user_id, amount_cents, source) values
+  ('9a000000-0000-0000-0000-000000000021', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2500, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000021', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 2500, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000021', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 2500, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000022', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 1000, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000022', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 1000, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000022', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 1000, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000023', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 500, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000023', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 0, 'calculated');
+select results_eq(
+  $$select payer_user_id, receiver_user_id, amount_cents
+    from public.compute_settlement_transfers('9ae00000-0000-0000-0000-000000000002', 'original_payers', null)$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 1000::bigint),
+           ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 2500::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 3000::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 1000::bigint)$$,
+  'original-payer transfers match settleOriginalPayers (opposite pairs not netted)');
+
+-- S3: tied creditors (A, B +100 each) break ties by ascending id; F nets to zero; D has no expenses.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('9ae00000-0000-0000-0000-000000000003', 'Ties', 'trip_event', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash9a3');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('9ae00000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner'),
+  ('9ae00000-0000-0000-0000-000000000003', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'B', 'participant'),
+  ('9ae00000-0000-0000-0000-000000000003', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant'),
+  ('9ae00000-0000-0000-0000-000000000003', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'D', 'participant'),
+  ('9ae00000-0000-0000-0000-000000000003', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'F', 'participant');
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method) values
+  ('9a000000-0000-0000-0000-000000000031', '9ae00000-0000-0000-0000-000000000003', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'b', current_date, 100, 'custom'),
+  ('9a000000-0000-0000-0000-000000000032', '9ae00000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'a', current_date, 100, 'custom'),
+  ('9a000000-0000-0000-0000-000000000033', '9ae00000-0000-0000-0000-000000000003', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'f', current_date, 50, 'custom');
+insert into public.allocations (expense_id, participant_user_id, amount_cents, source) values
+  ('9a000000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 100, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000032', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 100, 'calculated'),
+  ('9a000000-0000-0000-0000-000000000033', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 50, 'calculated');
+select results_eq(
+  $$select payer_user_id, receiver_user_id, amount_cents
+    from public.compute_settlement_transfers('9ae00000-0000-0000-0000-000000000003', 'optimized_direct', null)$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 100::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 100::bigint)$$,
+  'tied creditors are paid in ascending id order');
+
+-- S4: no expenses, then an unresolved item_claim expense.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('9ae00000-0000-0000-0000-000000000004', 'Empty', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash9a4');
+insert into public.event_members (event_id, user_id, display_name, role)
+values ('9ae00000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner');
+
+create temp table s9 (k text primary key, id uuid, n bigint);
+grant all on s9 to public;
+insert into s9 (k, n) select 'rev1', revision from public.events where id = '9ae00000-0000-0000-0000-000000000001';
+insert into s9 (k, n) select 'rev4', revision from public.events where id = '9ae00000-0000-0000-0000-000000000004';
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000004', 'optimized_direct', null, (select n from s9 where k = 'rev4'))$$,
+  '22023', 'no_expenses', 'an event without expenses cannot be settled');
+reset role;
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+values ('9a000000-0000-0000-0000-000000000041', '9ae00000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Kopi', current_date, 100, 'item_claim');
+insert into public.expense_items (id, expense_id, description, total_cents)
+values ('9a100000-0000-0000-0000-000000000041', '9a000000-0000-0000-0000-000000000041', 'Kopi', 100);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000004', 'optimized_direct', null, (select n from s9 where k = 'rev4'))$$,
+  '22023', 'unresolved_expenses', 'an expense with unallocated cents blocks settlement');
+reset role;
+
+-- S1 rejections.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'optimized_direct', null, (select n from s9 where k = 'rev1'))$$,
+  '22023', 'not_allowed', 'a participant cannot confirm settlement');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'optimized_direct', null, (select n from s9 where k = 'rev1'))$$,
+  '22023', 'not_allowed', 'an outsider cannot confirm settlement');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'optimized_direct', null, (select n - 1 from s9 where k = 'rev1'))$$,
+  '40001', 'stale_revision', 'a stale expected revision is rejected');
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'coordinator', null, (select n from s9 where k = 'rev1'))$$,
+  '22023', 'coordinator_required', 'coordinator mode needs a coordinator');
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'coordinator', 'cccccccc-cccc-cccc-cccc-cccccccccccc', (select n from s9 where k = 'rev1'))$$,
+  '22023', 'coordinator_not_creditor', 'a debtor cannot coordinate');
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'coordinator', 'dddddddd-dddd-dddd-dddd-dddddddddddd', (select n from s9 where k = 'rev1'))$$,
+  '22023', 'coordinator_not_creditor', 'a non-participant cannot coordinate');
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'optimized_direct', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', (select n from s9 where k = 'rev1'))$$,
+  '22023', 'invalid_payload', 'a coordinator is only accepted in coordinator mode');
+reset role;
+select is((select count(*)::int from public.settlements where event_id = '9ae00000-0000-0000-0000-000000000001'), 0,
+  'rejected confirmations wrote no settlement');
+
+-- B (cohost) confirms S1 via coordinator A.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+insert into s9 (k, id) values ('s1', public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'coordinator',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', (select n from s9 where k = 'rev1')));
+select throws_ok($$select public.confirm_settlement('9ae00000-0000-0000-0000-000000000001', 'coordinator', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', (select n + 1 from s9 where k = 'rev1'))$$,
+  '22023', 'already_settled', 'an event is settled only once');
+reset role;
+select row_eq($$select s.id, s.method::text, s.coordinator_user_id, s.confirmed_by from public.settlements s
+    where s.event_id = '9ae00000-0000-0000-0000-000000000001'$$,
+  row((select id from s9 where k = 's1'), 'coordinator'::text, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid),
+  'one settlement row with method, coordinator and confirmer');
+select results_eq($$select user_id, paid_cents, owed_cents, net_cents from public.settlement_balances
+    where settlement_id = (select id from s9 where k = 's1') order by user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 80000::bigint, 25000::bigint, 55000::bigint),
+           ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 30000::bigint, 20000::bigint, 10000::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 0::bigint, 35000::bigint, -35000::bigint),
+           ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 0::bigint, 30000::bigint, -30000::bigint)$$,
+  'the balance snapshot is stored');
+select results_eq($$select payer_user_id, receiver_user_id, amount_cents, state::text from public.settlement_transfers
+    where settlement_id = (select id from s9 where k = 's1') order by payer_user_id::text collate "C", receiver_user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 10000::bigint, 'pending'::text),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 35000::bigint, 'pending'::text),
+           ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 30000::bigint, 'pending'::text)$$,
+  'the coordinator transfers are stored as pending');
+select row_eq($$select state::text, settled_at is not null, revision from public.events where id = '9ae00000-0000-0000-0000-000000000001'$$,
+  row('settled'::text, true, (select n + 1 from s9 where k = 'rev1')), 'the event is settled and its revision bumped');
+select is((select metadata from public.activity_log where event_id = '9ae00000-0000-0000-0000-000000000001' and action = 'settlement_confirmed'),
+  jsonb_build_object('settlement_id', (select id from s9 where k = 's1'), 'method', 'coordinator'),
+  'settlement activity is redacted to ids and the method');
+select throws_ok($$insert into public.allocations (expense_id, participant_user_id, amount_cents, source)
+    values ('9a000000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 1, 'calculated')$$,
+  '22023', 'event_not_open', 'expenses are read-only once settled');
+
+-- S3 confirmed directly: zero-net participant F is in the snapshot, D (no expenses) is not.
+insert into s9 (k, n) select 'rev3', revision from public.events where id = '9ae00000-0000-0000-0000-000000000003';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+insert into s9 (k, id) values ('s3', public.confirm_settlement('9ae00000-0000-0000-0000-000000000003', 'optimized_direct', null,
+  (select n from s9 where k = 'rev3')));
+reset role;
+select results_eq($$select user_id, net_cents from public.settlement_balances
+    where settlement_id = (select id from s9 where k = 's3') order by user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 100::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 100::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, -200::bigint), ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 0::bigint)$$,
+  'participants with zero net are snapshotted; members without expenses are not');
+
+-- Payments on S1. t1 = A -> B, t2 = C -> A, t3 = F -> A.
+insert into s9 (k, id) select 't1', id from public.settlement_transfers where settlement_id = (select id from s9 where k = 's1') and payer_user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+insert into s9 (k, id) select 't2', id from public.settlement_transfers where settlement_id = (select id from s9 where k = 's1') and payer_user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+insert into s9 (k, id) select 't3', id from public.settlement_transfers where settlement_id = (select id from s9 where k = 's1') and payer_user_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+create function pg_temp.t(p text) returns uuid language sql stable as $$ select id from s9 where k = p $$;
+grant execute on function pg_temp.t(text) to public;
+
+-- Receivers write their own payment details directly (insert, then update).
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$insert into public.payment_details (event_id, receiver_user_id, preferred_method, account_number, qr_storage_path)
+    values ('9ae00000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bank', '9999000011112222',
+      '9ae00000-0000-0000-0000-000000000001/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111')$$,
+  'a receiver inserts their own payment details');
+select is(pg_temp.upd_count($q$update public.payment_details set bank_name = 'Maybank', account_holder_name = 'Ali'
+    where event_id = '9ae00000-0000-0000-0000-000000000001' and receiver_user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'$q$),
+  1, 'a receiver updates their own payment details');
+select throws_ok($$update public.payment_details set delete_after = null where event_id = '9ae00000-0000-0000-0000-000000000001'$$,
+  '42501', null, 'a receiver cannot change delete_after');
+select throws_ok($$insert into public.payment_details (event_id, receiver_user_id, preferred_method, account_number, delete_after)
+    values ('9ae00000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bank', '1', now())$$,
+  '42501', null, 'a receiver cannot insert delete_after');
+select throws_ok($$insert into public.payment_details (event_id, receiver_user_id, preferred_method, account_number)
+    values ('9ae00000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bank', '1')$$,
+  '42501', null, 'nobody writes another receiver details');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select lives_ok($$insert into public.payment_details (event_id, receiver_user_id, preferred_method, account_number)
+    values ('9ae00000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bank', '5555')$$,
+  'a second receiver inserts their details');
+reset role;
+
+-- Receiver details: payer, receiver and managers only.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select results_eq($$select receiver_user_id, preferred_method, bank_name, account_holder_name, account_number, payment_reference, qr_storage_path
+    from public.get_receiver_details(pg_temp.t('t2'))$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'bank'::text, 'Maybank'::text, 'Ali'::text, '9999000011112222'::text, null::text,
+    '9ae00000-0000-0000-0000-000000000001/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111'::text)$$,
+  'the payer gets the receiver details and QR path');
+select throws_ok($$select * from public.get_receiver_details(pg_temp.t('t3'))$$, '22023', 'transfer_not_found',
+  'a member who is not a party gets transfer_not_found');
+select throws_ok($$select * from public.get_receiver_details('00000000-0000-0000-0000-000000000000')$$, '22023', 'transfer_not_found',
+  'an unknown transfer gets transfer_not_found');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select is((select count(*)::int from public.get_receiver_details(pg_temp.t('t2'))), 1, 'a cohost can read receiver details');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select throws_ok($$select * from public.get_receiver_details(pg_temp.t('t2'))$$, '22023', 'transfer_not_found', 'an outsider gets transfer_not_found');
+reset role;
+
+-- t2 (C -> A): wrong party and invalid state.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.mark_payment_sent(pg_temp.t('t2'))$$, '22023', 'not_allowed', 'the receiver cannot mark a payment sent');
+select throws_ok($$select public.confirm_payment_received(pg_temp.t('t2'))$$, '22023', 'invalid_transition', 'a pending payment cannot be confirmed received');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.confirm_payment_received(pg_temp.t('t2'))$$, '22023', 'not_allowed', 'the payer cannot confirm receipt');
+select throws_ok($$select public.mark_payment_sent(pg_temp.t('t3'))$$, '22023', 'transfer_not_found', 'a non-party cannot mark another transfer sent');
+insert into s9 (k, n) select 'rev1b', revision from public.events where id = '9ae00000-0000-0000-0000-000000000001';
+-- pending -> sent by the payer, idempotent.
+select lives_ok($$select public.mark_payment_sent(pg_temp.t('t2'))$$, 'the payer marks the payment sent');
+select lives_ok($$select public.mark_payment_sent(pg_temp.t('t2'))$$, 'marking sent again is idempotent');
+reset role;
+select is((select state::text from public.settlement_transfers where id = pg_temp.t('t2')), 'sent', 'the transfer is sent');
+select results_eq($$select actor_user_id, old_state::text, new_state::text, reason from public.payment_events where transfer_id = pg_temp.t('t2')$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'pending'::text, 'sent'::text, null::text)$$,
+  'one payment event with actor and states; the repeat added none');
+select is((select revision from public.events where id = '9ae00000-0000-0000-0000-000000000001'), (select n + 1 from s9 where k = 'rev1b'),
+  'a transition bumps the revision once');
+-- sent -> confirmed by the receiver, idempotent.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.confirm_payment_received(pg_temp.t('t2'))$$, 'the receiver confirms receipt');
+select lives_ok($$select public.confirm_payment_received(pg_temp.t('t2'))$$, 'confirming again is idempotent');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.mark_payment_sent(pg_temp.t('t2'))$$, '22023', 'invalid_transition', 'a confirmed payment cannot go back to sent');
+select is((select count(*)::int from public.payment_events), 2, 'a payer sees the payment events of their own transfer');
+select throws_ok($$insert into public.payment_events (transfer_id, actor_user_id, old_state, new_state)
+    values (pg_temp.t('t2'), 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'pending', 'confirmed')$$,
+  '42501', null, 'clients cannot write payment events');
+reset role;
+select results_eq($$select actor_user_id, old_state::text, new_state::text from public.payment_events where transfer_id = pg_temp.t('t2') order by id$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'pending'::text, 'sent'::text),
+           ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'sent'::text, 'confirmed'::text)$$,
+  'sent -> confirmed recorded by the receiver');
+
+-- t3 (F -> A): override by a manager only, with a valid reason, only to confirmed.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select throws_ok($$select public.override_payment_state(pg_temp.t('t3'), 'confirmed', 'paid')$$, '22023', 'not_allowed', 'a participant payer cannot override');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select throws_ok($$select public.override_payment_state(pg_temp.t('t3'), 'confirmed', '   ')$$, '22023', 'invalid_reason', 'a blank override reason is rejected');
+select throws_ok($$select public.override_payment_state(pg_temp.t('t3'), 'confirmed', null)$$, '22023', 'invalid_reason', 'a missing override reason is rejected');
+select throws_ok($$select public.override_payment_state(pg_temp.t('t3'), 'confirmed', repeat('x', 501))$$, '22023', 'invalid_reason', 'an override reason over 500 characters is rejected');
+select throws_ok($$select public.override_payment_state(pg_temp.t('t3'), 'sent', 'paid')$$, '22023', 'invalid_transition', 'override only targets confirmed');
+select lives_ok($$select public.override_payment_state(pg_temp.t('t3'), 'confirmed', '  Paid in cash  ')$$, 'a cohost overrides pending -> confirmed');
+select lives_ok($$select public.override_payment_state(pg_temp.t('t3'), 'confirmed', 'again')$$, 'overriding again is idempotent');
+reset role;
+select results_eq($$select actor_user_id, old_state::text, new_state::text, reason from public.payment_events where transfer_id = pg_temp.t('t3')$$,
+  $$values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 'pending'::text, 'confirmed'::text, 'Paid in cash'::text)$$,
+  'the override is recorded once with its trimmed reason');
+select is((select count(*)::int from public.payment_details where event_id = '9ae00000-0000-0000-0000-000000000001' and delete_after is not null), 0,
+  'payment details are kept while a transfer is unconfirmed');
+
+-- t1 (A -> B): A marks sent, then the owner overrides sent -> confirmed; the event is fully paid.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.mark_payment_sent(pg_temp.t('t1'))$$, 'the coordinator marks their payout sent');
+select lives_ok($$select public.override_payment_state(pg_temp.t('t1'), 'confirmed', 'Ben confirmed by phone')$$, 'the owner overrides sent -> confirmed');
+reset role;
+select is((select array_agg(distinct state::text) from public.settlement_transfers where settlement_id = pg_temp.t('s1')), array['confirmed'],
+  'every transfer is confirmed');
+select is((select count(*)::int from public.payment_details
+    where event_id = '9ae00000-0000-0000-0000-000000000001' and delete_after = now() + interval '7 days'), 2,
+  'payment details expire seven days after the event is fully paid');
+
+-- Activity stays redacted: ids and states only, never bank numbers, QR paths or reasons.
+select is((select count(*)::int from public.activity_log where event_id = '9ae00000-0000-0000-0000-000000000001'
+    and action in ('payment_sent', 'payment_confirmed', 'payment_overridden')
+    and (select array_agg(k order by k) from jsonb_object_keys(metadata) as k) = array['new_state', 'old_state', 'transfer_id']), 5,
+  'payment activity rows hold only transfer id and states');
+select is((select count(*)::int from public.activity_log where event_id = '9ae00000-0000-0000-0000-000000000001'
+    and (metadata::text like '%9999000011112222%' or metadata::text like '%11111111-1111-1111-1111-111111111111%'
+      or metadata::text like '%cash%')), 0,
+  'no activity row contains a bank number, QR path or override reason');
+
+-- payment_events visibility follows the transfer read policy.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select is((select count(*)::int from public.payment_events), 0, 'an outsider sees no payment events');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select is((select count(*)::int from public.payment_events), 5, 'the owner sees every payment event');
+reset role;
+
+-- Payment RPCs need a settled event (the seed event has a transfer but is still open).
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.mark_payment_sent((select t.id from public.settlement_transfers t
+    where t.settlement_id = 'f2000000-0000-0000-0000-000000000001'))$$, '22023', 'event_not_settled', 'payments need a settled event');
 reset role;
 
 select * from finish();
