@@ -4,7 +4,7 @@ import { createPaymentRepository } from './paymentRepository'
 
 type Result = { data: unknown; error: unknown }
 
-function fakeClient(options: { existing?: { qr_storage_path: string | null } | null; writeError?: unknown } = {}) {
+function fakeClient(options: { existing?: { qr_storage_path: string | null } | null; writeErrors?: unknown[]; removeError?: unknown } = {}) {
   const writes: Array<{ op: string; row: unknown; filters: unknown[] }> = []
   const from = vi.fn(() => {
     let op = 'select'
@@ -19,13 +19,13 @@ function fakeClient(options: { existing?: { qr_storage_path: string | null } | n
       then: (resolve: (r: Result) => unknown) => {
         if (op === 'select') return Promise.resolve({ data: options.existing ?? null, error: null }).then(resolve)
         writes.push({ op, row, filters })
-        return Promise.resolve({ data: null, error: options.writeError ?? null }).then(resolve)
+        return Promise.resolve({ data: null, error: options.writeErrors?.[writes.length - 1] ?? null }).then(resolve)
       },
     }
     return b
   })
   const upload = vi.fn().mockResolvedValue({ data: {}, error: null })
-  const remove = vi.fn().mockResolvedValue({ data: [], error: null })
+  const remove = vi.fn().mockResolvedValue({ data: options.removeError ? null : [], error: options.removeError ?? null })
   const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed/qr?token=x' }, error: null })
   const storageFrom = vi.fn(() => ({ upload, remove, createSignedUrl }))
   const rpc = vi.fn().mockResolvedValue({ data: null, error: null })
@@ -75,13 +75,33 @@ describe('paymentRepository.saveMyPaymentDetails', () => {
   })
 
   it('removes the new upload when the row write fails', async () => {
-    const f = fakeClient({ writeError: { code: '23514', message: 'check' } })
+    const f = fakeClient({ writeErrors: [{ code: '23514', message: 'check' }] })
     const file = new File(['png'], 'qr.png', { type: 'image/png' })
     const error = await createPaymentRepository(f.client).saveMyPaymentDetails('event-1', { preferredMethod: 'qr' }, file)
       .catch((e: unknown) => e)
     expect(error).toBeInstanceOf(SettlementError)
     expect((error as SettlementError).code).toBe('invalid_payment_details')
     expect(f.remove).toHaveBeenCalledWith([f.upload.mock.calls[0][0]])
+  })
+})
+
+describe('paymentRepository.saveMyPaymentDetails races and cleanup', () => {
+  it('retries once as an update when a concurrent save inserted the row first (23505)', async () => {
+    const f = fakeClient({ writeErrors: [{ code: '23505', message: 'duplicate key' }] })
+    await createPaymentRepository(f.client).saveMyPaymentDetails('event-1', bank)
+    expect(f.writes.map(w => w.op)).toEqual(['insert', 'update'])
+    expect(f.writes[1].filters).toEqual([['event_id', 'event-1'], ['receiver_user_id', 'me']])
+    expect(f.writes[1].row).not.toHaveProperty('event_id')
+  })
+
+  it('logs a failed best-effort QR removal without the object path', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fakeClient({ existing: { qr_storage_path: 'event-1/me/old' }, removeError: { message: 'nope' } })
+    const file = new File(['png'], 'qr.png', { type: 'image/png' })
+    await createPaymentRepository(f.client).saveMyPaymentDetails('event-1', { preferredMethod: 'qr' }, file)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('event-1/me')
+    warn.mockRestore()
   })
 })
 

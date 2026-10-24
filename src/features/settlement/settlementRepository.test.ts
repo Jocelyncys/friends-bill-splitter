@@ -82,6 +82,27 @@ describe('settlementRepository.getSettlementInputs', () => {
     expect(settleOptimizedDirect(calculateBalances(totals))).toEqual([{ payerId: 'b', receiverId: 'a', amountCents: 50 }])
   })
 
+  it('reads the revision before members and expenses, and filters every read by event id', async () => {
+    const log: string[] = []
+    const from = vi.fn((table: string) => {
+      log.push(`from:${table}`)
+      const result: Result = table === 'events' ? { data: { revision: 3 }, error: null } : { data: [], error: null }
+      const b: Builder = {
+        select: () => b, order: () => b, maybeSingle: () => b, single: () => b,
+        eq: ((column: string, value: string) => { log.push(`eq:${table}.${column}=${value}`); return b }) as never,
+        then: resolve => Promise.resolve(result).then(r => { log.push(`resolved:${table}`); return resolve(r) }),
+      }
+      return b
+    })
+    await createSettlementRepository({ from } as never).getSettlementInputs('event-1')
+    expect(log.indexOf('resolved:events')).toBeGreaterThan(-1)
+    expect(log.indexOf('resolved:events')).toBeLessThan(log.indexOf('from:expenses'))
+    expect(log.indexOf('resolved:events')).toBeLessThan(log.indexOf('from:event_members'))
+    expect(log).toEqual(expect.arrayContaining([
+      'eq:events.id=event-1', 'eq:event_members.event_id=event-1', 'eq:expenses.event_id=event-1',
+    ]))
+  })
+
   it('maps a failed read to action_failed', async () => {
     const from = fromTables({
       events: { data: null, error: { code: '500', message: 'boom' } },
@@ -128,7 +149,7 @@ describe('settlementRepository.confirmSettlement', () => {
 })
 
 describe('settlementRepository.getSettlement', () => {
-  it('returns the snapshot in camelCase with transfers ordered by payer then receiver', async () => {
+  it('returns the snapshot in camelCase with transfers in ordinal (generation) order', async () => {
     const from = fromTables({
       settlements: {
         data: {
@@ -138,8 +159,8 @@ describe('settlementRepository.getSettlement', () => {
             { user_id: 'ali', paid_cents: 900, owed_cents: 300, net_cents: 600 },
           ],
           settlement_transfers: [
-            { id: 't2', payer_user_id: 'cara', receiver_user_id: 'ali', amount_cents: 600, state: 'sent', updated_at: 'u2' },
-            { id: 't1', payer_user_id: 'ali', receiver_user_id: 'ben', amount_cents: 100, state: 'pending', updated_at: 'u1' },
+            { id: 't1', payer_user_id: 'ali', receiver_user_id: 'ben', amount_cents: 100, state: 'pending', updated_at: 'u1', ordinal: 2 },
+            { id: 't2', payer_user_id: 'cara', receiver_user_id: 'ali', amount_cents: 600, state: 'sent', updated_at: 'u2', ordinal: 1 },
           ],
         },
         error: null,
@@ -152,8 +173,8 @@ describe('settlementRepository.getSettlement', () => {
         { userId: 'cara', paidCents: 0, owedCents: 600, netCents: -600 },
       ],
       transfers: [
-        { id: 't1', payerId: 'ali', receiverId: 'ben', amountCents: 100, state: 'pending', updatedAt: 'u1' },
         { id: 't2', payerId: 'cara', receiverId: 'ali', amountCents: 600, state: 'sent', updatedAt: 'u2' },
+        { id: 't1', payerId: 'ali', receiverId: 'ben', amountCents: 100, state: 'pending', updatedAt: 'u1' },
       ],
     })
   })

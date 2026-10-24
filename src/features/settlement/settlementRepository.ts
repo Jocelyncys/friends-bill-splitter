@@ -78,7 +78,7 @@ export type Settlement = {
   confirmedBy: string
   confirmedAt: string
   balances: SettlementBalance[]
-  transfers: SettlementTransfer[] // only those RLS lets the caller see
+  transfers: SettlementTransfer[] // generation order; only those RLS lets the caller see
 }
 
 type ExpenseRow = {
@@ -103,6 +103,7 @@ type SettlementRow = {
     amount_cents: number
     state: PaymentState
     updated_at: string
+    ordinal: number
   }>
 }
 
@@ -114,8 +115,11 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
   return {
     // Same inputs the server recomputes from, for the client-side preview (Task 8 functions).
     async getSettlementInputs(eventId: string): Promise<SettlementInputs> {
-      const [event, members, expenses] = await Promise.all([
-        client.from('events').select('revision').eq('id', eventId).single(),
+      // Revision FIRST: data read afterwards is at least as new, so a stale preview
+      // can never carry a fresh revision past confirm_settlement's guard.
+      const event = await client.from('events').select('revision').eq('id', eventId).single()
+      check(event.error)
+      const [members, expenses] = await Promise.all([
         client.from('event_members').select('user_id, display_name, role').eq('event_id', eventId).order('joined_at'),
         client
           .from('expenses')
@@ -123,7 +127,6 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
           .eq('event_id', eventId)
           .order('created_at'),
       ])
-      check(event.error)
       check(members.error)
       check(expenses.error)
 
@@ -184,7 +187,7 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
         .select(
           'id, method, coordinator_user_id, confirmed_by, confirmed_at, ' +
             'settlement_balances(user_id, paid_cents, owed_cents, net_cents), ' +
-            'settlement_transfers(id, payer_user_id, receiver_user_id, amount_cents, state, updated_at)',
+            'settlement_transfers(id, payer_user_id, receiver_user_id, amount_cents, state, updated_at, ordinal)',
         )
         .eq('event_id', eventId)
         .maybeSingle()
@@ -200,7 +203,8 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
         balances: row.settlement_balances
           .map(b => ({ userId: b.user_id, paidCents: b.paid_cents, owedCents: b.owed_cents, netCents: b.net_cents }))
           .sort((a, b) => compareIds(a.userId, b.userId)),
-        transfers: row.settlement_transfers
+        transfers: [...row.settlement_transfers]
+          .sort((a, b) => a.ordinal - b.ordinal)
           .map(t => ({
             id: t.id,
             payerId: t.payer_user_id,
@@ -208,8 +212,7 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
             amountCents: t.amount_cents,
             state: t.state,
             updatedAt: t.updated_at,
-          }))
-          .sort((a, b) => compareIds(a.payerId, b.payerId) || compareIds(a.receiverId, b.receiverId)),
+          })),
       }
     },
   }

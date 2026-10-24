@@ -13,6 +13,26 @@
 -- invalid_transition, invalid_reason); 40001 stale_revision; 28000 not_authenticated.
 -- payment_state 'confirmed' is the plan's "received".
 
+-- Transfer order ----------------------------------------------------------------------
+-- 1-based position in the generation order of the selected algorithm.
+alter table public.settlement_transfers add column ordinal integer not null;
+alter table public.settlement_transfers add constraint settlement_transfers_ordinal_key unique (settlement_id, ordinal);
+
+-- "Owes" now means an unconfirmed transfer: once paid, the payer no longer reads the
+-- receiver's details or QR (payment_details policy and payment-qr storage policy).
+create or replace function public.owes_receiver(target_event uuid, target_receiver uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists(
+    select 1
+    from public.settlements s
+    join public.settlement_transfers t on t.settlement_id = s.id
+    where s.event_id = target_event
+      and t.payer_user_id = auth.uid()
+      and t.receiver_user_id = target_receiver
+      and t.state <> 'confirmed'
+  );
+$$;
+
 -- payment_events -------------------------------------------------------------------
 create table public.payment_events (
   id bigint generated always as identity primary key,
@@ -254,6 +274,28 @@ revoke execute on function public.compute_settlement_transfers(uuid, public.sett
 revoke execute on function public.schedule_payment_details_cleanup(uuid) from public, anon, authenticated;
 revoke execute on function public.apply_payment_transition(uuid, text, public.payment_state, text) from public, anon, authenticated;
 
+-- Details written after the event is fully paid get the same deletion deadline.
+create function public.payment_details_set_delete_after()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if exists(select 1 from public.settlements s where s.event_id = new.event_id)
+    and not exists(
+      select 1 from public.settlements s join public.settlement_transfers t on t.settlement_id = s.id
+      where s.event_id = new.event_id and t.state <> 'confirmed') then
+    new.delete_after := coalesce(new.delete_after, now() + interval '7 days');
+  end if;
+  return new;
+end $$;
+
+revoke execute on function public.payment_details_set_delete_after() from public, anon, authenticated;
+
+create trigger payment_details_delete_after before insert or update on public.payment_details
+  for each row execute function public.payment_details_set_delete_after();
+
 -- confirm_settlement -----------------------------------------------------------------
 create function public.confirm_settlement(event_id uuid, method public.settlement_method, coordinator_id uuid,
   expected_revision bigint)
@@ -318,9 +360,10 @@ begin
   from public.compute_settlement_balances(v_event) b;
 
   -- Raises coordinator_not_creditor (rolling everything back) for a bad coordinator.
-  insert into public.settlement_transfers (settlement_id, payer_user_id, receiver_user_id, amount_cents)
-  select v_settlement, t.payer_user_id, t.receiver_user_id, t.amount_cents
-  from public.compute_settlement_transfers(v_event, confirm_settlement.method, confirm_settlement.coordinator_id) t;
+  insert into public.settlement_transfers (settlement_id, payer_user_id, receiver_user_id, amount_cents, ordinal)
+  select v_settlement, t.payer_user_id, t.receiver_user_id, t.amount_cents, t.ordinal
+  from public.compute_settlement_transfers(v_event, confirm_settlement.method, confirm_settlement.coordinator_id)
+    with ordinality as t(payer_user_id, receiver_user_id, amount_cents, ordinal);
 
   -- From here the open-event trigger makes the event's expense data read-only.
   update public.events e set state = 'settled', settled_at = now(), revision = e.revision + 1 where e.id = v_event;
@@ -368,7 +411,7 @@ begin
 end $$;
 
 -- get_receiver_details ----------------------------------------------------------------
--- For the transfer's payer, its receiver, or an owner/co-host of a settled event.
+-- For the transfer's receiver, an owner/co-host, or its payer while unconfirmed (settled event only).
 -- Returns the stored QR object path only; the client mints a 10-minute signed URL
 -- (storage RLS authorizes the same people) and never persists it. No row when the
 -- receiver has not entered details.
@@ -386,13 +429,14 @@ declare
   v_event uuid;
   v_payer uuid;
   v_receiver uuid;
+  v_transfer_state public.payment_state;
   v_event_state public.event_state;
   v_role public.event_role;
 begin
   if v_uid is null then
     raise exception 'not_authenticated' using errcode = '28000';
   end if;
-  select s.event_id, t.payer_user_id, t.receiver_user_id into v_event, v_payer, v_receiver
+  select s.event_id, t.payer_user_id, t.receiver_user_id, t.state into v_event, v_payer, v_receiver, v_transfer_state
   from public.settlement_transfers t join public.settlements s on s.id = t.settlement_id
   where t.id = get_receiver_details.transfer_id;
   select m.role into v_role from public.event_members m where m.event_id = v_event and m.user_id = v_uid;
@@ -403,6 +447,10 @@ begin
   select e.state into v_event_state from public.events e where e.id = v_event;
   if v_event_state is distinct from 'settled' then
     raise exception 'event_not_settled' using errcode = '22023';
+  end if;
+  -- Only active payment instructions: a payer loses access once the transfer is confirmed.
+  if v_role not in ('owner', 'cohost') and v_uid <> v_receiver and v_transfer_state = 'confirmed' then
+    raise exception 'not_allowed' using errcode = '22023';
   end if;
 
   return query

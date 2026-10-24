@@ -44,6 +44,12 @@ async function call(client: SupabaseClient, fn: string, args: Record<string, unk
   return data
 }
 
+// Best-effort delete; a failure is logged without details (the path and messages can hold user ids).
+async function removeQr(client: SupabaseClient, path: string): Promise<void> {
+  const { error } = await client.storage.from(QR_BUCKET).remove([path])
+  if (error) console.warn('payment QR cleanup failed')
+}
+
 export function createPaymentRepository(client: SupabaseClient = supabase) {
   return {
     async saveMyPaymentDetails(eventId: string, details: PaymentDetailsInput, qrFile?: File): Promise<void> {
@@ -79,15 +85,18 @@ export function createPaymentRepository(client: SupabaseClient = supabase) {
       }
       // Insert or update rather than upsert: clients may not UPDATE the key columns,
       // which a PostgREST upsert would set.
-      const { error } = existing.data
-        ? await client.from('payment_details').update(row).eq('event_id', eventId).eq('receiver_user_id', me)
+      const update = () => client.from('payment_details').update(row).eq('event_id', eventId).eq('receiver_user_id', me)
+      let { error } = existing.data
+        ? await update()
         : await client.from('payment_details').insert({ event_id: eventId, receiver_user_id: me, ...row })
+      // A concurrent save inserted the row first: retry once as an update.
+      if (error && !existing.data && (error as { code?: string }).code === '23505') ({ error } = await update())
       if (error) {
-        if (newPath) await client.storage.from(QR_BUCKET).remove([newPath])
+        if (newPath) await removeQr(client, newPath)
         throw new SettlementError(toSettlementErrorCode(error), error)
       }
       // Best effort: an orphaned old QR is only reachable by the same people.
-      if (newPath && oldPath) await client.storage.from(QR_BUCKET).remove([oldPath])
+      if (newPath && oldPath) await removeQr(client, oldPath)
     },
 
     // null when the receiver has not entered payment details yet.

@@ -1,5 +1,5 @@
 begin;
-select plan(266);
+select plan(276);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -82,8 +82,8 @@ values ('f0000000-0000-0000-0000-000000000001', 'eeeeeeee-eeee-eeee-eeee-eeeeeee
   'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Dinner', current_date, 1000, 'equal');
 insert into public.settlements (id, event_id, method, confirmed_by)
 values ('f2000000-0000-0000-0000-000000000001', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'original_payers', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
-insert into public.settlement_transfers (settlement_id, payer_user_id, receiver_user_id, amount_cents)
-values ('f2000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500);
+insert into public.settlement_transfers (settlement_id, payer_user_id, receiver_user_id, amount_cents, ordinal)
+values ('f2000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500, 1);
 insert into public.payment_details (event_id, receiver_user_id, preferred_method, account_number) values
   ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bank', '111'),
   ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bank', '222');
@@ -890,6 +890,12 @@ select results_eq($$select payer_user_id, receiver_user_id, amount_cents, state:
            ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 35000::bigint, 'pending'::text),
            ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 30000::bigint, 'pending'::text)$$,
   'the coordinator transfers are stored as pending');
+select results_eq($$select ordinal, payer_user_id, receiver_user_id from public.settlement_transfers
+    where settlement_id = (select id from s9 where k = 's1') order by ordinal$$,
+  $$values (1, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid),
+           (2, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid),
+           (3, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid)$$,
+  'transfer ordinals keep the generation order of settleViaCoordinator');
 select row_eq($$select state::text, settled_at is not null, revision from public.events where id = '9ae00000-0000-0000-0000-000000000001'$$,
   row('settled'::text, true, (select n + 1 from s9 where k = 'rev1')), 'the event is settled and its revision bumped');
 select is((select metadata from public.activity_log where event_id = '9ae00000-0000-0000-0000-000000000001' and action = 'settlement_confirmed'),
@@ -1038,6 +1044,47 @@ select is((select array_agg(distinct state::text) from public.settlement_transfe
 select is((select count(*)::int from public.payment_details
     where event_id = '9ae00000-0000-0000-0000-000000000001' and delete_after = now() + interval '7 days'), 2,
   'payment details expire seven days after the event is fully paid');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$insert into public.payment_details (event_id, receiver_user_id, preferred_method, account_number)
+    values ('9ae00000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'bank', '777')$$,
+  'a receiver can still add details after the event is fully paid');
+select throws_ok($$select * from public.get_receiver_details(pg_temp.t('t2'))$$, '22023', 'not_allowed',
+  'a payer whose transfer is confirmed can no longer read the receiver details');
+select is((select count(*)::int from public.payment_details where receiver_user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    and event_id = '9ae00000-0000-0000-0000-000000000001'), 0,
+  'nor read them directly once nothing is owed');
+reset role;
+select is((select delete_after from public.payment_details where event_id = '9ae00000-0000-0000-0000-000000000001'
+    and receiver_user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'), now() + interval '7 days',
+  'details added after full payment get delete_after too');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select is((select count(*)::int from public.get_receiver_details(pg_temp.t('t2'))), 1,
+  'the receiver still reads their own details after confirmation');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select is((select count(*)::int from public.get_receiver_details(pg_temp.t('t2'))), 1,
+  'a cohost still reads receiver details after confirmation');
+reset role;
+
+-- S3 (still unpaid): no-row receiver details, owner override on a pending transfer.
+insert into s9 (k, id) select 's3ca', id from public.settlement_transfers where settlement_id = (select id from s9 where k = 's3') and receiver_user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+insert into s9 (k, id) select 's3cb', id from public.settlement_transfers where settlement_id = (select id from s9 where k = 's3') and receiver_user_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select is((select count(*)::int from public.get_receiver_details(pg_temp.t('s3cb'))), 0,
+  'no row when the receiver has not entered details');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.override_payment_state(pg_temp.t('s3ca'), 'confirmed', 'Handed over in person')$$,
+  'the owner overrides a pending transfer');
+reset role;
+select results_eq($$select actor_user_id, old_state::text, new_state::text from public.payment_events where transfer_id = pg_temp.t('s3ca')$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'pending'::text, 'confirmed'::text)$$,
+  'owner override pending -> confirmed is recorded');
 
 -- Activity stays redacted: ids and states only, never bank numbers, QR paths or reasons.
 select is((select count(*)::int from public.activity_log where event_id = '9ae00000-0000-0000-0000-000000000001'
@@ -1056,7 +1103,7 @@ select is((select count(*)::int from public.payment_events), 0, 'an outsider see
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
-select is((select count(*)::int from public.payment_events), 5, 'the owner sees every payment event');
+select is((select count(*)::int from public.payment_events), 6, 'the owner sees every payment event (S1 and S3)');
 reset role;
 
 -- Payment RPCs need a settled event (the seed event has a transfer but is still open).
