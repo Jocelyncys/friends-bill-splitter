@@ -1,8 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
-import type { EventMode } from '../../domain/types'
+import type { EventMode, EventRole, EventState } from '../../domain/types'
+import { EXPENSE_SUMMARY_COLUMNS, toExpenseSummary, type ExpenseRow, type ExpenseSummary } from '../expenses/expenseRepository'
 
-export type CreateEventInput = { name: string; mode: EventMode; currency: 'MYR' }
+export type CreateEventInput = { name: string; mode: EventMode; currency: 'MYR'; displayName: string }
+
+export type EventMember = { userId: string; displayName: string; role: EventRole }
+
+export type AttentionItem = { kind: 'unclaimed_items'; expenseId: string; description: string; unallocatedCents: number }
+
+export type EventHome = {
+  event: { id: string; name: string; mode: EventMode; currency: string; state: EventState; revision: number }
+  me: EventMember
+  members: EventMember[]
+  expenses: ExpenseSummary[] // newest first
+  groupTotalCents: number
+  attention: AttentionItem[]
+}
 
 // `returns table(...)` RPCs come back from supabase-js as an array of rows.
 function firstRow<T>(data: T[] | null, fn: string): T {
@@ -14,17 +28,66 @@ function firstRow<T>(data: T[] | null, fn: string): T {
 export function createEventRepository(client: SupabaseClient = supabase) {
   return {
     async createEvent(input: CreateEventInput) {
-      const { data, error } = await client.rpc('create_event', input)
+      const displayName = input.displayName.trim()
+      const { data, error } = await client.rpc('create_event', {
+        name: input.name,
+        mode: input.mode,
+        currency: input.currency,
+        display_name: displayName,
+      })
       if (error) throw error
       const row = firstRow<{ event_id: string; invite_token: string }>(data, 'create_event')
+      localStorage.setItem('preferredName', displayName)
       return { eventId: row.event_id, inviteToken: row.invite_token }
     },
     async joinEvent(inviteToken: string, displayName: string) {
-      const { data, error } = await client.rpc('join_event', { invite_token: inviteToken, display_name: displayName })
+      const name = displayName.trim()
+      const { data, error } = await client.rpc('join_event', { invite_token: inviteToken, display_name: name })
       if (error) throw error
       const row = firstRow<{ event_id: string }>(data, 'join_event')
-      localStorage.setItem('preferredName', displayName)
+      localStorage.setItem('preferredName', name)
       return row.event_id
+    },
+    // Plain RLS-protected reads; a non-member gets no rows.
+    async getEventHome(eventId: string): Promise<EventHome> {
+      const [session, eventResult, membersResult, expensesResult] = await Promise.all([
+        client.auth.getSession(),
+        client.from('events').select('id, name, mode, currency, state, revision').eq('id', eventId).single(),
+        client.from('event_members').select('user_id, display_name, role').eq('event_id', eventId).order('joined_at'),
+        client
+          .from('expenses')
+          .select(`${EXPENSE_SUMMARY_COLUMNS}, allocations(amount_cents)`)
+          .eq('event_id', eventId)
+          .order('created_at', { ascending: false }),
+      ])
+      for (const result of [eventResult, membersResult, expensesResult]) if (result.error) throw result.error
+
+      const members = (membersResult.data as Array<{ user_id: string; display_name: string; role: EventRole }>).map(m => ({
+        userId: m.user_id,
+        displayName: m.display_name,
+        role: m.role,
+      }))
+      const me = members.find(m => m.userId === session.data.session?.user.id)
+      if (!me) throw new Error('not_member')
+
+      const rows = expensesResult.data as Array<ExpenseRow & { allocations: Array<{ amount_cents: number }> }>
+      const attention: AttentionItem[] = []
+      for (const row of rows) {
+        if (row.split_method !== 'item_claim' && row.split_method !== 'host_assignment') continue
+        const allocated = row.allocations.reduce((sum, a) => sum + a.amount_cents, 0)
+        if (allocated < row.total_cents) {
+          attention.push({ kind: 'unclaimed_items', expenseId: row.id, description: row.description, unallocatedCents: row.total_cents - allocated })
+        }
+      }
+
+      return {
+        event: eventResult.data as EventHome['event'],
+        me,
+        members,
+        expenses: rows.map(toExpenseSummary),
+        groupTotalCents: rows.reduce((sum, row) => sum + row.total_cents, 0),
+        attention,
+      }
     },
   }
 }
