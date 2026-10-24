@@ -1,0 +1,8 @@
+{
+  "language": { "label": "语言" },
+  "home": {
+    "chooseMode": "你想怎样分账？",
+    "singleBill": "单次账单",
+    "tripEvent": "旅行或活动"
+  }
+}

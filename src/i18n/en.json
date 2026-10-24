@@ -1,0 +1,8 @@
+{
+  "language": { "label": "Language" },
+  "home": {
+    "chooseMode": "What would you like to split?",
+    "singleBill": "Single Bill",
+    "tripEvent": "Trip or Event"
+  }
+}

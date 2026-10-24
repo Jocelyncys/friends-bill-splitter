@@ -1,0 +1,17 @@
+:root {
+  --color-primary: #763e61;
+  --color-primary-strong: #60314f;
+  --color-surface: #fff8fc;
+  --color-surface-muted: #f3e6ee;
+  --color-accent: #d6a9c1;
+  --color-text: #2d2028;
+  --color-text-muted: #78636f;
+  --color-warning-bg: #fff6e8;
+  --radius-card: 1rem;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
