@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { formatMoney } from '../../domain/money'
 import type { EventHome } from '../events/eventRepository'
 import { EventStatus } from '../events/EventStatus'
+import { displayNames } from '../events/memberNames'
 import { useEventHome } from '../events/useEventHome'
 import {
   buildPayload,
@@ -44,6 +45,8 @@ export function ExpenseEditorPage() {
 }
 
 function EditorForm({ home }: { home: EventHome }) {
+  const labels = displayNames(home.members)
+  const nameOf = (userId: string, fallback: string) => labels.get(userId) ?? fallback
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -165,12 +168,12 @@ function EditorForm({ home }: { home: EventHome }) {
             {t('editor.payer')}
             <select value={draft.payerUserId} onChange={e => set('payerUserId', e.target.value)}>
               {home.members.map(m => (
-                <option key={m.userId} value={m.userId}>{m.displayName}</option>
+                <option key={m.userId} value={m.userId}>{nameOf(m.userId, m.displayName)}</option>
               ))}
             </select>
           </label>
         ) : (
-          <p>{t('editor.payer')}: <strong>{home.me.displayName}</strong></p>
+          <p>{t('editor.payer')}: <strong>{nameOf(home.me.userId, home.me.displayName)}</strong></p>
         )}
         {fieldError('payer')}
 
@@ -201,7 +204,7 @@ function EditorForm({ home }: { home: EventHome }) {
                     set('participantIds', e.target.checked ? [...draft.participantIds, m.userId] : draft.participantIds.filter(id => id !== m.userId))
                   }
                 />
-                {m.displayName}
+                {nameOf(m.userId, m.displayName)}
               </label>
             ))}
             {fieldError('participants')}
@@ -213,7 +216,7 @@ function EditorForm({ home }: { home: EventHome }) {
             <legend>{t('editor.participants')}</legend>
             {home.members.map(m => (
               <label key={m.userId}>
-                {t('editor.shareFor', { name: m.displayName })}
+                {t('editor.shareFor', { name: nameOf(m.userId, m.displayName) })}
                 <input
                   inputMode="decimal"
                   value={draft.shares[m.userId] ?? ''}
@@ -252,7 +255,7 @@ function EditorForm({ home }: { home: EventHome }) {
                     <select value={item.assigneeId} onChange={e => setItem(index, { assigneeId: e.target.value })}>
                       <option value="">{t('editor.chooseMember')}</option>
                       {home.members.map(m => (
-                        <option key={m.userId} value={m.userId}>{m.displayName}</option>
+                        <option key={m.userId} value={m.userId}>{nameOf(m.userId, m.displayName)}</option>
                       ))}
                     </select>
                   </label>

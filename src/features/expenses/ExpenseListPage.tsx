@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useOutletContext, useParams } from 'react-router-dom'
 import type { ShellContext } from '../../components/shellContext'
 import { formatMoney } from '../../domain/money'
+import { displayNames } from '../events/memberNames'
 import { EventStatus } from '../events/EventStatus'
 import { useEventHome } from '../events/useEventHome'
 import { createExpenseRepository, type ExpenseSummary } from './expenseRepository'
@@ -32,7 +33,7 @@ export function ExpenseListPage() {
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
   const current = loaded?.eventId === eventId ? loaded : null
-  const names = new Map(home.members.map(m => [m.userId, m.displayName]))
+  const names = displayNames(home.members)
   const expenses = current && 'expenses' in current ? [...current.expenses].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : []
 
   return (

@@ -1,5 +1,6 @@
+import { StrictMode } from 'react'
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type StatusCallback = (status: string) => void
 const mocks = vi.hoisted(() => ({
@@ -12,10 +13,12 @@ vi.mock('../../lib/supabase', () => ({ supabase: { channel: mocks.channelFactory
 import { useEventRealtime } from './useEventRealtime'
 
 describe('useEventRealtime', () => {
+  const flush = () => act(() => { vi.advanceTimersByTime(300) })
   let onPayload: () => void
   let onStatus: StatusCallback
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useFakeTimers()
     mocks.channelFactory.mockReturnValue(mocks.channel)
     mocks.channel.on.mockImplementation((_type: string, _filter: unknown, cb: () => void) => {
       onPayload = cb
@@ -25,6 +28,10 @@ describe('useEventRealtime', () => {
       onStatus = cb
       return mocks.channel
     })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('subscribes only to the open event row and refreshes on a payload', () => {
@@ -38,6 +45,16 @@ describe('useEventRealtime', () => {
       expect.any(Function),
     )
     act(() => onPayload())
+    expect(refresh).not.toHaveBeenCalled()
+    flush()
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('coalesces a burst of payloads into one refresh', () => {
+    const refresh = vi.fn()
+    renderHook(() => useEventRealtime('event-1', refresh))
+    act(() => { onPayload(); onPayload(); onPayload() })
+    flush()
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 
@@ -47,12 +64,14 @@ describe('useEventRealtime', () => {
     expect(result.current).toBe('connecting')
     act(() => onStatus('SUBSCRIBED'))
     expect(result.current).toBe('live')
-    expect(refresh).not.toHaveBeenCalled()
+    flush()
+    expect(refresh).toHaveBeenCalledTimes(1) // first subscribe catches up on missed changes
     act(() => onStatus('CHANNEL_ERROR'))
     expect(result.current).toBe('offline')
     act(() => onStatus('SUBSCRIBED'))
     expect(result.current).toBe('live')
-    expect(refresh).toHaveBeenCalledTimes(1)
+    flush()
+    expect(refresh).toHaveBeenCalledTimes(2)
     act(() => onStatus('CLOSED'))
     expect(result.current).toBe('offline')
   })
@@ -64,6 +83,20 @@ describe('useEventRealtime', () => {
     expect(mocks.channelFactory).toHaveBeenLastCalledWith('event:event-2')
     unmount()
     expect(mocks.removeChannel).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores a late CLOSED from a removed channel of the same event (StrictMode remount)', () => {
+    const callbacks: StatusCallback[] = []
+    mocks.channel.subscribe.mockImplementation((cb: StatusCallback) => {
+      callbacks.push(cb)
+      return mocks.channel
+    })
+    const { result } = renderHook(() => useEventRealtime('event-1', vi.fn()), { wrapper: StrictMode })
+    expect(callbacks).toHaveLength(2)
+    act(() => callbacks[1]('SUBSCRIBED'))
+    expect(result.current).toBe('live')
+    act(() => callbacks[0]('CLOSED'))
+    expect(result.current).toBe('live')
   })
 
   it('does not subscribe without an event id', () => {

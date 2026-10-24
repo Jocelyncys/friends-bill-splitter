@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { formatMoney } from '../../domain/money'
 
 type ExpenseSummary = { id: string; description: string; totalCents: number }
-export type AttentionEntry = string | { label: string; onSelect: () => void }
+export type AttentionEntry = string | { id: string; label: string; onSelect: () => void }
 type Props = {
   eventName: string
   expenses: ExpenseSummary[]
@@ -34,8 +34,9 @@ export function EventHomePage({ eventName, expenses, attention, currency = 'MYR'
           <ul>
             {attention.map(item => {
               const label = typeof item === 'string' ? item : item.label
+              const key = typeof item === 'string' ? item : item.id
               return (
-                <li key={label}>
+                <li key={key}>
                   {typeof item === 'string' ? label : <button type="button" onClick={item.onSelect}>{label}</button>}
                 </li>
               )

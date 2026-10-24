@@ -203,3 +203,55 @@ end $$;
 
 revoke execute on function public.set_claiming_closed(uuid, boolean) from public, anon;
 grant execute on function public.set_claiming_closed(uuid, boolean) to authenticated;
+
+-- set_member_role: the caller's role is read AFTER the event lock (a demotion that
+-- committed while waiting for the lock must not be bypassed). Behaviour otherwise as 0006.
+create or replace function public.set_member_role(event_id uuid, member_id uuid, role public.event_role)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  v_uid uuid := auth.uid();
+  v_caller public.event_role;
+  v_state public.event_state;
+  v_target public.event_role;
+begin
+  if v_uid is null then
+    raise exception 'not_authenticated' using errcode = '28000';
+  end if;
+  select e.state into v_state from public.events e where e.id = set_member_role.event_id for update;
+  select m.role into v_caller from public.event_members m
+  where m.event_id = set_member_role.event_id and m.user_id = v_uid;
+  if v_caller is distinct from 'owner' then
+    raise exception 'not_allowed' using errcode = '22023';
+  end if;
+  if v_state is distinct from 'open' then
+    raise exception 'event_not_open' using errcode = '22023';
+  end if;
+  select m.role into v_target from public.event_members m
+  where m.event_id = set_member_role.event_id and m.user_id = set_member_role.member_id
+  for update;
+  if not found then
+    raise exception 'not_member' using errcode = '22023';
+  end if;
+  if v_target = 'owner' or set_member_role.role is null or set_member_role.role not in ('participant', 'cohost') then
+    raise exception 'invalid_role_change' using errcode = '22023';
+  end if;
+  if v_target = set_member_role.role then
+    return;
+  end if;
+
+  update public.event_members m set role = set_member_role.role
+  where m.event_id = set_member_role.event_id and m.user_id = set_member_role.member_id;
+
+  update public.events e set revision = e.revision + 1 where e.id = set_member_role.event_id;
+  insert into public.activity_log (event_id, actor_user_id, action, metadata)
+  values (set_member_role.event_id, v_uid, 'member_role_changed',
+    jsonb_build_object('member_id', set_member_role.member_id));
+end $$;
+
+revoke execute on function public.set_member_role(uuid, uuid, public.event_role) from public, anon;
+grant execute on function public.set_member_role(uuid, uuid, public.event_role) to authenticated;

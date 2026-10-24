@@ -8,7 +8,7 @@ import { useEventHome } from '../events/useEventHome'
 import { ActionError, createClaimRepository, type ExpenseClaims } from './claimRepository'
 import { ClaimItemsPage, type ClaimItemView } from './ClaimItemsPage'
 
-type Loaded = { expenseId: string; claims: ExpenseClaims } | { expenseId: string; failed: true }
+type Loaded = { expenseId: string; claims: ExpenseClaims }
 
 function subscribeOnline(callback: () => void) {
   window.addEventListener('online', callback)
@@ -28,6 +28,7 @@ export function ClaimItemsRoute() {
   const state = useEventHome(eventId)
   const online = useSyncExternalStore(subscribeOnline, isOnline)
   const [loaded, setLoaded] = useState<Loaded | null>(null)
+  const [loadFailedFor, setLoadFailedFor] = useState<string | null>(null)
   const [localTick, setLocalTick] = useState(0)
   const [busy, setBusy] = useState(false)
   const [errorCode, setErrorCode] = useState<string | null>(null)
@@ -37,8 +38,13 @@ export function ClaimItemsRoute() {
     createClaimRepository()
       .getExpenseClaims(expenseId)
       .then(
-        claims => !cancelled && setLoaded({ expenseId, claims }),
-        () => !cancelled && setLoaded({ expenseId, failed: true }),
+        claims => {
+          if (cancelled) return
+          setLoaded({ expenseId, claims })
+          setLoadFailedFor(null)
+        },
+        // Keep showing the last good data; the page shows a banner instead.
+        () => !cancelled && setLoadFailedFor(expenseId),
       )
     return () => {
       cancelled = true
@@ -47,8 +53,7 @@ export function ClaimItemsRoute() {
 
   if (state.status !== 'ready') return <EventStatus state={state} />
   const current = loaded?.expenseId === expenseId ? loaded : null
-  if (!current) return <p role="status">{t('common.loading')}</p>
-  if ('failed' in current) return <p role="alert">{t('event.loadFailed')}</p>
+  if (!current) return loadFailedFor === expenseId ? <p role="alert">{t('event.loadFailed')}</p> : <p role="status">{t('common.loading')}</p>
 
   const { home } = state
   const { claims } = current
@@ -94,7 +99,7 @@ export function ClaimItemsRoute() {
       currency={home.event.currency}
       offline={!online}
       busy={busy}
-      errorMessage={errorCode ? t(`actionError.${errorCode}`) : undefined}
+      errorMessage={errorCode ? t(`actionError.${errorCode}`) : loadFailedFor === expenseId ? t('event.loadFailed') : undefined}
       onClaim={itemId => void run(() => repository.claimItem(itemId))}
       onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
       onAssign={(itemId, memberId) => void run(() => repository.assignItem(itemId, memberId))}

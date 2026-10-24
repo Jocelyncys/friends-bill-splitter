@@ -16,6 +16,7 @@ export function EventRoute() {
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
   const attention = home.attention.map(item => ({
+    id: item.expenseId,
     label: t('event.unclaimed', { description: item.description, amount: formatMoney(item.unallocatedCents, home.event.currency, i18n.language) }),
     onSelect: () => navigate(`/event/${eventId}/expenses/${item.expenseId}/claim`),
   }))
