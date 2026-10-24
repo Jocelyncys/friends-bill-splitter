@@ -8,7 +8,12 @@
     "tripEvent": "Trip or Event"
   },
   "nav": { "label": "Main", "home": "Home", "expenses": "Expenses", "people": "People" },
-  "people": { "comingSoon": "People and roles are coming soon." },
+  "people": {
+    "you": "{{name}} (you)",
+    "role": { "owner": "Owner", "cohost": "Co-host", "participant": "Participant" },
+    "makeCohost": "Make co-host: {{name}}",
+    "makeParticipant": "Make participant: {{name}}"
+  },
   "create": {
     "title": "Create an event",
     "eventName": "Event name",
@@ -44,7 +49,9 @@
     "title": "Expenses",
     "add": "Add expense",
     "empty": "No expenses yet.",
-    "paidBy": "Paid by {{name}}"
+    "paidBy": "Paid by {{name}}",
+    "claimItems": "Claim items",
+    "viewItems": "View items"
   },
   "editor": {
     "title": "Add expense",
@@ -117,5 +124,36 @@
     "not_allowed": "You are not allowed to change this expense.",
     "not_authenticated": "Your session has expired. Please reload and try again.",
     "save_failed": "Could not save the expense. Please try again."
+  },
+  "realtime": { "offline": "Reconnecting… data may be out of date." },
+  "claim": {
+    "title": "Claim items",
+    "claimForMe": "Claim for me",
+    "unclaim": "Unclaim",
+    "assignTo": "Assign to {{name}}",
+    "assignGroup": "Assign {{item}}",
+    "close": "Close claiming",
+    "reopen": "Reopen claiming",
+    "closedNote": "Claiming is closed. Only the host can still assign items.",
+    "offline": "You are offline. Claiming needs an internet connection.",
+    "noItems": "This expense has no items.",
+    "nobody": "Nobody yet",
+    "claimedBy": "Claimed by: {{names}}",
+    "assignedTo": "Assigned to: {{names}}",
+    "sharesTitle": "Each person’s share",
+    "unclaimedTotal": "Not yet claimed: {{amount}}"
+  },
+  "actionError": {
+    "item_not_found": "This item could not be found.",
+    "event_not_open": "This event is closed, so nothing can be changed.",
+    "not_claimable": "This item cannot be claimed this way.",
+    "claiming_closed": "Claiming is closed for this expense.",
+    "not_allowed": "You are not allowed to do that.",
+    "not_member": "That person is not a member of this event.",
+    "invalid_role_change": "That role change is not allowed.",
+    "invalid_payload": "The request could not be read. Please try again.",
+    "not_authenticated": "Your session has expired. Please reload and try again.",
+    "expense_not_found": "This expense could not be found.",
+    "action_failed": "Something went wrong. Please try again."
   }
 }

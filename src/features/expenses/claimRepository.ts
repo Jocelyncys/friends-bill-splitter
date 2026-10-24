@@ -41,20 +41,20 @@ const ACTION_ERROR_CODES = [
   'invalid_payload',
 ] as const
 
-export type ClaimErrorCode = (typeof ACTION_ERROR_CODES)[number] | 'not_authenticated' | 'expense_not_found' | 'action_failed'
+export type ActionErrorCode = (typeof ACTION_ERROR_CODES)[number] | 'not_authenticated' | 'expense_not_found' | 'action_failed'
 
-export class ClaimActionError extends Error {
-  readonly code: ClaimErrorCode
-  constructor(code: ClaimErrorCode, cause?: unknown) {
+export class ActionError extends Error {
+  readonly code: ActionErrorCode
+  constructor(code: ActionErrorCode, cause?: unknown) {
     super(code, { cause })
-    this.name = 'ClaimActionError'
+    this.name = 'ActionError'
     this.code = code
   }
 }
 
-export function toClaimErrorCode(error: { code?: string; message?: string }): ClaimErrorCode {
+export function toActionErrorCode(error: { code?: string; message?: string }): ActionErrorCode {
   if (error.code === '22023' && (ACTION_ERROR_CODES as readonly string[]).includes(error.message ?? '')) {
-    return error.message as ClaimErrorCode
+    return error.message as ActionErrorCode
   }
   if (error.code === '28000') return 'not_authenticated'
   return 'action_failed'
@@ -63,7 +63,7 @@ export function toClaimErrorCode(error: { code?: string; message?: string }): Cl
 // Shared by the role RPC in eventRepository.
 export async function callAction(client: SupabaseClient, fn: string, args: Record<string, unknown>): Promise<void> {
   const { error } = await client.rpc(fn, args)
-  if (error) throw new ClaimActionError(toClaimErrorCode(error), error)
+  if (error) throw new ActionError(toActionErrorCode(error), error)
 }
 
 type ExpenseClaimsRow = {
@@ -95,8 +95,8 @@ export function createClaimRepository(client: SupabaseClient = supabase) {
         )
         .eq('id', expenseId)
         .maybeSingle()
-      if (error) throw error
-      if (!data) throw new ClaimActionError('expense_not_found')
+      if (error) throw new ActionError('action_failed', error)
+      if (!data) throw new ActionError('expense_not_found')
       const row = data as unknown as ExpenseClaimsRow
       return {
         id: row.id,

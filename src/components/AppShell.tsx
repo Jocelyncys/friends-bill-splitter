@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet, useParams } from 'react-router-dom'
+import { useEventRealtime } from '../features/events/useEventRealtime'
 import type { ShellContext } from './shellContext'
 
 const LANGUAGES = [
@@ -12,7 +13,10 @@ export function AppShell() {
   const { t, i18n } = useTranslation()
   const { eventId } = useParams()
   const [eventName, setEventName] = useState('')
-  const context: ShellContext = { setEventName }
+  const [refreshKey, setRefreshKey] = useState(0)
+  const refresh = useCallback(() => setRefreshKey(key => key + 1), [])
+  const realtimeStatus = useEventRealtime(eventId, refresh)
+  const context: ShellContext = { setEventName, refreshKey, refresh, realtimeStatus }
 
   useEffect(() => {
     document.documentElement.lang = i18n.language
@@ -36,6 +40,9 @@ export function AppShell() {
           ))}
         </div>
       </header>
+      {eventId && realtimeStatus === 'offline' && (
+        <p className="stale-banner" role="status">{t('realtime.offline')}</p>
+      )}
       <div className="app-content">
         <Outlet context={context} />
       </div>

@@ -1,0 +1,104 @@
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useOutletContext, useParams } from 'react-router-dom'
+import type { ShellContext } from '../../components/shellContext'
+import { displayNames } from '../events/memberNames'
+import { EventStatus } from '../events/EventStatus'
+import { useEventHome } from '../events/useEventHome'
+import { ActionError, createClaimRepository, type ExpenseClaims } from './claimRepository'
+import { ClaimItemsPage, type ClaimItemView } from './ClaimItemsPage'
+
+type Loaded = { expenseId: string; claims: ExpenseClaims } | { expenseId: string; failed: true }
+
+function subscribeOnline(callback: () => void) {
+  window.addEventListener('online', callback)
+  window.addEventListener('offline', callback)
+  return () => {
+    window.removeEventListener('online', callback)
+    window.removeEventListener('offline', callback)
+  }
+}
+const isOnline = () => navigator.onLine
+
+export function ClaimItemsRoute() {
+  const { eventId = '', expenseId = '' } = useParams()
+  const { t } = useTranslation()
+  const shell = useOutletContext<ShellContext | undefined>()
+  const refreshKey = shell?.refreshKey ?? 0
+  const state = useEventHome(eventId)
+  const online = useSyncExternalStore(subscribeOnline, isOnline)
+  const [loaded, setLoaded] = useState<Loaded | null>(null)
+  const [localTick, setLocalTick] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    createClaimRepository()
+      .getExpenseClaims(expenseId)
+      .then(
+        claims => !cancelled && setLoaded({ expenseId, claims }),
+        () => !cancelled && setLoaded({ expenseId, failed: true }),
+      )
+    return () => {
+      cancelled = true
+    }
+  }, [expenseId, refreshKey, localTick])
+
+  if (state.status !== 'ready') return <EventStatus state={state} />
+  const current = loaded?.expenseId === expenseId ? loaded : null
+  if (!current) return <p role="status">{t('common.loading')}</p>
+  if ('failed' in current) return <p role="alert">{t('event.loadFailed')}</p>
+
+  const { home } = state
+  const { claims } = current
+  const labels = displayNames(home.members)
+  const participants = home.members.map(m => ({ id: m.userId, name: labels.get(m.userId) ?? m.displayName }))
+  const items: ClaimItemView[] = claims.items.map(item => {
+    const rows = claims.allocations.filter(a => a.itemId === item.id)
+    return {
+      id: item.id,
+      description: item.description,
+      quantity: item.quantity,
+      totalCents: item.totalCents,
+      claims: rows.map(a => ({ userId: a.participantUserId, amountCents: a.amountCents })),
+      assigned: rows.some(a => a.source !== 'self_claim'),
+    }
+  })
+
+  // After any action (even a failed one) reload so the page shows the server's truth.
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true)
+    setErrorCode(null)
+    try {
+      await action()
+    } catch (error) {
+      setErrorCode(error instanceof ActionError ? error.code : 'action_failed')
+    } finally {
+      setBusy(false)
+      setLocalTick(tick => tick + 1)
+      shell?.refresh()
+    }
+  }
+  const repository = createClaimRepository()
+
+  return (
+    <ClaimItemsPage
+      role={home.me.role}
+      currentUserId={home.me.userId}
+      participants={participants}
+      items={items}
+      splitMethod={claims.splitMethod}
+      claimingClosed={claims.claimingClosed}
+      canManage={home.me.role !== 'participant' || claims.creatorUserId === home.me.userId}
+      currency={home.event.currency}
+      offline={!online}
+      busy={busy}
+      errorMessage={errorCode ? t(`actionError.${errorCode}`) : undefined}
+      onClaim={itemId => void run(() => repository.claimItem(itemId))}
+      onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
+      onAssign={(itemId, memberId) => void run(() => repository.assignItem(itemId, memberId))}
+      onToggleClosed={closed => void run(() => repository.setClaimingClosed(expenseId, closed))}
+    />
+  )
+}

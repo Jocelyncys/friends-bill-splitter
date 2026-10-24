@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createEventRepository } from './eventRepository'
-import { ClaimActionError } from '../expenses/claimRepository'
+import { ActionError } from '../expenses/claimRepository'
 
 type Result = { data: unknown; error: unknown }
 type Builder = { select(): Builder; eq(): Builder; order(): Builder; maybeSingle(): Builder; then(resolve: (r: Result) => unknown): Promise<unknown> }
@@ -124,7 +124,7 @@ describe('eventRepository', () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: '22023', message: 'invalid_role_change' } })
     const repository = createEventRepository({ rpc } as never)
     const error = await repository.setMemberRole('event-1', 'user-1', 'participant').catch((e: unknown) => e)
-    expect(error).toBeInstanceOf(ClaimActionError)
-    expect((error as ClaimActionError).code).toBe('invalid_role_change')
+    expect(error).toBeInstanceOf(ActionError)
+    expect((error as ActionError).code).toBe('invalid_role_change')
   })
 })

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useOutletContext, useParams } from 'react-router-dom'
+import type { ShellContext } from '../../components/shellContext'
 import { formatMoney } from '../../domain/money'
 import { EventStatus } from '../events/EventStatus'
 import { useEventHome } from '../events/useEventHome'
@@ -12,6 +13,7 @@ export function ExpenseListPage() {
   const { eventId = '' } = useParams()
   const { t, i18n } = useTranslation()
   const state = useEventHome(eventId)
+  const refreshKey = useOutletContext<ShellContext | undefined>()?.refreshKey ?? 0
   const [loaded, setLoaded] = useState<Loaded | null>(null)
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export function ExpenseListPage() {
     return () => {
       cancelled = true
     }
-  }, [eventId])
+  }, [eventId, refreshKey])
 
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
@@ -47,6 +49,11 @@ export function ExpenseListPage() {
             <small>{t('expenses.paidBy', { name: names.get(expense.payerUserId) ?? '?' })}</small>
           </div>
           <strong>{formatMoney(expense.totalCents, home.event.currency, i18n.language)}</strong>
+          {(expense.splitMethod === 'item_claim' || expense.splitMethod === 'host_assignment') && (
+            <Link to={`/event/${eventId}/expenses/${expense.id}/claim`}>
+              {expense.splitMethod === 'item_claim' ? t('expenses.claimItems') : t('expenses.viewItems')}
+            </Link>
+          )}
         </article>
       ))}
     </main>

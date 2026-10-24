@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { formatMoney } from '../../domain/money'
 
 type ExpenseSummary = { id: string; description: string; totalCents: number }
+export type AttentionEntry = string | { label: string; onSelect: () => void }
 type Props = {
   eventName: string
   expenses: ExpenseSummary[]
-  attention: string[]
+  attention: AttentionEntry[]
   currency?: string
   onScanReceipt?: () => void
   onAddExpense?: () => void
@@ -30,7 +31,16 @@ export function EventHomePage({ eventName, expenses, attention, currency = 'MYR'
       {attention.length > 0 && (
         <section className="attention">
           <h2>{t('event.needsAttention')}</h2>
-          <ul>{attention.map(item => <li key={item}>{item}</li>)}</ul>
+          <ul>
+            {attention.map(item => {
+              const label = typeof item === 'string' ? item : item.label
+              return (
+                <li key={label}>
+                  {typeof item === 'string' ? label : <button type="button" onClick={item.onSelect}>{label}</button>}
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
       {!empty && (

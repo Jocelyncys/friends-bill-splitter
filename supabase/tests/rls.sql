@@ -1,5 +1,5 @@
 begin;
-select plan(175);
+select plan(193);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -419,9 +419,8 @@ select is((select count(*)::int from unnest(array['public.resplit_item_claims(uu
   where has_function_privilege('authenticated', f.sig, 'execute') or has_function_privilege('anon', f.sig, 'execute')),
   0, 'clients cannot execute the internal claim helpers');
 select is((select array_agg(tablename::text order by tablename) from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public'
-      and tablename in ('allocations', 'event_members', 'events', 'expense_items', 'expenses')),
-  array['allocations', 'event_members', 'events', 'expense_items', 'expenses'], 'core tables are in the supabase_realtime publication');
+    where pubname = 'supabase_realtime' and schemaname = 'public'),
+  array['events'], 'only public.events is published to realtime (DELETE payloads bypass RLS)');
 
 -- F: a second participant in the seed event.
 insert into auth.users (id, instance_id, aud, role)
@@ -578,6 +577,42 @@ select results_eq($$select user_id::text, role::text from public.event_members
 select is((select metadata from public.activity_log where action = 'member_role_changed' order by id desc limit 1),
   jsonb_build_object('member_id', 'cccccccc-cccc-cccc-cccc-cccccccccccc'), 'role activity is redacted to ids');
 
+-- Task 7b: revision + redacted activity for assign / close / role; owner source; cohost can close.
+update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'ffffffff-ffff-ffff-ffff-ffffffffffff')$$, 'the owner assigns an item');
+reset role;
+select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7), 'assign bumps the event revision');
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = '7a100000-0000-0000-0000-000000000002' order by 1$$,
+  $$values ('ffffffff-ffff-ffff-ffff-ffffffffffff', 500::bigint, 'owner')$$,
+  'an owner assignment has source owner');
+select is((select metadata from public.activity_log where action = 'item_assigned' order by id desc limit 1),
+  jsonb_build_object('expense_id', '7a000000-0000-0000-0000-000000000001', 'item_id', '7a100000-0000-0000-0000-000000000002', 'member_id', 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  'assign activity is redacted to ids');
+update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select lives_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000001', true)$$, 'a cohost can close claiming');
+reset role;
+select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7), 'close bumps the event revision');
+select is((select metadata from public.activity_log where action = 'claiming_closed' order by id desc limit 1),
+  jsonb_build_object('expense_id', '7a000000-0000-0000-0000-000000000001'), 'close activity is redacted to the expense id');
+update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'cohost')$$, 'the owner promotes F');
+reset role;
+select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7), 'a role change bumps the event revision');
+select is((select metadata from public.activity_log where action = 'member_role_changed' order by id desc limit 1),
+  jsonb_build_object('member_id', 'ffffffff-ffff-ffff-ffff-ffffffffffff'), 'role activity names only the member id');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.set_member_role('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'participant')$$, 'the owner demotes F again');
+select lives_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000001', false)$$, 'the owner reopens claiming');
+reset role;
+
 -- Carry-forward: save_expense keeps self-claims of surviving items.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
@@ -607,6 +642,31 @@ select results_eq($$select participant_user_id::text, amount_cents, source from 
     where expense_id = '7a000000-0000-0000-0000-000000000003' order by 1$$,
   $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 501::bigint, 'self_claim'), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 500::bigint, 'self_claim')$$,
   'claims survive an item rename and are re-split to the new item total; claims on the removed item are gone');
+
+-- Task 7b: join_event and a direct expense delete bump the event revision.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('7be00000-0000-0000-0000-000000000001', 'Joinable', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  encode(extensions.digest('tok7b', 'sha256'), 'hex'));
+insert into public.event_members (event_id, user_id, display_name, role)
+values ('7be00000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner');
+update rev7 set n = (select revision from public.events where id = '7be00000-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select lives_ok($$select public.join_event('tok7b', 'Dee')$$, 'a user joins through the invite');
+reset role;
+select is((select revision from public.events where id = '7be00000-0000-0000-0000-000000000001'), (select n + 1 from rev7),
+  'join_event bumps the event revision');
+select is((select count(*)::int from public.event_members where event_id = '7be00000-0000-0000-0000-000000000001' and user_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd'), 1,
+  'the joiner is a member');
+
+update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$delete from public.expenses where id = '7a000000-0000-0000-0000-000000000003'$$, 'the owner deletes an expense directly');
+reset role;
+select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7), 'a direct expense delete bumps the event revision');
+select is((select metadata from public.activity_log where action = 'expense_deleted' order by id desc limit 1),
+  jsonb_build_object('expense_id', '7a000000-0000-0000-0000-000000000003'), 'delete activity is redacted to the expense id');
 
 -- Every RPC is rejected once the event is not open.
 insert into public.events (id, name, mode, owner_user_id, invite_token_hash)

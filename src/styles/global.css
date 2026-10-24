@@ -183,3 +183,37 @@ fieldset {
   font-weight: 700;
   border-top: 3px solid var(--color-primary);
 }
+
+.stale-banner {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  background: var(--color-warning-bg);
+  color: var(--color-primary-strong);
+}
+
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.role-badge {
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-primary-strong);
+  font-size: 0.85rem;
+}
+
+.claim-item {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-surface-muted);
+}
+
+.claim-assign {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

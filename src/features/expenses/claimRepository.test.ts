@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ClaimActionError, createClaimRepository, toClaimErrorCode } from './claimRepository'
+import { ActionError, createClaimRepository, toActionErrorCode } from './claimRepository'
 
 type Result = { data: unknown; error: unknown }
 type Builder = { select(): Builder; eq(): Builder; maybeSingle(): Builder; then(resolve: (r: Result) => unknown): Promise<unknown> }
@@ -30,15 +30,15 @@ describe('claimRepository', () => {
       .mockResolvedValueOnce({ data: null, error: { code: '08006', message: 'connection failure' } })
     const repository = createClaimRepository({ rpc } as never)
     const error = await repository.claimItem('item-1').catch((e: unknown) => e)
-    expect(error).toBeInstanceOf(ClaimActionError)
-    expect((error as ClaimActionError).code).toBe('claiming_closed')
+    expect(error).toBeInstanceOf(ActionError)
+    expect((error as ActionError).code).toBe('claiming_closed')
     await expect(repository.claimItem('item-1')).rejects.toMatchObject({ code: 'action_failed' })
   })
 
   it('maps auth and unknown 22023 messages', () => {
-    expect(toClaimErrorCode({ code: '28000', message: 'not_authenticated' })).toBe('not_authenticated')
-    expect(toClaimErrorCode({ code: '22023', message: 'something_else' })).toBe('action_failed')
-    expect(toClaimErrorCode({ code: '22023', message: 'invalid_role_change' })).toBe('invalid_role_change')
+    expect(toActionErrorCode({ code: '28000', message: 'not_authenticated' })).toBe('not_authenticated')
+    expect(toActionErrorCode({ code: '22023', message: 'something_else' })).toBe('action_failed')
+    expect(toActionErrorCode({ code: '22023', message: 'invalid_role_change' })).toBe('invalid_role_change')
   })
 
   it('loads an expense with its items (sorted) and allocations in camelCase cents', async () => {
@@ -71,5 +71,15 @@ describe('claimRepository', () => {
     const from = vi.fn(() => builder({ data: null, error: null }))
     const repository = createClaimRepository({ from } as never)
     await expect(repository.getExpenseClaims('exp-x')).rejects.toMatchObject({ code: 'expense_not_found' })
+  })
+})
+
+describe('getExpenseClaims read errors', () => {
+  it('maps a failed read to a typed action_failed error', async () => {
+    const from = vi.fn(() => builder({ data: null, error: { code: '500', message: 'boom' } }))
+    const repository = createClaimRepository({ from } as never)
+    const error = await repository.getExpenseClaims('exp-1').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ActionError)
+    expect((error as ActionError).code).toBe('action_failed')
   })
 })

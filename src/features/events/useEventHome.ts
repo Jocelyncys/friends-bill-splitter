@@ -12,7 +12,9 @@ export type EventHomeState =
 
 export function useEventHome(eventId: string): EventHomeState {
   const [settled, setSettled] = useState<Settled | null>(null)
-  const setEventName = useOutletContext<ShellContext | undefined>()?.setEventName
+  const shell = useOutletContext<ShellContext | undefined>()
+  const setEventName = shell?.setEventName
+  const refreshKey = shell?.refreshKey ?? 0
 
   useEffect(() => {
     let cancelled = false
@@ -32,7 +34,7 @@ export function useEventHome(eventId: string): EventHomeState {
     return () => {
       cancelled = true
     }
-  }, [eventId, setEventName])
+  }, [eventId, setEventName, refreshKey])
 
   if (!settled || settled.eventId !== eventId) return { status: 'loading' }
   return 'home' in settled ? { status: 'ready', home: settled.home } : { status: 'error', error: settled.error }

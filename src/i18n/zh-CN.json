@@ -8,7 +8,12 @@
     "tripEvent": "旅行或活动"
   },
   "nav": { "label": "主导航", "home": "首页", "expenses": "开销", "people": "成员" },
-  "people": { "comingSoon": "成员与角色功能即将推出。" },
+  "people": {
+    "you": "{{name}}（你）",
+    "role": { "owner": "创建者", "cohost": "共同主持", "participant": "参与者" },
+    "makeCohost": "设为共同主持：{{name}}",
+    "makeParticipant": "设为参与者：{{name}}"
+  },
   "create": {
     "title": "创建活动",
     "eventName": "活动名称",
@@ -44,7 +49,9 @@
     "title": "开销",
     "add": "添加开销",
     "empty": "还没有开销。",
-    "paidBy": "由 {{name}} 支付"
+    "paidBy": "由 {{name}} 支付",
+    "claimItems": "认领项目",
+    "viewItems": "查看项目"
   },
   "editor": {
     "title": "添加开销",
@@ -117,5 +124,36 @@
     "not_allowed": "你无权修改此开销。",
     "not_authenticated": "登录已过期，请刷新后重试。",
     "save_failed": "无法保存开销，请重试。"
+  },
+  "realtime": { "offline": "正在重新连接…数据可能已过时。" },
+  "claim": {
+    "title": "认领项目",
+    "claimForMe": "我来认领",
+    "unclaim": "取消认领",
+    "assignTo": "分配给{{name}}",
+    "assignGroup": "分配{{item}}",
+    "close": "关闭认领",
+    "reopen": "重新开放认领",
+    "closedNote": "认领已关闭，只有主持人可以继续分配项目。",
+    "offline": "你已离线，认领需要网络连接。",
+    "noItems": "这笔开销没有项目。",
+    "nobody": "暂无人认领",
+    "claimedBy": "认领者：{{names}}",
+    "assignedTo": "分配给：{{names}}",
+    "sharesTitle": "每人应付金额",
+    "unclaimedTotal": "尚未认领：{{amount}}"
+  },
+  "actionError": {
+    "item_not_found": "找不到这个项目。",
+    "event_not_open": "此活动已关闭，无法再做任何更改。",
+    "not_claimable": "这个项目不能这样认领。",
+    "claiming_closed": "这笔开销已关闭认领。",
+    "not_allowed": "你没有权限执行此操作。",
+    "not_member": "该成员不属于此活动。",
+    "invalid_role_change": "不允许这样更改角色。",
+    "invalid_payload": "无法读取请求，请重试。",
+    "not_authenticated": "登录已过期，请重新加载后再试。",
+    "expense_not_found": "找不到这笔开销。",
+    "action_failed": "出错了，请重试。"
   }
 }

@@ -49,7 +49,7 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       localStorage.setItem('preferredName', name)
       return row.event_id
     },
-    // Owner only, participant <-> cohost; failures throw ClaimActionError.
+    // Owner only, participant <-> cohost; failures throw ActionError.
     setMemberRole: (eventId: string, memberId: string, role: Exclude<EventRole, 'owner'>) =>
       callAction(client, 'set_member_role', { event_id: eventId, member_id: memberId, role }),
     // Plain RLS-protected reads; a non-member gets no rows.
