@@ -21,9 +21,22 @@ React + TypeScript + Vite, backed by Supabase, deployed to GitHub Pages.
 | `npx supabase test db` | Database / RLS tests (pgTAP) against the local Supabase |
 | `npm run build` | Downloads OCR assets if missing (`prebuild`), type-checks and builds to `dist/` |
 | `npm run check:sw` | Asserts the built service worker never touches Supabase and does not precache OCR files |
+| `npm run e2e` | Playwright end-to-end tests (see below) |
 | `npm run lint` | ESLint |
 | `npm run fetch:ocr` | Downloads PP-OCRv5 models + onnxruntime-web wasm, verifying pinned SHA-256 hashes |
 | `npm run icons` | Regenerates the PWA icons in `public/icons/` |
+
+## End-to-end tests
+
+`npm run e2e` (= `npx playwright test`) runs `e2e/` in Chromium at 360×800 (`mobile`) and 1280×800 (`desktop`)
+against the **local** Supabase stack: start it first with `npx supabase start`, and install the browser once with
+`npx playwright install chromium`. The config reads the local API URL and publishable key from
+`npx supabase status` (or from `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` if set), builds the app and
+serves it with `vite preview` on port 4173, so the CSP and service worker are exercised as deployed. Each browser
+context is a separate anonymous user, which is why the local `anonymous_users` rate limit in
+`supabase/config.toml` is raised. Screenshots of the key screens in both languages land in `test-results/`.
+The OCR test (desktop only) scans `e2e/fixtures/receipt.png` (regenerate with
+`node e2e/fixtures/generate-receipt.mjs`) and fails on any request to a third-party origin.
 
 ## OCR assets
 
@@ -61,8 +74,8 @@ expense can still be entered by hand; everything else in the app works.
 `.github/workflows/pages.yml` builds and deploys `main`. Set the Pages source to GitHub Actions and add the
 repository **variables** (not secrets; both are public by design) `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_PUBLISHABLE_KEY`. The app uses relative paths and a hash router, so it works under the
-`/<repo>/` sub-path. `.github/workflows/ci.yml` runs lint, unit tests, build, the service-worker check and the
-Supabase database tests on every push and pull request.
+`/<repo>/` sub-path. `.github/workflows/ci.yml` runs lint, unit tests, build, the service-worker check, the
+Supabase database tests and the Playwright suite on every push and pull request.
 
 ## Release checklist
 

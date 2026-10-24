@@ -28,3 +28,32 @@ jobs:
       - run: npx supabase test db
       - if: always()
         run: npx supabase stop --no-backup
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npx supabase start
+      # Public local values only (API URL + publishable key); the secret key is never exported.
+      - name: Point the app at the local Supabase
+        run: |
+          npx supabase status -o env | grep -E '^(API_URL|PUBLISHABLE_KEY)=' | sed -e 's/^API_URL=/VITE_SUPABASE_URL=/' -e 's/^PUBLISHABLE_KEY=/VITE_SUPABASE_PUBLISHABLE_KEY=/' -e 's/"//g' >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: public/ocr-models
+          key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.mjs') }}
+      - run: node scripts/fetch-ocr-models.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - if: always()
+        run: npx supabase stop --no-backup

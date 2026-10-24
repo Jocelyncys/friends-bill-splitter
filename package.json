@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "check:sw": "node scripts/check-sw.mjs",
+    "e2e": "playwright test",
     "fetch:ocr": "node scripts/fetch-ocr-models.mjs",
     "icons": "node scripts/generate-icons.mjs"
   },

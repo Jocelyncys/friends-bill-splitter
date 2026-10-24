@@ -2,9 +2,10 @@
 // imported, which the page's Content-Security-Policy forbids; a worker loaded from its own URL is not
 // governed by the page's <meta> CSP. The SDK then runs inference in its own nested worker as before.
 import { findUntrustedAsset } from './assetGuard'
+import { groupIntoLines } from './ocrLines'
 import type { OcrAssets, OcrReply, OcrRequest } from './ocrEngine'
 
-type Engine = { predict: (image: Blob) => Promise<{ items: { text: string; score: number }[] }[]> }
+type Engine = { predict: (image: Blob) => Promise<{ items: { text: string; score: number; poly: Array<[number, number]> }[] }[]> }
 let engine: Promise<Engine> | undefined
 
 function createEngine(assets: OcrAssets): Promise<Engine> {
@@ -42,7 +43,7 @@ addEventListener('message', async (event: MessageEvent<OcrRequest>) => {
     const ocr = await engine
     reply({ phase: 'recognizing' })
     const [result] = await ocr.predict(event.data.image)
-    reply({ lines: result.items.filter(item => item.score >= 0.5).map(item => item.text) })
+    reply({ lines: groupIntoLines(result.items.filter(item => item.score >= 0.5)) })
   } catch (err) {
     reply({ error: err instanceof Error ? err.message : String(err) })
   }

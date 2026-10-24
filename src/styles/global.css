@@ -117,6 +117,7 @@ select:focus-visible {
 
 .form,
 .form label,
+.form .field-stack,
 .item-row,
 fieldset {
   display: flex;

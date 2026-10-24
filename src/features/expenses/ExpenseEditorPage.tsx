@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import type { ShellContext } from '../../components/shellContext'
@@ -74,6 +74,9 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
   const syncDrafts = useOutletContext<ShellContext | undefined>()?.syncDrafts
   // A reopened draft keeps its id: the server treats the resend as the same expense.
   const [expenseId] = useState(() => saved?.id ?? crypto.randomUUID())
+  // Selects sit beside (not inside) their <label>: a wrapping label's text would include every option,
+  // so e.g. "Custom amounts" made the split-method select match a search for the "Amount" field.
+  const formId = useId()
   const [draft, setDraft] = useState<ExpenseDraft>(() => saved ? draftFromPayload(saved) : {
     description: '',
     amount: '',
@@ -202,14 +205,14 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
         )}
 
         {canPickPayer ? (
-          <label>
-            {t('editor.payer')}
-            <select value={draft.payerUserId} onChange={e => set('payerUserId', e.target.value)}>
+          <div className="field-stack">
+            <label htmlFor={`${formId}-payer`}>{t('editor.payer')}</label>
+            <select id={`${formId}-payer`} value={draft.payerUserId} onChange={e => set('payerUserId', e.target.value)}>
               {home.members.map(m => (
                 <option key={m.userId} value={m.userId}>{nameOf(m.userId, m.displayName)}</option>
               ))}
             </select>
-          </label>
+          </div>
         ) : (
           <p>{t('editor.payer')}: <strong>{nameOf(home.me.userId, home.me.displayName)}</strong></p>
         )}
@@ -221,14 +224,14 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
         </label>
         {fieldError('date')}
 
-        <label>
-          {t('editor.splitMethod')}
-          <select value={draft.splitMethod} onChange={e => changeMethod(e.target.value as DraftSplitMethod)}>
+        <div className="field-stack">
+          <label htmlFor={`${formId}-split`}>{t('editor.splitMethod')}</label>
+          <select id={`${formId}-split`} value={draft.splitMethod} onChange={e => changeMethod(e.target.value as DraftSplitMethod)}>
             {METHODS.map(m => (
               <option key={m} value={m}>{t(`editor.method.${m}`)}</option>
             ))}
           </select>
-        </label>
+        </div>
 
         {draft.splitMethod === 'equal' && (
           <fieldset>

@@ -1,7 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { loadEnv, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import { buildCsp, injectCsp } from './src/lib/csp.ts'
 
 // OCR files are large and only needed when someone scans a receipt: keep them out of the precache
@@ -82,6 +82,7 @@ export default defineConfig(({ mode }) => ({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    exclude: [...configDefaults.exclude, 'e2e/**'], // Playwright specs, run by `npm run e2e`
     // Dummy values so createClient() does not throw at import time in tests.
     env: { VITE_SUPABASE_URL: 'http://127.0.0.1:54321', VITE_SUPABASE_PUBLISHABLE_KEY: 'test-publishable-key' },
   },
