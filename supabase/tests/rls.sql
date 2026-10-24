@@ -1,5 +1,5 @@
 begin;
-select plan(113);
+select plan(119);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -124,11 +124,18 @@ select throws_ok($$update public.expenses set event_id = 'eeeeeeee-eeee-eeee-eee
   '42501', null, 'creator cannot move an expense to another event');
 select throws_ok($$update public.expenses set payer_user_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd' where id = 'f0000000-0000-0000-0000-000000000001'$$,
   '42501', null, 'creator cannot set a non-member as payer');
-select is(pg_temp.upd_count($q$update public.expenses set description = 'Lunch' where id = 'f0000000-0000-0000-0000-000000000001'$q$),
-  1, 'creator can edit their expense description');
-select lives_ok($$insert into public.expense_items (id, expense_id, description, total_cents)
+-- Expense data is written only through save_expense (Task 5a); direct writes are denied.
+select throws_ok($$update public.expenses set description = 'Lunch' where id = 'f0000000-0000-0000-0000-000000000001'$$,
+  '42501', 'permission denied for table expenses', 'creator cannot edit expense columns directly');
+select throws_ok($$update public.expenses set total_cents = 1 where id = 'f0000000-0000-0000-0000-000000000001'$$,
+  '42501', 'permission denied for table expenses', 'creator cannot change the total directly');
+select throws_ok($$insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+  values ('f0000000-0000-0000-0000-000000000003', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Direct', current_date, 100, 'equal')$$,
+  '42501', 'permission denied for table expenses', 'participant cannot insert an expense directly');
+select throws_ok($$insert into public.expense_items (id, expense_id, description, total_cents)
   values ('f1000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000001', 'x', 1)$$,
-  'creator can add items');
+  '42501', 'permission denied for table expense_items', 'creator cannot insert items directly');
 select throws_ok($$update public.expense_items set expense_id = 'f0000000-0000-0000-0000-000000000002' where id = 'f1000000-0000-0000-0000-000000000001'$$,
   '42501', null, 'items cannot be repointed to another expense');
 select lives_ok($$insert into storage.objects (bucket_id, name) values
@@ -246,6 +253,10 @@ select is((select has_function_privilege('authenticated', 'public.enforce_open_e
   false, 'clients cannot execute the open-event trigger function');
 select is((select has_column_privilege('authenticated', 'public.expenses', 'payer_user_id', 'update')),
   false, 'payer_user_id is not directly updatable by clients');
+select ok(not has_any_column_privilege('authenticated', 'public.expenses', 'insert, update')
+    and not has_any_column_privilege('authenticated', 'public.expense_items', 'insert, update')
+    and not has_table_privilege('authenticated', 'public.expense_items', 'delete'),
+  'clients have no insert/update on expenses and no writes on expense_items');
 
 create function pg_temp.al(p_item uuid, p_who uuid, p_amt int) returns jsonb language sql as $$
   select jsonb_build_object('item_id', p_item, 'participant_user_id', p_who, 'amount_cents', p_amt) $$;
@@ -308,6 +319,13 @@ select throws_ok($$select public.save_expense(pg_temp.exp('5a000000-0000-0000-00
     jsonb_build_array(pg_temp.it('5a100000-0000-0000-0000-000000000009', 500, 0)),
     jsonb_build_array(pg_temp.al(null, 'cccccccc-cccc-cccc-cccc-cccccccccccc', 500))))$$,
   '22023', 'items_not_allowed', 'equal split cannot carry items');
+select throws_ok($$select public.save_expense(pg_temp.exp('5a000000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '500', 'custom', '[]',
+    jsonb_build_array(pg_temp.al(null, 'cccccccc-cccc-cccc-cccc-cccccccccccc', null))))$$,
+  '22023', 'invalid_allocation', 'null allocation amount is rejected');
+select throws_ok($$select public.save_expense(pg_temp.exp('5a000000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '500', 'item_claim',
+    jsonb_build_array(jsonb_build_object('id', '5a100000-0000-0000-0000-000000000009', 'description', 'Item', 'quantity', 1, 'total_cents', '500', 'sort_order', 0)),
+    '[]'))$$,
+  '22023', 'invalid_item', 'string item amount is rejected');
 select throws_ok($$select public.save_expense(pg_temp.exp('5a000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '1200', 'equal', '[]',
     jsonb_build_array(pg_temp.al(null, 'cccccccc-cccc-cccc-cccc-cccccccccccc', 1200)), '5ae00000-0000-0000-0000-000000000002'))$$,
   '22023', 'event_mismatch', 'an existing expense cannot move to another event');
@@ -370,13 +388,16 @@ values ('5a100000-0000-0000-0000-000000000006', '5a000000-0000-0000-0000-0000000
 insert into public.allocations (expense_id, item_id, participant_user_id, amount_cents, source)
 values ('5a000000-0000-0000-0000-000000000004', '5a100000-0000-0000-0000-000000000006', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 500, 'self_claim');
 update public.events set state = 'settled' where id = '5ae00000-0000-0000-0000-000000000002';
-set local role authenticated;
-set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+-- Clients can no longer write items/expense columns directly, so these run as the server role.
 select throws_ok($$insert into public.expense_items (id, expense_id, description, total_cents)
     values ('5a100000-0000-0000-0000-000000000007', '5a000000-0000-0000-0000-000000000004', 'x', 1)$$,
   '22023', 'event_not_open', 'items cannot be added after settlement');
 select throws_ok($$update public.expenses set description = 'Bus' where id = '5a000000-0000-0000-0000-000000000004'$$,
   '22023', 'event_not_open', 'expense cannot be edited after settlement');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$delete from public.expenses where id = '5a000000-0000-0000-0000-000000000004'$$,
+  '22023', 'event_not_open', 'creator cannot delete an expense after settlement');
 reset role;
 select throws_ok($$delete from public.allocations where expense_id = '5a000000-0000-0000-0000-000000000004'$$,
   '22023', 'event_not_open', 'allocations cannot be removed after settlement, even by the server role');

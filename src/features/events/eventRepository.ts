@@ -52,7 +52,7 @@ export function createEventRepository(client: SupabaseClient = supabase) {
     async getEventHome(eventId: string): Promise<EventHome> {
       const [session, eventResult, membersResult, expensesResult] = await Promise.all([
         client.auth.getSession(),
-        client.from('events').select('id, name, mode, currency, state, revision').eq('id', eventId).single(),
+        client.from('events').select('id, name, mode, currency, state, revision').eq('id', eventId).maybeSingle(),
         client.from('event_members').select('user_id, display_name, role').eq('event_id', eventId).order('joined_at'),
         client
           .from('expenses')
@@ -60,6 +60,8 @@ export function createEventRepository(client: SupabaseClient = supabase) {
           .eq('event_id', eventId)
           .order('created_at', { ascending: false }),
       ])
+      // RLS returns no event row to a non-member (PGRST116 if a single row was required).
+      if (eventResult.error?.code === 'PGRST116' || (!eventResult.error && !eventResult.data)) throw new Error('not_member')
       for (const result of [eventResult, membersResult, expensesResult]) if (result.error) throw result.error
 
       const members = (membersResult.data as Array<{ user_id: string; display_name: string; role: EventRole }>).map(m => ({

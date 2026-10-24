@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { createEventRepository } from './eventRepository'
 
 type Result = { data: unknown; error: unknown }
-type Builder = { select(): Builder; eq(): Builder; order(): Builder; single(): Builder; then(resolve: (r: Result) => unknown): Promise<unknown> }
+type Builder = { select(): Builder; eq(): Builder; order(): Builder; maybeSingle(): Builder; then(resolve: (r: Result) => unknown): Promise<unknown> }
 function builder(result: Result): Builder {
-  const b: Builder = { select: () => b, eq: () => b, order: () => b, single: () => b, then: resolve => Promise.resolve(result).then(resolve) }
+  const b: Builder = { select: () => b, eq: () => b, order: () => b, maybeSingle: () => b, then: resolve => Promise.resolve(result).then(resolve) }
   return b
 }
 
@@ -88,9 +88,21 @@ describe('eventRepository', () => {
     })
   })
 
-  it('rejects getEventHome when the caller is not a member', async () => {
+  it('rejects getEventHome when RLS hides the event from a non-member', async () => {
     const results: Record<string, Result> = {
-      events: { data: { id: 'event-1', name: 'x', mode: 'single_bill', currency: 'MYR', state: 'open', revision: 0 }, error: null },
+      events: { data: null, error: null },
+      event_members: { data: [], error: null },
+      expenses: { data: [], error: null },
+    }
+    const from = vi.fn((table: string) => builder(results[table]))
+    const getSession = vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-9' } } }, error: null })
+    const repository = createEventRepository({ from, auth: { getSession } } as never)
+    await expect(repository.getEventHome('event-1')).rejects.toThrow('not_member')
+  })
+
+  it('maps a PGRST116 no-row error on the event to not_member', async () => {
+    const results: Record<string, Result> = {
+      events: { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } },
       event_members: { data: [], error: null },
       expenses: { data: [], error: null },
     }

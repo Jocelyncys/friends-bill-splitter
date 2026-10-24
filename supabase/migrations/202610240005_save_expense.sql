@@ -9,8 +9,14 @@
 -- duplicate_allocation, not_member, allocation_mismatch, allocation_exceeds_item);
 -- 28000 not_authenticated. The client maps these keys to form errors.
 
--- Payer changes happen only through save_expense.
-revoke update (payer_user_id) on public.expenses from authenticated;
+-- save_expense is the only write path for expense data. The Task 3 insert/update
+-- policies stay in place but are inert without these privileges. Expense DELETE
+-- stays (creator/manager policy + the open-event trigger below); claiming_closed
+-- moves to a dedicated RPC in Task 7.
+revoke insert on public.expenses from authenticated;
+revoke update (payer_user_id, description, category, expense_date, total_cents, split_method, claiming_closed)
+  on public.expenses from authenticated;
+revoke insert, update, delete on public.expense_items from authenticated;
 
 -- Open-event guard ---------------------------------------------------------------
 -- Rejects any insert/update/delete of an expense, item or allocation whose parent
@@ -36,11 +42,12 @@ begin
 
   foreach v_row in array v_rows loop
     if tg_table_name = 'expenses' then
-      select e.state into v_state from public.events e where e.id = (v_row->>'event_id')::uuid;
+      select e.state into v_state from public.events e where e.id = (v_row->>'event_id')::uuid for share;
     else
       select e.state into v_state
       from public.expenses x join public.events e on e.id = x.event_id
-      where x.id = (v_row->>'expense_id')::uuid;
+      where x.id = (v_row->>'expense_id')::uuid
+      for share of e;
     end if;
     if found and v_state <> 'open' then
       raise exception 'event_not_open' using errcode = '22023';
@@ -190,15 +197,25 @@ begin
   end if;
 
   -- Items: well-formed, integer cents, unique ids (also across other expenses).
+  -- Numeric fields must be JSON numbers (not numeric strings), like total_cents.
+  if exists(
+    select 1 from jsonb_array_elements(v_items) as e(v)
+    where jsonb_typeof(e.v) is distinct from 'object'
+      or jsonb_typeof(e.v->'total_cents') is distinct from 'number'
+      or coalesce(jsonb_typeof(e.v->'quantity'), 'number') <> 'number'
+      or coalesce(jsonb_typeof(e.v->'sort_order'), 'number') <> 'number') then
+    raise exception 'invalid_item' using errcode = '22023';
+  end if;
   begin
     select count(*), count(distinct t.id), coalesce(sum(t.total_cents), 0),
-      coalesce(bool_and(
+      bool_and(coalesce(
         t.id is not null
         and char_length(btrim(coalesce(t.description, ''))) between 1 and 120
         and coalesce(t.quantity, 1) = trunc(coalesce(t.quantity, 1)) and coalesce(t.quantity, 1) between 1 and 2147483647
+        and t.total_cents is not null
         and t.total_cents = trunc(t.total_cents) and t.total_cents between 0 and 9007199254740991
         and coalesce(t.sort_order, 0) = trunc(coalesce(t.sort_order, 0))
-        and coalesce(t.sort_order, 0) between -2147483648 and 2147483647), true)
+        and coalesce(t.sort_order, 0) between -2147483648 and 2147483647, false))
     into v_count, v_distinct, v_sum, v_ok
     from jsonb_to_recordset(v_items) as t(id uuid, description text, quantity numeric, total_cents numeric, sort_order numeric);
   exception when others then
@@ -227,13 +244,22 @@ begin
     end if;
   end if;
 
-  -- Allocations: non-negative integer cents, one row per (item, participant).
+  -- Allocations: non-negative integer cents (JSON numbers), one row per (item, participant).
+  if exists(
+    select 1 from jsonb_array_elements(v_allocs) as e(v)
+    where jsonb_typeof(e.v) is distinct from 'object'
+      or jsonb_typeof(e.v->'amount_cents') is distinct from 'number'
+      or jsonb_typeof(e.v->'participant_user_id') is distinct from 'string'
+      or coalesce(jsonb_typeof(e.v->'item_id'), 'null') not in ('null', 'string')) then
+    raise exception 'invalid_allocation' using errcode = '22023';
+  end if;
   begin
     select count(*), count(distinct coalesce(a.item_id::text, '') || ':' || a.participant_user_id::text),
       coalesce(sum(a.amount_cents), 0),
-      coalesce(bool_and(
+      bool_and(coalesce(
         a.participant_user_id is not null
-        and a.amount_cents = trunc(a.amount_cents) and a.amount_cents between 0 and 9007199254740991), true)
+        and a.amount_cents is not null
+        and a.amount_cents = trunc(a.amount_cents) and a.amount_cents between 0 and 9007199254740991, false))
     into v_count, v_distinct, v_sum, v_ok
     from jsonb_to_recordset(v_allocs) as a(item_id uuid, participant_user_id uuid, amount_cents numeric);
   exception when others then
