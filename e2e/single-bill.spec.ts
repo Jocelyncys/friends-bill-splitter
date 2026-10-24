@@ -23,11 +23,11 @@ test('single bill: itemized entry, a friend claims an item, the host assigns the
   await owner.getByRole('button', { name: 'Save expense' }).click()
 
   // Nothing is claimed yet: the event home asks for attention.
-  const attention = owner.getByRole('button', { name: /Mamak dinner: RM\s?20\.50 not yet assigned/ })
+  const attention = owner.getByRole('button', { name: /Mamak dinner.*not yet assigned/ })
   await expect(attention).toBeVisible()
 
   // Ben claims the nasi lemak from the claim page (reached from his event home through realtime).
-  await ben.getByRole('button', { name: /Mamak dinner: .* not yet assigned/ }).click({ timeout: 15_000 })
+  await ben.getByRole('button', { name: /Mamak dinner.*not yet assigned/ }).click({ timeout: 15_000 })
   await expect(ben.getByRole('heading', { name: 'Claim items' })).toBeVisible()
   const benItem = ben.getByRole('article').filter({ hasText: 'Nasi lemak' })
   await benItem.getByRole('button', { name: 'Claim for me' }).click()

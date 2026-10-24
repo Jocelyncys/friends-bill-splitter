@@ -41,7 +41,7 @@ export function PeoplePage() {
       <h1>{t('nav.people')}</h1>
       {!online && isOwner && <p role="status" className="muted">{t('people.offline')}</p>}
       {errorCode && <p className="form-error" role="alert">{t(`actionError.${errorCode}`)}</p>}
-      <ul className="plain-list">
+      <ul className="plain-list" aria-label={t('people.listLabel')}>
         {home.members.map(member => {
           const label = labels.get(member.userId) ?? member.displayName
           const you = member.userId === home.me.userId

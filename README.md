@@ -22,6 +22,7 @@ React + TypeScript + Vite, backed by Supabase, deployed to GitHub Pages.
 | `npm run build` | Downloads OCR assets if missing (`prebuild`), type-checks and builds to `dist/` |
 | `npm run check:sw` | Asserts the built service worker never touches Supabase and does not precache OCR files |
 | `npm run e2e` | Playwright end-to-end tests (see below) |
+| `npm run e2e:supabase` | Restarts local Supabase with the e2e-only anonymous sign-in limit |
 | `npm run lint` | ESLint |
 | `npm run fetch:ocr` | Downloads PP-OCRv5 models + onnxruntime-web wasm, verifying pinned SHA-256 hashes |
 | `npm run icons` | Regenerates the PWA icons in `public/icons/` |
@@ -33,8 +34,10 @@ against the **local** Supabase stack: start it first with `npx supabase start`, 
 `npx playwright install chromium`. The config reads the local API URL and publishable key from
 `npx supabase status` (or from `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` if set), builds the app and
 serves it with `vite preview` on port 4173, so the CSP and service worker are exercised as deployed. Each browser
-context is a separate anonymous user, which is why the local `anonymous_users` rate limit in
-`supabase/config.toml` is raised. Screenshots of the key screens in both languages land in `test-results/`.
+context is a separate anonymous user, so the suite needs a higher anonymous sign-in limit than the committed
+`anonymous_users = 30`: run `npm run e2e:supabase` once before `npm run e2e`. It restarts the local stack with the
+limit at 1000 and restores `supabase/config.toml` straight away, so git stays clean (CI seds its own checkout).
+Never `supabase config push` with a test override in the file. Screenshots of the key screens in both languages land in `test-results/`.
 The OCR test (desktop only) scans `e2e/fixtures/receipt.png` (regenerate with
 `node e2e/fixtures/generate-receipt.mjs`) and fails on any request to a third-party origin.
 

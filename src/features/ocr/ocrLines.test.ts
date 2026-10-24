@@ -34,4 +34,16 @@ describe('groupIntoLines', () => {
   it('keeps closely spaced rows apart and skips empty boxes', () => {
     expect(groupIntoLines([box('A 1.00', 0, 0), box('', 0, 20), box('B 2.00', 0, 32)])).toEqual(['A 1.00', 'B 2.00'])
   })
+
+  it('keeps a tilted row together when the price sits half a line lower than its description', () => {
+    // 30 px boxes on 45 px line spacing; the photo is rotated so the right edge is 16 px lower.
+    const boxes = [box('Nasi Lemak', 30, 60), box('12.50', 380, 76), box('Teh Tarik', 30, 105), box('3.80', 390, 121)]
+    expect(groupIntoLines(boxes)).toEqual(['Nasi Lemak 12.50', 'Teh Tarik 3.80'])
+  })
+
+  it('handles zero-height polygons without merging separate rows', () => {
+    const flat = (text: string, x: number, y: number): OcrBox => ({ text, poly: [[x, y], [x + 50, y]] })
+    expect(groupIntoLines([flat('A', 0, 0), flat('1.00', 100, 0), flat('B', 0, 40)])).toEqual(['A 1.00', 'B'])
+    expect(groupIntoLines([box('Kopi', 0, 0), flat('9.00', 200, 15), box('Teh', 0, 45)])).toEqual(['Kopi 9.00', 'Teh'])
+  })
 })

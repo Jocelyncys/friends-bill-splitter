@@ -290,3 +290,11 @@ describe('ExpenseEditorPage', () => {
     })
   })
 })
+
+it('has exactly one field labelled "Amount" (the split-method select must not match via its options)', async () => {
+  renderEditor()
+  await screen.findByLabelText('Description')
+  expect(screen.getAllByLabelText('Amount')).toHaveLength(1)
+  expect(screen.getAllByLabelText(/amount/i)).toEqual([screen.getByRole('textbox', { name: 'Amount' })])
+  expect(screen.getByLabelText('Split method').tagName).toBe('SELECT')
+})

@@ -24,6 +24,7 @@
     "people": "People"
   },
   "people": {
+    "listLabel": "Event members",
     "you": "{{name}} (you)",
     "role": {
       "owner": "Owner",

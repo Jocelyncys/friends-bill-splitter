@@ -2,6 +2,9 @@ import { expect, test } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import { createEvent } from './helpers.ts'
 
+// No retries: a slow or failing OCR run should be seen, not retried away.
+test.describe.configure({ retries: 0 })
+
 const RECEIPT = fileURLToPath(new URL('./fixtures/receipt.png', import.meta.url))
 
 // Receipt OCR runs fully in the browser on self-hosted models: no request may leave for a third party.

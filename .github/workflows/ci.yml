@@ -30,11 +30,15 @@ jobs:
         run: npx supabase stop --no-backup
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
+      # Test-only: every browser context is a new anonymous user. Edits this runner's checkout only;
+      # the committed config keeps 30 (never `supabase config push` a test override).
+      - run: sed -i -E 's/^anonymous_users = [0-9]+$/anonymous_users = 1000/' supabase/config.toml
       - run: npx supabase start
       # Public local values only (API URL + publishable key); the secret key is never exported.
       - name: Point the app at the local Supabase
@@ -46,8 +50,9 @@ jobs:
           key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.mjs') }}
       - run: node scripts/fetch-ocr-models.mjs
       - run: npx playwright install --with-deps chromium
+      # The list reporter prints retried-then-passed tests under "flaky" in its summary; the html report keeps them too.
       - run: npx playwright test
-      - if: failure()
+      - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

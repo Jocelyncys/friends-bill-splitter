@@ -34,7 +34,7 @@ test('two friends split a trip, settle with the optimized plan, and complete the
 
   // Owner watches the People page while Ben joins: realtime must list him without a reload.
   await owner.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'People' }).click()
-  const people = owner.getByRole('main').getByRole('list').first()
+  const people = owner.getByRole('list', { name: 'Event members' })
   await expect(people.getByRole('listitem')).toHaveCount(1)
   await joinEvent(ben, link, 'Ben')
   await expect(people.getByRole('listitem').filter({ hasText: 'Ben' })).toBeVisible({ timeout: 15_000 })
@@ -80,7 +80,7 @@ test('two friends split a trip, settle with the optimized plan, and complete the
 
   // Ben's event home switches to the payment phase through realtime.
   await ben.getByRole('button', { name: 'View payments' }).click({ timeout: 15_000 })
-  const benRow = ben.getByRole('listitem').filter({ hasText: 'Pay' })
+  const benRow = ben.getByRole('listitem').filter({ hasText: /Pay RM\s?30\.00 to Ana/ })
   await expect(benRow).toContainText(/Pay RM\s?30\.00 to Ana/)
   await benRow.getByRole('button', { name: 'Show payment details' }).click()
   await expect(benRow).toContainText('Maybank')

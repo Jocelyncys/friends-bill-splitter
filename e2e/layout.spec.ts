@@ -22,8 +22,17 @@ async function expectNoOverflow(page: Page) {
   expect(problems).toEqual([])
 }
 
+// A stable, language-independent element that only renders once each screen's data has loaded.
+const READY: Record<string, (page: Page) => Promise<void>> = {
+  start: page => expect(page.getByRole('main').getByRole('button')).toHaveCount(2),
+  home: page => expect(page.getByRole('main').getByRole('article').first()).toBeVisible(),
+  editor: page => expect(page.getByRole('main').getByRole('checkbox')).toHaveCount(1),
+  people: page => expect(page.getByRole('main').getByRole('listitem')).toHaveCount(1),
+  settlement: page => expect(page.getByRole('radio')).toHaveCount(3),
+}
+
 async function check(page: Page, testInfo: TestInfo, screen: string, lang: string) {
-  await page.waitForLoadState('networkidle')
+  await READY[screen](page)
   await expectNoOverflow(page)
   await page.screenshot({ path: testInfo.outputPath(`${screen}-${lang}.png`), fullPage: true })
 }
@@ -74,16 +83,19 @@ test('bilingual screens fit the viewport; guided, active and attention states re
     'zh-CN': { home: '你想做什么？', editor: '添加开销', people: '成员', settlement: '结算' },
   }
   for (const [lang, button] of [['en', 'English'], ['zh-CN', '简体中文']] as const) {
-    await page.getByRole('button', { name: button }).click()
-    await expect(page.locator('html')).toHaveAttribute('lang', lang)
-    await page.goto('/')
-    await check(page, testInfo, 'start', lang)
-    for (const [screen, url] of screens) {
-      await page.goto(url)
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText(headings[lang][screen])
-      if (screen === 'settlement') await expect(page.getByRole('radio')).toHaveCount(3)
-      await check(page, testInfo, screen, lang)
-    }
+    await test.step(`screens in ${lang}`, async () => {
+      await page.getByRole('button', { name: button }).click()
+      await expect(page.locator('html')).toHaveAttribute('lang', lang)
+      await page.goto('/')
+      await check(page, testInfo, 'start', lang)
+      for (const [screen, url] of screens) {
+        await test.step(screen, async () => {
+          await page.goto(url)
+          await expect(page.getByRole('heading', { level: 1 })).toHaveText(headings[lang][screen])
+          await check(page, testInfo, screen, lang)
+        })
+      }
+    })
   }
   await page.context().close()
 })

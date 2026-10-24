@@ -24,6 +24,7 @@
     "people": "成员"
   },
   "people": {
+    "listLabel": "活动成员",
     "you": "{{name}}（你）",
     "role": {
       "owner": "创建者",

@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "check:sw": "node scripts/check-sw.mjs",
     "e2e": "playwright test",
+    "e2e:supabase": "node scripts/e2e-supabase.mjs",
     "fetch:ocr": "node scripts/fetch-ocr-models.mjs",
     "icons": "node scripts/generate-icons.mjs"
   },

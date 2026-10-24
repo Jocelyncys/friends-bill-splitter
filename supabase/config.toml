@@ -201,9 +201,10 @@ email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
-# Raised for local dev and the e2e suite (every browser context is a new anonymous user). Production
-# limits are set in the hosted project (see the release checklist), not here.
-anonymous_users = 1000
+# Keep 30 here. The e2e suite (one anonymous user per browser context) raises it only in a throwaway copy:
+# CI seds the runner's checkout, locally `npm run e2e:supabase` restarts the stack with 1000 and restores this file.
+# Do NOT `supabase config push` with a test override applied.
+anonymous_users = 30
 # Number of sessions that can be refreshed in a 5 minute interval per IP address.
 token_refresh = 150
 # Number of sign up and sign-in requests that can be made in a 5 minute interval per IP address (excludes anonymous users).
