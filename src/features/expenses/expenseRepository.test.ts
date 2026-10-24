@@ -60,6 +60,27 @@ describe('expenseRepository', () => {
     await expect(repository.saveExpense(payload)).rejects.toMatchObject({ formError: { code: 'save_failed' } })
   })
 
+  it.each([
+    ['fetch failure (status 0)', { error: { code: '', message: 'TypeError: Failed to fetch' }, status: 0 }],
+    ['fetch failure without status', { error: { code: '', message: 'TypeError: Failed to fetch' } }],
+    ['gateway 502', { error: { code: '', message: 'Bad Gateway' }, status: 502 }],
+    ['unavailable 503', { error: { code: 'PGRST000', message: 'down' }, status: 503 }],
+    ['gateway timeout 504', { error: { code: '', message: 'timeout' }, status: 504 }],
+  ])('reports a transport failure (%s) as network_error', async (_name, response) => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, ...response })
+    const repository = createExpenseRepository({ rpc } as never)
+    await expect(repository.saveExpense(payload)).rejects.toMatchObject({ formError: { code: 'network_error' } })
+  })
+
+  it('keeps permission, constraint and server errors as a real save_failed verdict', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied' }, status: 403 })
+      .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'duplicate key' }, status: 409 })
+      .mockResolvedValueOnce({ data: null, error: { code: 'XX000', message: 'boom' }, status: 500 })
+    const repository = createExpenseRepository({ rpc } as never)
+    for (let i = 0; i < 3; i++) await expect(repository.saveExpense(payload)).rejects.toMatchObject({ formError: { code: 'save_failed' } })
+  })
+
   it('lists expenses newest first as summaries', async () => {
     const from = vi.fn(() => builder({
       data: [{ id: 'exp-1', description: 'Lunch', total_cents: 1000, payer_user_id: 'user-1', split_method: 'equal', created_at: '2026-10-24T10:00:00Z' }],

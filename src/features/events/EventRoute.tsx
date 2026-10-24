@@ -15,7 +15,7 @@ export function EventRoute() {
   const navigate = useNavigate()
   const [showInvite, setShowInvite] = useState(false)
   const state = useEventHome(eventId)
-  const drafts = useDrafts(eventId)
+  const { drafts, loaded: draftsLoaded } = useDrafts(eventId)
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
   const attention = home.attention.map(item => ({
@@ -36,7 +36,7 @@ export function EventRoute() {
       onInvite={() => setShowInvite(shown => !shown)}
       settled={settled}
       onSettle={canSettle ? () => navigate(`/event/${eventId}/settle`) : undefined}
-      settleBlockedReason={drafts.length > 0 ? t('drafts.settleBlocked') : undefined}
+      settleBlockedReason={!draftsLoaded ? t('drafts.checking') : drafts.length > 0 ? t('drafts.settleBlocked') : undefined}
       onViewPayments={() => navigate(`/event/${eventId}/payments`)}
     >
       <DraftList eventId={eventId} currency={home.event.currency} />

@@ -24,7 +24,7 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
   const shell = useOutletContext<ShellContext | undefined>()
   const refreshKey = shell?.refreshKey ?? 0
   const online = useOnline()
-  const unsyncedDrafts = useDrafts(eventId).length > 0
+  const { drafts: unsynced, loaded: draftsLoaded } = useDrafts(eventId)
   const state = useEventHome(eventId)
   const [inputs, setInputs] = useState<Loaded<SettlementInputs> | null>(null)
   const [settlement, setSettlement] = useState<Loaded<Settlement | null> | null>(null)
@@ -102,7 +102,9 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
       ? t('settlement.offline')
       : shell && shell.realtimeStatus !== 'live'
         ? t('settlement.notLive')
-        : unsyncedDrafts
+        : !draftsLoaded
+          ? t('drafts.checking')
+          : unsynced.length > 0
           ? t('drafts.settleBlocked')
           : current.totals.length === 0
             ? t('settlement.noExpenses')

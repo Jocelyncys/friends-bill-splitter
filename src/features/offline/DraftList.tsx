@@ -9,7 +9,7 @@ import { useDrafts } from './useDrafts'
 /** Expenses saved on this device for one event: waiting to sync, or refused by the server. */
 export function DraftList({ eventId, currency }: { eventId: string; currency: string }) {
   const { t, i18n } = useTranslation()
-  const drafts = useDrafts(eventId)
+  const { drafts } = useDrafts(eventId)
   const [discarding, setDiscarding] = useState<string | null>(null)
   if (drafts.length === 0) return null
   return (
@@ -26,12 +26,8 @@ export function DraftList({ eventId, currency }: { eventId: string; currency: st
             )}
           </div>
           <strong>{formatMoney(draft.payload.totalCents, currency, i18n.language)}</strong>
-          {draft.status === 'failed' && (
-            <>
-              <Link to={`/event/${eventId}/expenses/new?draft=${draft.id}`}>{t('drafts.review')}</Link>
-              <button type="button" onClick={() => setDiscarding(draft.id)}>{t('drafts.discard')}</button>
-            </>
-          )}
+          {draft.status === 'failed' && <Link to={`/event/${eventId}/expenses/new?draft=${draft.id}`}>{t('drafts.review')}</Link>}
+          {draft.status !== 'syncing' && <button type="button" onClick={() => setDiscarding(draft.id)}>{t('drafts.discard')}</button>}
         </article>
       ))}
       {discarding && (

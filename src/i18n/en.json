@@ -148,7 +148,9 @@
     "not_allowed": "You are not allowed to change this expense.",
     "not_authenticated": "Your session has expired. Please reload and try again.",
     "save_failed": "Could not save the expense. Please try again.",
-    "draft_failed": "Could not save the expense on this device. Please try again."
+    "draft_failed": "Could not save the expense on this device. Please try again.",
+    "network_error": "Could not reach the server. Check your connection and try again.",
+    "too_many_attempts": "Still couldn’t sync after several tries."
   },
   "realtime": {
     "offline": "Reconnecting… data may be out of date."
@@ -315,6 +317,7 @@
     "discard": "Discard",
     "discardTitle": "Discard this expense?",
     "discardBody": "It is only saved on this device and will be lost.",
-    "settleBlocked": "Settling needs the expenses saved on this device to sync first."
+    "settleBlocked": "Settling needs the expenses saved on this device to sync first.",
+    "checking": "Checking for expenses saved on this device…"
   }
 }

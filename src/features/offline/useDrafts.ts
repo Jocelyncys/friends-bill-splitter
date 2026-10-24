@@ -1,29 +1,26 @@
 import { useEffect, useState } from 'react'
-import { listDrafts, subscribeDrafts, type ExpenseDraft } from './draftDb'
+import { watchDrafts, type ExpenseDraft } from './draftDb'
 
-/** Expenses saved on this device and not yet on the server (all events, or one). */
-export function useDrafts(eventId?: string): ExpenseDraft[] {
-  const [drafts, setDrafts] = useState<ExpenseDraft[]>([])
+/**
+ * Expenses saved on this device and not yet on the server (all events, or one). Backed by watchDrafts (Dexie liveQuery),
+ * so changes made in other tabs show up too. `loaded` stays false until the first read has finished, so callers
+ * can avoid acting on an empty list that only means "not read yet".
+ */
+export function useDrafts(eventId?: string): { drafts: ExpenseDraft[]; loaded: boolean } {
+  const [state, setState] = useState<{ drafts: ExpenseDraft[]; loaded: boolean }>({ drafts: [], loaded: false })
   useEffect(() => {
-    let cancelled = false
-    const load = () =>
-      listDrafts(eventId).then(
-        found => !cancelled && setDrafts(found),
-        () => undefined, // IndexedDB unavailable: behave as if there are none
-      )
-    void load()
-    const unsubscribe = subscribeDrafts(() => void load())
-    return () => {
-      cancelled = true
-      unsubscribe()
-    }
+    return watchDrafts(
+      eventId,
+      drafts => setState({ drafts, loaded: true }),
+      () => setState({ drafts: [], loaded: true }), // IndexedDB unavailable: behave as if there are none
+    )
   }, [eventId])
-  return drafts
+  return state
 }
 
 /** Browser "leave site?" prompt, registered only while unsynced drafts exist. */
 export function useUnsyncedWarning() {
-  const hasDrafts = useDrafts().length > 0
+  const hasDrafts = useDrafts().drafts.length > 0
   useEffect(() => {
     if (!hasDrafts) return
     const warn = (event: BeforeUnloadEvent) => {

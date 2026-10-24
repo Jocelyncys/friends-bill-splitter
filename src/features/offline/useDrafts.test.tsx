@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,8 +7,12 @@ import '../../i18n'
 
 const db = vi.hoisted(() => ({
   listDrafts: vi.fn(),
-  subscribeDrafts: vi.fn(() => () => undefined),
   deleteDraft: vi.fn(),
+  // stands in for the liveQuery-backed watcher: one read of listDrafts, rejection = storage unavailable
+  watchDrafts: (eventId: string | undefined, next: (drafts: unknown[]) => void, error: () => void) => {
+    void db.listDrafts(eventId).then(next, error)
+    return () => undefined
+  },
 }))
 vi.mock('./draftDb', () => db)
 
@@ -55,18 +59,25 @@ describe('useUnsyncedWarning', () => {
     db.listDrafts.mockResolvedValue([draft('pending')])
     const { unmount } = render(<Warn />)
     await waitFor(() => expect(unloadCalls(add)).toHaveLength(1))
+    const handler = unloadCalls(add)[0][1] as (event: BeforeUnloadEvent) => void
+    const event = { preventDefault: vi.fn(), returnValue: undefined as unknown }
+    handler(event as unknown as BeforeUnloadEvent)
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(event.returnValue).toBe('')
     unmount()
     expect(unloadCalls(remove)).toHaveLength(1)
   })
 
   it('stays quiet with no drafts, or when IndexedDB is unavailable', async () => {
-    db.listDrafts.mockResolvedValueOnce([])
+    db.listDrafts.mockResolvedValue([])
     const first = render(<Warn />)
-    await Promise.resolve()
+    await waitFor(() => expect(db.listDrafts).toHaveBeenCalledTimes(1))
+    await act(async () => undefined)
     first.unmount()
-    db.listDrafts.mockRejectedValueOnce(new Error('no idb'))
+    db.listDrafts.mockRejectedValue(new Error('no idb'))
     render(<Warn />)
-    await Promise.resolve()
+    await waitFor(() => expect(db.listDrafts).toHaveBeenCalledTimes(2))
+    await act(async () => undefined)
     expect(unloadCalls(add)).toHaveLength(0)
   })
 })
@@ -78,13 +89,26 @@ describe('DraftList', () => {
         <DraftList eventId="e1" currency="MYR" />
       </MemoryRouter>,
     )
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    db.deleteDraft.mockResolvedValue(undefined)
+  })
 
   it('labels a pending draft and warns not to clear browser data', async () => {
     db.listDrafts.mockResolvedValue([draft('pending')])
     renderList()
     expect(await screen.findByText('Waiting to sync')).toBeInTheDocument()
     expect(screen.getByText(/Don’t clear your browser data/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard' }))
+    expect(db.deleteDraft).toHaveBeenCalledWith('d1')
+  })
+
+  it('does not offer to discard a draft that is being sent right now', async () => {
+    db.listDrafts.mockResolvedValue([draft('syncing')])
+    renderList()
+    expect(await screen.findByText('Syncing…')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument()
   })
 

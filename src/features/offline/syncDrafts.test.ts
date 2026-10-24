@@ -28,7 +28,8 @@ const draft = (id: string) => ({ id, eventId: 'ev-1', status: 'pending' as const
 describe('syncPendingDrafts', () => {
   it('marks a draft synced without creating a second expense on retry', async () => {
     const saveExpense = vi.fn().mockResolvedValue({ id: 'draft-1' })
-    await syncPendingDrafts([{ id: 'draft-1', status: 'pending', payload: validPayload }], saveExpense)
+    const results = await syncPendingDrafts([{ id: 'draft-1', status: 'pending', payload: validPayload }], saveExpense)
+    expect(results).toEqual([{ id: 'draft-1', outcome: 'synced' }])
     expect(saveExpense).toHaveBeenCalledTimes(1)
     expect(saveExpense).toHaveBeenCalledWith(expect.objectContaining({ id: 'draft-1' }))
   })
@@ -39,13 +40,26 @@ describe('syncPendingDrafts', () => {
       .mockResolvedValueOnce({ id: 'a' })
       .mockRejectedValueOnce(new ExpenseSaveError({ code: 'event_not_open' }, new Error('x')))
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new ExpenseSaveError({ code: 'network_error' }, new Error('x')))
+      .mockRejectedValueOnce(new ExpenseSaveError({ code: 'not_authenticated' }, new Error('x')))
       .mockRejectedValueOnce(new ExpenseSaveError({ code: 'save_failed' }, new Error('x')))
-    const results = await syncPendingDrafts(['a', 'b', 'c', 'd'].map(draft), saveExpense)
+    const results = await syncPendingDrafts(['a', 'b', 'c', 'd', 'e', 'f'].map(draft), saveExpense)
     expect(results).toEqual([
       { id: 'a', outcome: 'synced' },
       { id: 'b', outcome: 'failed', code: 'event_not_open' },
-      { id: 'c', outcome: 'pending' },
-      { id: 'd', outcome: 'pending' },
+      { id: 'c', outcome: 'pending', attempts: 1 },
+      { id: 'd', outcome: 'pending', attempts: 1 },
+      { id: 'e', outcome: 'pending', attempts: 1 }, // session not ready yet at startup: retry
+      { id: 'f', outcome: 'failed', code: 'save_failed' }, // a real server verdict
+    ])
+  })
+
+  it('gives up after 5 transient failures so a draft cannot retry forever', async () => {
+    const saveExpense = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    const results = await syncPendingDrafts([{ ...draft('a'), attempts: 4 }, { ...draft('b'), attempts: 3 }], saveExpense)
+    expect(results).toEqual([
+      { id: 'a', outcome: 'failed', code: 'too_many_attempts' },
+      { id: 'b', outcome: 'pending', attempts: 4 },
     ])
   })
 })
@@ -70,8 +84,17 @@ describe('syncStoredDrafts', () => {
     expect(db.markDrafts).toHaveBeenCalledWith(['a', 'b', 'c'], 'syncing')
     expect(db.markDrafts.mock.invocationCallOrder[0]).toBeLessThan(saveExpense.mock.invocationCallOrder[0])
     expect(db.deleteDraft).toHaveBeenCalledWith('a')
-    expect(db.setDraftStatus).toHaveBeenCalledWith('b', 'failed', 'invalid_total')
-    expect(db.setDraftStatus).toHaveBeenCalledWith('c', 'pending')
+    expect(db.setDraftStatus).toHaveBeenCalledWith('b', 'failed', { errorCode: 'invalid_total' })
+    expect(db.setDraftStatus).toHaveBeenCalledWith('c', 'pending', { attempts: 1 })
+  })
+
+  it('puts drafts back to pending when storage fails mid-run', async () => {
+    db.listPendingDrafts.mockResolvedValue([draft('a'), draft('b')])
+    db.deleteDraft.mockRejectedValueOnce(new Error('idb closed'))
+    const saveExpense = vi.fn().mockResolvedValue({ id: 'x' })
+    await expect(syncStoredDrafts(saveExpense)).rejects.toThrow('idb closed')
+    expect(db.setDraftStatus).toHaveBeenCalledWith('a', 'pending')
+    expect(db.setDraftStatus).toHaveBeenCalledWith('b', 'pending')
   })
 
   it('never runs two syncs at once, so a draft is not sent twice', async () => {

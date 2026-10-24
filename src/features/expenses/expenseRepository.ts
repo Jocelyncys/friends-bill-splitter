@@ -74,7 +74,18 @@ const FIELD_BY_CODE: Record<string, keyof SaveExpensePayload | undefined> = {
   // form-level: invalid_payload, not_event_member, event_not_open, event_mismatch, not_allowed
 }
 
-export function toFormError(error: { code?: string; message?: string }): ExpenseFormError {
+// supabase-js reports a failed fetch as { error: { code: '', message: 'TypeError: Failed to fetch' }, status: 0 }
+// (it never throws), and a gateway failure as status 502/503/504. Those are transport problems, not a verdict
+// on the expense, so a retry can succeed. Everything else (403/42501, constraints, 500 ...) is `save_failed`.
+const TRANSPORT_STATUSES = new Set([0, 502, 503, 504])
+const TRANSPORT_MESSAGE = /failed to fetch|networkerror|network request failed|load failed|fetch failed/i
+
+export function isNetworkFailure(error: { message?: string }, status?: number) {
+  return (status !== undefined && TRANSPORT_STATUSES.has(status)) || TRANSPORT_MESSAGE.test(error.message ?? '')
+}
+
+export function toFormError(error: { code?: string; message?: string }, status?: number): ExpenseFormError {
+  if (isNetworkFailure(error, status)) return { code: 'network_error' }
   if (error.code === '22023' && error.message) {
     const field = FIELD_BY_CODE[error.message]
     return field ? { field, code: error.message } : { code: error.message }
@@ -134,8 +145,8 @@ export function createExpenseRepository(client: SupabaseClient = supabase) {
   return {
     // The only write path: one RPC, one transaction on the server.
     async saveExpense(payload: SaveExpensePayload): Promise<{ id: string }> {
-      const { data, error } = await client.rpc('save_expense', { payload: toRpcPayload(payload) })
-      if (error) throw new ExpenseSaveError(toFormError(error), error)
+      const { data, error, status } = await client.rpc('save_expense', { payload: toRpcPayload(payload) })
+      if (error) throw new ExpenseSaveError(toFormError(error, status), error)
       return { id: data as string }
     },
     async listExpenses(eventId: string): Promise<ExpenseSummary[]> {

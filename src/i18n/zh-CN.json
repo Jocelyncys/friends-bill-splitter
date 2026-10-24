@@ -148,7 +148,9 @@
     "not_allowed": "你无权修改此开销。",
     "not_authenticated": "登录已过期，请刷新后重试。",
     "save_failed": "无法保存开销，请重试。",
-    "draft_failed": "无法将支出保存到此设备，请重试。"
+    "draft_failed": "无法将支出保存到此设备，请重试。",
+    "network_error": "无法连接服务器，请检查网络后重试。",
+    "too_many_attempts": "多次尝试后仍无法同步。"
   },
   "realtime": {
     "offline": "正在重新连接…数据可能已过时。"
@@ -315,6 +317,7 @@
     "discard": "放弃",
     "discardTitle": "放弃这笔支出？",
     "discardBody": "它只保存在此设备上，放弃后将无法找回。",
-    "settleBlocked": "结算前需要先同步保存在此设备上的支出。"
+    "settleBlocked": "结算前需要先同步保存在此设备上的支出。",
+    "checking": "正在检查保存在此设备上的支出…"
   }
 }

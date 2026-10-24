@@ -127,13 +127,22 @@ describe('ExpenseEditorPage', () => {
       expect(saveDraft.mock.calls[0][0].id).toBe(saveExpense.mock.calls[0][0].id)
     })
 
-    it('treats the repository catch-all save_failed as retryable', async () => {
-      saveExpense.mockRejectedValue(new ExpenseSaveError({ code: 'save_failed' }, new Error('x')))
+    it('keeps a draft when the repository reports a network_error', async () => {
+      saveExpense.mockRejectedValue(new ExpenseSaveError({ code: 'network_error' }, new Error('x')))
       renderEditor()
       await fillSimple()
       await save()
       expect(await screen.findByText('event home')).toBeInTheDocument()
       expect(saveDraft).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows a persistent server failure (save_failed) as an error instead of waiting to sync', async () => {
+      saveExpense.mockRejectedValue(new ExpenseSaveError({ code: 'save_failed' }, new Error('x')))
+      renderEditor()
+      await fillSimple()
+      await save()
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not save the expense. Please try again.')
+      expect(saveDraft).not.toHaveBeenCalled()
     })
 
     it('does not keep a draft when the server rejects the expense', async () => {
