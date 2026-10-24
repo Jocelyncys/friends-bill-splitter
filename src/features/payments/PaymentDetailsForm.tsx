@@ -16,7 +16,7 @@ type Props = {
 }
 
 export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, onSaved }: Props) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [bankName, setBankName] = useState('')
   const [accountHolderName, setAccountHolderName] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
@@ -83,7 +83,8 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
     const parsed = paymentDetailsSchema.safeParse({ qrFile: file, bankName, accountHolderName, accountNumber, paymentReference, preferredMethod })
     if (!parsed.success) {
       setStatus(null)
-      setError(t(`paymentForm.errors.${parsed.error.issues[0].message}`))
+      const key = `paymentForm.errors.${parsed.error.issues[0].message}`
+      setError(t(i18n.exists(key) ? key : 'paymentForm.errors.generic'))
       return
     }
     if (warnBeforeSave) setPending(parsed.data)

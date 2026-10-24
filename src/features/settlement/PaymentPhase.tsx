@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { formatMoney } from '../../domain/money'
 import type { EventRole } from '../../domain/types'
 import type { ReceiverDetails } from '../payments/paymentRepository'
@@ -27,7 +28,10 @@ export type PaymentPhaseProps = {
   onShowDetails?: (transferId: string) => Promise<ReceiverDetails | null>
   onMarkSent?: (transferId: string) => void
   onConfirmReceived?: (transferId: string) => void
-  onOverride?: (transferId: string, reason: string) => void
+  /** Resolve false when the action failed, so the typed reason is kept. */
+  onOverride?: (transferId: string, reason: string) => void | boolean | Promise<void | boolean>
+  /** Transfer ids whose receiver has not added details yet (known without showing details). */
+  missingDetailsFor?: string[]
 }
 
 const MAX_REASON = 500
@@ -41,6 +45,7 @@ export function PaymentPhase({
   busy = false,
   errorMessage,
   detailsForm,
+  missingDetailsFor = [],
   onShowDetails,
   onMarkSent,
   onConfirmReceived,
@@ -50,7 +55,7 @@ export function PaymentPhase({
   const [formOpen, setFormOpen] = useState(false)
   const isReceiver = transfers.some(x => x.receiverId === currentUserId)
   const isManager = role === 'owner' || role === 'cohost'
-  const nameOf = (id: string) => names[id] ?? id
+  const nameOf = (id: string) => names[id] ?? t('settlement.formerMember')
 
   return (
     <main className="settlement">
@@ -76,6 +81,7 @@ export function PaymentPhase({
             nameOf={nameOf}
             currency={currency}
             busy={busy}
+            missingKnown={transfer.id !== undefined && missingDetailsFor.includes(transfer.id)}
             onShowDetails={onShowDetails}
             onMarkSent={onMarkSent}
             onConfirmReceived={onConfirmReceived}
@@ -95,9 +101,10 @@ type RowProps = {
   nameOf: (id: string) => string
   currency: string
   busy: boolean
+  missingKnown: boolean
 } & Pick<PaymentPhaseProps, 'onShowDetails' | 'onMarkSent' | 'onConfirmReceived' | 'onOverride'>
 
-function TransferRow({ transfer, me, isManager, nameOf, currency, busy, onShowDetails, onMarkSent, onConfirmReceived, onOverride }: RowProps) {
+function TransferRow({ transfer, me, isManager, nameOf, currency, busy, missingKnown, onShowDetails, onMarkSent, onConfirmReceived, onOverride }: RowProps) {
   const { t, i18n } = useTranslation()
   const { id, payerId, receiverId, amountCents } = transfer
   const state = transfer.state ?? 'pending'
@@ -111,6 +118,8 @@ function TransferRow({ transfer, me, isManager, nameOf, currency, busy, onShowDe
   const [overriding, setOverriding] = useState(false)
   const [reason, setReason] = useState('')
   const [reasonError, setReasonError] = useState(false)
+  const [warnSent, setWarnSent] = useState(false)
+  const missing = details === 'missing' || (missingKnown && details === null)
 
   const sentence = isPayer
     ? t('payments.youPay', { amount, name: nameOf(receiverId) })
@@ -129,14 +138,16 @@ function TransferRow({ transfer, me, isManager, nameOf, currency, busy, onShowDe
   }
   const visibleDetails = state === 'confirmed' ? null : details
 
-  const submitOverride = () => {
+  const submitOverride = async () => {
     const trimmed = reason.trim()
     if (trimmed.length < 1 || trimmed.length > MAX_REASON) {
       setReasonError(true)
       return
     }
     setReasonError(false)
-    if (id) onOverride?.(id, trimmed)
+    if (!id) return
+    // Keep the reason (and the form) until the action succeeds.
+    if ((await onOverride?.(id, trimmed)) === false) return
     setOverriding(false)
     setReason('')
   }
@@ -151,11 +162,11 @@ function TransferRow({ transfer, me, isManager, nameOf, currency, busy, onShowDe
         <button type="button" onClick={() => void showDetails()} disabled={busy || !id}>{t('payments.showDetails')}</button>
       )}
       {detailsFailed && <p role="alert">{t('payments.detailsFailed')}</p>}
-      {visibleDetails === 'missing' && <p>{t('payments.waitingForDetails', { name: nameOf(receiverId) })}</p>}
+      {(missing && state !== 'confirmed') && <p>{t('payments.waitingForDetails', { name: nameOf(receiverId) })}</p>}
       {visibleDetails && visibleDetails !== 'missing' && <DetailsView details={visibleDetails} />}
 
       {isPayer && state === 'pending' && onMarkSent && id && (
-        <button type="button" className="primary" onClick={() => onMarkSent(id)} disabled={busy}>{t('payments.markSent')}</button>
+        <button type="button" className="primary" onClick={() => (missing ? setWarnSent(true) : onMarkSent(id))} disabled={busy}>{t('payments.markSent')}</button>
       )}
       {isReceiver && state === 'sent' && onConfirmReceived && id && (
         <button type="button" className="primary" onClick={() => onConfirmReceived(id)} disabled={busy}>{t('payments.confirmReceived')}</button>
@@ -171,9 +182,22 @@ function TransferRow({ transfer, me, isManager, nameOf, currency, busy, onShowDe
             <textarea value={reason} maxLength={MAX_REASON} onChange={event => setReason(event.target.value)} />
           </label>
           {reasonError && <p role="alert">{t('payments.reasonRequired')}</p>}
-          <button type="button" className="primary" onClick={submitOverride} disabled={busy}>{t('payments.overrideConfirm')}</button>
+          <button type="button" className="primary" onClick={() => void submitOverride()} disabled={busy}>{t('payments.overrideConfirm')}</button>
           <button type="button" onClick={() => setOverriding(false)}>{t('common.back')}</button>
         </div>
+      )}
+      {warnSent && id && (
+        <ConfirmDialog
+          title={t('payments.missingDetailsWarningTitle')}
+          confirmLabel={t('payments.markSentAnyway')}
+          onCancel={() => setWarnSent(false)}
+          onConfirm={() => {
+            setWarnSent(false)
+            onMarkSent?.(id)
+          }}
+        >
+          <p>{t('payments.missingDetailsWarning', { name: nameOf(receiverId) })}</p>
+        </ConfirmDialog>
       )}
     </li>
   )

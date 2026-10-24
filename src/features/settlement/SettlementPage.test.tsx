@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { SettlementPage } from './SettlementPage'
 import { buildPreview } from './previewPlans'
@@ -70,10 +71,10 @@ describe('SettlementPage', () => {
     it('shows totals, net balances in words and the transfer count', () => {
       renderPreview()
       const optimized = card(/Optimized direct settlement/)
-      expect(within(optimized).getByText(/Total paid/)).toHaveTextContent('MYR 70.00')
-      expect(within(optimized).getByText(/Total owed/)).toHaveTextContent('MYR 70.00')
-      expect(within(optimized).getByText('Zed receives MYR 30.00')).toBeInTheDocument()
-      expect(within(optimized).getByText('Ben pays MYR 35.00')).toBeInTheDocument()
+      expect(within(optimized).getByText(/Total paid/)).toHaveTextContent('RM 70.00')
+      expect(within(optimized).getByText(/Total owed/)).toHaveTextContent('RM 70.00')
+      expect(within(optimized).getByText('Zed receives RM 30.00')).toBeInTheDocument()
+      expect(within(optimized).getByText('Ben pays RM 35.00')).toBeInTheDocument()
       expect(within(optimized).getByText(/^Transfers: \d+$/)).toHaveTextContent(`Transfers: ${preview.plans.optimized.length}`)
       expect(within(optimized).getAllByRole('listitem').length).toBeGreaterThanOrEqual(preview.plans.optimized.length)
     })
@@ -113,6 +114,27 @@ describe('SettlementPage', () => {
       expect([onSettleNow, onCancel, onLater].every(fn => fn.mock.calls.length === 0)).toBe(true)
     })
 
+    it('closes the dialog and never settles when a block appears while it is open', async () => {
+      const handlers = { onCancel: vi.fn(), onLater: vi.fn(), onSettleNow: vi.fn() }
+      const { rerender } = render(<SettlementPage phase="preview" transfers={[]} preview={preview} revision={1} {...handlers} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Settle now' }))
+      rerender(<SettlementPage phase="preview" transfers={[]} preview={preview} revision={1} settleBlockedMessage="You are offline." {...handlers} />)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      rerender(<SettlementPage phase="preview" transfers={[]} preview={preview} revision={1} {...handlers} />)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(handlers.onSettleNow).not.toHaveBeenCalled()
+    })
+
+    it('closes the dialog and shows the stale message when the revision changes under it', async () => {
+      const handlers = { onCancel: vi.fn(), onLater: vi.fn(), onSettleNow: vi.fn() }
+      const { rerender } = render(<SettlementPage phase="preview" transfers={[]} preview={preview} revision={1} {...handlers} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Settle now' }))
+      rerender(<SettlementPage phase="preview" transfers={[]} preview={preview} revision={2} {...handlers} />)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.getByText('Something changed. Review the updated preview.')).toBeInTheDocument()
+      expect(handlers.onSettleNow).not.toHaveBeenCalled()
+    })
+
     it('Later and Cancel only call their own callbacks', async () => {
       const { onSettleNow, onCancel, onLater } = renderPreview()
       await userEvent.click(screen.getByRole('button', { name: 'Later' }))
@@ -123,11 +145,13 @@ describe('SettlementPage', () => {
     })
 
     it('lists unresolved expenses and disables Settle now', async () => {
-      const open = vi.fn()
-      renderPreview({ unresolved: [{ expenseId: 'x9', description: 'Taxi', unallocatedCents: 500 }], onOpenExpense: open })
+      render(
+        <MemoryRouter>
+          <SettlementPage phase="preview" transfers={[]} preview={preview} eventId="e1" unresolved={[{ expenseId: 'x9', description: 'Taxi', unallocatedCents: 500 }]} />
+        </MemoryRouter>,
+      )
       expect(screen.getByRole('button', { name: 'Settle now' })).toBeDisabled()
-      await userEvent.click(screen.getByRole('button', { name: /Taxi/ }))
-      expect(open).toHaveBeenCalledWith('x9')
+      expect(screen.getByRole('link', { name: /Taxi/ })).toHaveAttribute('href', '/event/e1/expenses/x9/claim')
     })
 
     it('disables Settle now with a reason when blocked', () => {
@@ -143,7 +167,7 @@ describe('SettlementPage', () => {
 
     it('writes transfers as sentences', () => {
       render(<SettlementPage phase="payment" currentUserId="alice" names={names} transfers={[{ ...base, state: 'pending' }]} />)
-      expect(screen.getByText('Pay MYR 85.40 to Ben')).toBeInTheDocument()
+      expect(screen.getByText('Pay RM 85.40 to Ben')).toBeInTheDocument()
     })
 
     it('shows the send button to the payer only while pending', () => {
@@ -182,6 +206,31 @@ describe('SettlementPage', () => {
       expect(screen.queryByRole('button', { name: 'Mark as received' })).not.toBeInTheDocument()
       rerender(<SettlementPage phase="payment" currentUserId="owner" role="owner" names={names} transfers={[{ ...base, state: 'confirmed' }]} />)
       expect(screen.queryByRole('button', { name: 'Mark as received' })).not.toBeInTheDocument()
+    })
+
+    it('warns proactively when the receiver has no details, and before marking sent', async () => {
+      const sent = vi.fn()
+      render(<SettlementPage phase="payment" currentUserId="alice" names={names} transfers={[{ ...base, state: 'pending' }]} missingDetailsFor={['t1']} onMarkSent={sent} />)
+      expect(screen.getByText('Waiting for Ben to add receiving details')).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: "I've sent the payment" }))
+      expect(sent).not.toHaveBeenCalled()
+      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Mark as sent' }))
+      expect(sent).toHaveBeenCalledWith('t1')
+    })
+
+    it('keeps the override reason when the action fails', async () => {
+      const override = vi.fn().mockResolvedValue(false)
+      render(<SettlementPage phase="payment" currentUserId="owner" role="owner" names={names} transfers={[{ ...base, state: 'sent' }]} onOverride={override} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Mark as received' }))
+      await userEvent.type(screen.getByRole('textbox', { name: 'Reason' }), 'Paid in cash')
+      await userEvent.click(screen.getByRole('button', { name: 'Confirm override' }))
+      expect(override).toHaveBeenCalledOnce()
+      expect(await screen.findByRole('textbox', { name: 'Reason' })).toHaveValue('Paid in cash')
+    })
+
+    it('names an unknown member as a former member', () => {
+      render(<SettlementPage phase="payment" currentUserId="alice" names={{ alice: 'Alice' }} transfers={[{ ...base, state: 'pending' }]} />)
+      expect(screen.getByText('Pay RM 85.40 to Former member')).toBeInTheDocument()
     })
 
     it('shows payment details on request, and a waiting note when the receiver has none', async () => {

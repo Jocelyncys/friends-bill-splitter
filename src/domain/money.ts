@@ -6,5 +6,5 @@ export function cents(value: number): MoneyCents {
 }
 
 export function formatMoney(value: number, currency: string, locale: string): string {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value / 100)
+  return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' }).format(value / 100)
 }

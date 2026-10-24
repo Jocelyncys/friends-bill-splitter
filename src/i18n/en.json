@@ -219,8 +219,8 @@
     "notLive": "Reconnecting… wait until the connection is back before settling.",
     "notAllowed": "Only the owner or a co-host can settle this event.",
     "noExpenses": "There are no expenses to settle yet.",
-    "staleRevision": "Something changed. Review the updated preview.",
-    "previewFailed": "Could not build the preview."
+    "previewFailed": "Could not build the preview.",
+    "formerMember": "Former member"
   },
   "settlementError": {
     "stale_revision": "Something changed. Review the updated preview.",
@@ -244,7 +244,6 @@
     "title": "Payments",
     "onlyYours": "Only payments that involve you are listed.",
     "notSettled": "This event has not been settled yet.",
-    "empty": "No payments to show.",
     "youPay": "Pay {{amount}} to {{name}}",
     "paysYou": "{{name}} pays you {{amount}}",
     "pays": "{{payer}} pays {{receiver}} {{amount}}",
@@ -267,7 +266,10 @@
     "reason": "Reason",
     "reasonRequired": "Please enter a reason (up to 500 characters).",
     "overrideConfirm": "Confirm override",
-    "addDetails": "Add receiving details"
+    "addDetails": "Add receiving details",
+    "missingDetailsWarningTitle": "No payment details yet",
+    "missingDetailsWarning": "{{name}} has not added receiving details yet. Mark as sent anyway?",
+    "markSentAnyway": "Mark as sent"
   },
   "paymentForm": {
     "title": "Your receiving details",
@@ -296,7 +298,8 @@
       "method_required": "Add a QR image, or the bank name, account holder and account number.",
       "qr_type": "The QR image must be PNG, JPEG or WebP.",
       "qr_size": "The QR image must be 5 MB or smaller.",
-      "account_number": "The account number must be 4 to 34 characters."
+      "account_number": "The account number must be 4 to 34 characters.",
+      "generic": "Please check the details and try again."
     }
   }
 }

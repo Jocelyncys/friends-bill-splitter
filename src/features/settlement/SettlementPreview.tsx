@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { compareIds } from '../../domain/allocation'
 import { formatMoney } from '../../domain/money'
@@ -11,7 +12,10 @@ export type SettlementPreviewProps = {
   preview?: PreviewData
   currency?: string
   unresolved?: Array<{ expenseId: string; description: string; unallocatedCents: number }>
-  onOpenExpense?: (expenseId: string) => void
+  /** Event id, for links to each unresolved expense's claim page. */
+  eventId?: string
+  /** Revision the preview was read at; a change while the dialog is open cancels the confirmation. */
+  revision?: number
   /** Why finalizing is currently blocked (offline, realtime down); shown and disables Settle now. */
   settleBlockedMessage?: string
   busy?: boolean
@@ -32,7 +36,8 @@ export function SettlementPreview({
   preview,
   currency = 'MYR',
   unresolved = [],
-  onOpenExpense,
+  eventId = '',
+  revision,
   settleBlockedMessage,
   busy = false,
   errorMessage,
@@ -43,10 +48,11 @@ export function SettlementPreview({
   const { t, i18n } = useTranslation()
   const [method, setMethod] = useState<SettlementMethod>('optimized_direct')
   const [pickedCoordinator, setPickedCoordinator] = useState<string | null>(null)
-  const [confirming, setConfirming] = useState(false)
+  const [confirming, setConfirming] = useState<{ revision?: number } | null>(null)
+  const [staleNotice, setStaleNotice] = useState(false)
   const money = (cents: number) => formatMoney(cents, currency, i18n.language)
 
-  const nameOf = (id: string) => preview?.members.find(m => m.id === id)?.name ?? id
+  const nameOf = (id: string) => preview?.members.find(m => m.id === id)?.name ?? t('settlement.formerMember')
   const coordinators = preview
     ? preview.members
         .filter(m => (preview.balances[m.id] ?? 0) > 0)
@@ -62,6 +68,13 @@ export function SettlementPreview({
 
   const chosenKey = METHODS.find(m => m.method === method)!.key
   const blocked = !preview || unresolved.length > 0 || Boolean(settleBlockedMessage) || busy || (method === 'coordinator' && !coordinatorId)
+
+  // The confirmation is only valid for the exact state it was opened on: drop it as soon as
+  // finalizing is blocked (offline, realtime lost, unresolved) or the revision moved.
+  if (confirming && (blocked || confirming.revision !== revision)) {
+    setConfirming(null)
+    if (!blocked) setStaleNotice(true)
+  }
 
   const balanceText = (id: string) => {
     const net = preview?.balances[id] ?? 0
@@ -82,9 +95,9 @@ export function SettlementPreview({
           <ul>
             {unresolved.map(item => (
               <li key={item.expenseId}>
-                <button type="button" onClick={() => onOpenExpense?.(item.expenseId)}>
+                <Link to={`/event/${eventId}/expenses/${item.expenseId}/claim`}>
                   {t('event.unclaimed', { description: item.description, amount: money(item.unallocatedCents) })}
-                </button>
+                </Link>
               </li>
             ))}
           </ul>
@@ -140,11 +153,14 @@ export function SettlementPreview({
         </div>
       )}
 
-      <div aria-live="assertive">{errorMessage && <p>{errorMessage}</p>}</div>
+      <div aria-live="assertive">{(errorMessage || staleNotice) && <p>{errorMessage ?? t('settlementError.stale_revision')}</p>}</div>
       {settleBlockedMessage && <p role="status">{settleBlockedMessage}</p>}
 
       <footer className="settlement__footer">
-        <button type="button" className="primary" disabled={blocked} onClick={() => setConfirming(true)}>{t('settlement.settleNow')}</button>
+        <button type="button" className="primary" disabled={blocked} onClick={() => {
+          setStaleNotice(false)
+          setConfirming({ revision })
+        }}>{t('settlement.settleNow')}</button>
         <button type="button" onClick={onLater}>{t('settlement.later')}</button>
         <button type="button" onClick={onCancel}>{t('settlement.cancel')}</button>
       </footer>
@@ -154,9 +170,9 @@ export function SettlementPreview({
           title={t('settlement.confirmTitle')}
           confirmLabel={t('settlement.confirm')}
           busy={busy}
-          onCancel={() => setConfirming(false)}
+          onCancel={() => setConfirming(null)}
           onConfirm={() => {
-            setConfirming(false)
+            setConfirming(null)
             onSettleNow?.(method, method === 'coordinator' ? coordinatorId : null)
           }}
         >

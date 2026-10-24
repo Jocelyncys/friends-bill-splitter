@@ -88,6 +88,7 @@ describe('SettlementRoute', () => {
     mocks.getSettlementInputs.mockResolvedValue(inputs())
     mocks.getSettlement.mockResolvedValue(settlement())
     mocks.confirmSettlement.mockResolvedValue('s1')
+    mocks.getReceiverDetails.mockResolvedValue({ receiverUserId: 'ann', preferredMethod: 'bank', bankName: 'B', accountHolderName: 'A', accountNumber: '12345', paymentReference: null, qrUrl: null })
     for (const fn of [mocks.markSent, mocks.confirmReceived, mocks.override]) fn.mockResolvedValue(undefined)
   })
 
@@ -117,6 +118,13 @@ describe('SettlementRoute', () => {
       await vi.waitFor(() => expect(mocks.getSettlementInputs).toHaveBeenCalledTimes(2))
     })
 
+    it('says so when the preview cannot be built', async () => {
+      mocks.getSettlementInputs.mockResolvedValue(inputs({ totals: [{ userId: 'ann', paidCents: 1000, owedCents: 0 }] }))
+      renderRoute('preview')
+      expect(await screen.findByText('Could not build the preview.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Settle now' })).toBeDisabled()
+    })
+
     it('blocks participants', async () => {
       mocks.getEventHome.mockResolvedValue(home('participant'))
       renderRoute('preview')
@@ -139,7 +147,7 @@ describe('SettlementRoute', () => {
     it('lists unresolved expenses instead of the cards', async () => {
       mocks.getSettlementInputs.mockResolvedValue(inputs({ unresolved: [{ expenseId: 'x2', description: 'Taxi', unallocatedCents: 300 }], totals: [] }))
       renderRoute('preview')
-      expect(await screen.findByRole('button', { name: /Taxi/ })).toBeInTheDocument()
+      expect(await screen.findByRole('link', { name: /Taxi/ })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Settle now' })).toBeDisabled()
       expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     })
@@ -149,7 +157,7 @@ describe('SettlementRoute', () => {
     it('lists the transfer and reloads after marking it sent', async () => {
       mocks.getEventHome.mockResolvedValue({ ...home('participant', 'settled'), me: { userId: 'bob', displayName: 'Bob', role: 'participant' } })
       const { refresh } = renderRoute('payment')
-      expect(await screen.findByText('Pay MYR 5.00 to Ann')).toBeInTheDocument()
+      expect(await screen.findByText('Pay RM 5.00 to Ann')).toBeInTheDocument()
       await userEvent.click(screen.getByRole('button', { name: "I've sent the payment" }))
       expect(mocks.markSent).toHaveBeenCalledWith('t1')
       await vi.waitFor(() => expect(mocks.getSettlement).toHaveBeenCalledTimes(2))
@@ -164,6 +172,13 @@ describe('SettlementRoute', () => {
       await userEvent.type(screen.getByRole('textbox', { name: 'Reason' }), 'cash')
       await userEvent.click(screen.getByRole('button', { name: 'Confirm override' }))
       expect(await screen.findByText('This payment cannot move to that status.')).toBeInTheDocument()
+    })
+
+    it('tells the payer up front when the receiver has no details', async () => {
+      mocks.getEventHome.mockResolvedValue({ ...home('participant', 'settled'), me: { userId: 'bob', displayName: 'Bob', role: 'participant' } })
+      mocks.getReceiverDetails.mockResolvedValue(null)
+      renderRoute('payment')
+      expect(await screen.findByText('Waiting for Ann to add receiving details')).toBeInTheDocument()
     })
 
     it('says so when the event is not settled yet', async () => {

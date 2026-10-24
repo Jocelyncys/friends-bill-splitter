@@ -28,11 +28,11 @@ export function EventHomePage({ eventName, expenses, attention, currency = 'MYR'
       <p className="event-name">{eventName}</p>
       <h1>{empty ? t('event.emptyTitle') : t('event.activeTitle')}</h1>
       <section className={empty ? 'guided-actions guided-actions--large' : 'guided-actions'}>
-        {!settled && <button type="button" onClick={onScanReceipt} disabled={!onScanReceipt}>📷 {t('event.scanReceipt')}</button>}
-        {!settled && <button type="button" onClick={onAddExpense} disabled={!onAddExpense}>✏️ {t('event.addSimple')}</button>}
-        <button type="button" onClick={onInvite} disabled={!onInvite}>🔗 {t('event.invite')}</button>
-        {!settled && onSettle && <button type="button" className="primary" onClick={onSettle}>💸 {t('event.settleNow')}</button>}
-        {settled && <button type="button" className="primary" onClick={onViewPayments} disabled={!onViewPayments}>💸 {t('event.viewPayments')}</button>}
+        {!settled && <button type="button" onClick={onScanReceipt} disabled={!onScanReceipt}><span aria-hidden="true">📷</span> {t('event.scanReceipt')}</button>}
+        {!settled && <button type="button" onClick={onAddExpense} disabled={!onAddExpense}><span aria-hidden="true">✏️</span> {t('event.addSimple')}</button>}
+        <button type="button" onClick={onInvite} disabled={!onInvite}><span aria-hidden="true">🔗</span> {t('event.invite')}</button>
+        {!settled && onSettle && <button type="button" className="primary" onClick={onSettle}><span aria-hidden="true">💸</span> {t('event.settleNow')}</button>}
+        {settled && <button type="button" className="primary" onClick={onViewPayments} disabled={!onViewPayments}><span aria-hidden="true">💸</span> {t('event.viewPayments')}</button>}
       </section>
       {settled && <p className="muted">{t('event.settledNote')}</p>}
       {children}

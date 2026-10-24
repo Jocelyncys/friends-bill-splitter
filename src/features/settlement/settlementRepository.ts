@@ -33,6 +33,15 @@ export type SettlementErrorCode =
   | 'invalid_payment_details'
   | 'action_failed'
 
+// Every code a SettlementError can carry (the UI needs a message for each).
+export const SETTLEMENT_ERROR_CODES = [
+  ...ERROR_KEYS,
+  'stale_revision',
+  'not_authenticated',
+  'invalid_payment_details',
+  'action_failed',
+] as const satisfies readonly SettlementErrorCode[]
+
 export class SettlementError extends Error {
   readonly code: SettlementErrorCode
   constructor(code: SettlementErrorCode, cause?: unknown) {

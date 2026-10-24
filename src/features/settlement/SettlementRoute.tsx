@@ -30,6 +30,8 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
   const [localTick, setLocalTick] = useState(0)
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | undefined>()
+  const [missing, setMissing] = useState<{ settlementId: string; ids: string[] } | null>(null)
+  const myId = state.status === 'ready' ? state.home.me.userId : undefined
 
   useEffect(() => {
     let cancelled = false
@@ -54,6 +56,22 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
     }
   }, [phase, eventId, refreshKey, localTick])
 
+  // Which of my transfers have a receiver without details yet. Only a yes/no is kept; the
+  // details (and any signed QR URL) are discarded straight away.
+  const loadedSettlement = settlement?.eventId === eventId ? settlement.value : null
+  useEffect(() => {
+    if (phase !== 'payment' || !loadedSettlement || !myId) return
+    let cancelled = false
+    const mine = loadedSettlement.transfers.filter(x => x.payerId === myId && x.state === 'pending')
+    const repo = createPaymentRepository()
+    void Promise.all(mine.map(x => repo.getReceiverDetails(x.id).then(d => (d ? null : x.id), () => null))).then(results => {
+      if (!cancelled) setMissing({ settlementId: loadedSettlement.id, ids: results.filter((id): id is string => id !== null) })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [phase, loadedSettlement, myId])
+
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
   const isManager = home.me.role !== 'participant'
@@ -69,11 +87,13 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
     if (!current) return loadFailed ? <p role="alert">{t('event.loadFailed')}</p> : <p role="status">{t('common.loading')}</p>
 
     let preview: PreviewData | undefined
+    let previewFailed = false
     if (current.unresolved.length === 0 && current.totals.length > 0) {
       try {
         preview = buildPreview(current.members, current.totals, current.payerAllocations)
       } catch {
         preview = undefined
+        previewFailed = true
       }
     }
     const blockedMessage = !online
@@ -106,10 +126,11 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
         preview={preview}
         currency={home.event.currency}
         unresolved={current.unresolved}
-        onOpenExpense={expenseId => navigate(`/event/${eventId}/expenses/${expenseId}/claim`)}
+        eventId={eventId}
+        revision={current.revision}
         settleBlockedMessage={blockedMessage}
         busy={busy}
-        errorMessage={errorMessage ?? (loadFailed ? t('event.loadFailed') : undefined)}
+        errorMessage={errorMessage ?? (previewFailed ? t('settlement.previewFailed') : loadFailed ? t('event.loadFailed') : undefined)}
         onCancel={() => navigate(`/event/${eventId}`)}
         onLater={() => navigate(`/event/${eventId}`)}
         onSettleNow={(method, coordinatorId) => void settle(method, coordinatorId)}
@@ -124,13 +145,15 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
   const labels = displayNames(home.members)
   const names = Object.fromEntries(home.members.map(m => [m.userId, labels.get(m.userId) ?? m.displayName]))
   const payments = createPaymentRepository()
-  const run = async (action: () => Promise<void>) => {
+  const run = async (action: () => Promise<void>): Promise<boolean> => {
     setBusy(true)
     setErrorMessage(undefined)
     try {
       await action()
+      return true
     } catch (error) {
       setErrorMessage(t(errorKey(error)))
+      return false
     } finally {
       setBusy(false)
       reload()
@@ -157,7 +180,8 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
       onShowDetails={transferId => payments.getReceiverDetails(transferId)}
       onMarkSent={transferId => void run(() => payments.markSent(transferId))}
       onConfirmReceived={transferId => void run(() => payments.confirmReceived(transferId))}
-      onOverride={(transferId, reason) => void run(() => payments.override(transferId, reason))}
+      missingDetailsFor={missing?.settlementId === current.id ? missing.ids : []}
+      onOverride={(transferId, reason) => run(() => payments.override(transferId, reason))}
     />
   )
 }

@@ -219,8 +219,8 @@
     "notLive": "正在重新连接…请等连接恢复后再结算。",
     "notAllowed": "只有所有者或共同主持人可以结算此活动。",
     "noExpenses": "还没有可结算的开销。",
-    "staleRevision": "内容已有变化，请查看更新后的预览。",
-    "previewFailed": "无法生成预览。"
+    "previewFailed": "无法生成预览。",
+    "formerMember": "已退出的成员"
   },
   "settlementError": {
     "stale_revision": "内容已有变化，请查看更新后的预览。",
@@ -244,7 +244,6 @@
     "title": "付款",
     "onlyYours": "这里只列出与你有关的付款。",
     "notSettled": "此活动尚未结算。",
-    "empty": "没有可显示的付款。",
     "youPay": "付 {{amount}} 给 {{name}}",
     "paysYou": "{{name}} 付给你 {{amount}}",
     "pays": "{{payer}} 付给 {{receiver}} {{amount}}",
@@ -267,7 +266,10 @@
     "reason": "原因",
     "reasonRequired": "请输入原因（最多 500 个字符）。",
     "overrideConfirm": "确认标记",
-    "addDetails": "添加收款信息"
+    "addDetails": "添加收款信息",
+    "missingDetailsWarningTitle": "尚无收款信息",
+    "missingDetailsWarning": "{{name}} 还没有添加收款信息。仍要标记为已付款吗？",
+    "markSentAnyway": "标记为已付款"
   },
   "paymentForm": {
     "title": "你的收款信息",
@@ -296,7 +298,8 @@
       "method_required": "请添加二维码图片，或填写银行名称、户名和账号。",
       "qr_type": "二维码图片必须是 PNG、JPEG 或 WebP。",
       "qr_size": "二维码图片不能超过 5 MB。",
-      "account_number": "账号必须为 4 到 34 个字符。"
+      "account_number": "账号必须为 4 到 34 个字符。",
+      "generic": "请检查信息后重试。"
     }
   }
 }

@@ -33,8 +33,8 @@ describe('ClaimItemsPage', () => {
     expect(screen.getByText('Claimed by: Alice, Ben')).toBeInTheDocument()
     const shares = screen.getByRole('list', { name: 'Each person’s share' })
     expect(within(shares).getByText('Alice')).toBeInTheDocument()
-    expect(within(shares).getByText('MYR 5.01')).toBeInTheDocument()
-    expect(within(shares).getByText('MYR 5.00')).toBeInTheDocument()
+    expect(within(shares).getByText('RM 5.01')).toBeInTheDocument()
+    expect(within(shares).getByText('RM 5.00')).toBeInTheDocument()
   })
 
   it('gives managers per-member assign buttons and a close/reopen toggle', async () => {

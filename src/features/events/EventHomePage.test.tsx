@@ -22,7 +22,7 @@ describe('EventHomePage settlement entry points', () => {
 
   it('offers Settle now to managers of an open event', () => {
     render(<EventHomePage eventName="Trip" expenses={expenses} attention={[]} onSettle={() => undefined} />)
-    expect(screen.getByRole('button', { name: /^.{0,3}Settle now$/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settle now' })).toBeInTheDocument()
   })
 
   it('does not offer Settle now without the handler', () => {
