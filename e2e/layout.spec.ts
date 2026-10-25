@@ -6,11 +6,14 @@ import { addSimpleExpense, createEvent, eventIdOf, newUser } from './helpers.ts'
 
 /** No horizontal page scroll, and no visible control whose content is cut off or pushed off-screen. */
 async function expectNoOverflow(page: Page) {
-  const problems = await page.evaluate(() => {
+  // The configured viewport, not window.innerWidth: on a mobile (isMobile) page the layout viewport
+  // grows to fit overflowing content, which would hide the overflow being checked for.
+  const viewport = page.viewportSize()?.width ?? 0
+  const problems = await page.evaluate(viewport => {
     const found: string[] = []
-    const width = window.innerWidth
+    const width = Math.min(window.innerWidth, viewport)
     if (document.documentElement.scrollWidth > width) found.push(`page scrollWidth ${document.documentElement.scrollWidth} > ${width}`)
-    for (const el of document.querySelectorAll<HTMLElement>('button, a, input, select, textarea, label, h1, h2, h3')) {
+    for (const el of document.querySelectorAll<HTMLElement>('button, a, input, select, textarea, label, fieldset, h1, h2, h3')) {
       const box = el.getBoundingClientRect()
       if (box.width === 0 || box.height === 0) continue
       const name = `${el.tagName.toLowerCase()} "${(el.textContent || (el as HTMLInputElement).value || '').trim().slice(0, 40)}"`
@@ -18,7 +21,7 @@ async function expectNoOverflow(page: Page) {
       if (el.matches('button, a, select') && el.scrollWidth > el.clientWidth + 1) found.push(`${name} clipped (${el.scrollWidth} > ${el.clientWidth})`)
     }
     return found
-  })
+  }, viewport)
   expect(problems).toEqual([])
 }
 
@@ -82,6 +85,8 @@ test('bilingual screens fit the viewport; guided, active and attention states re
     en: { home: 'What do you want to do?', editor: 'Add expense', people: 'People', settlement: 'Settle up' },
     'zh-CN': { home: '你想做什么？', editor: '添加开销', people: '成员', settlement: '结算' },
   }
+  const addItem = { en: 'Add item', 'zh-CN': '添加项目' }
+  const saveExpense = { en: 'Save expense', 'zh-CN': '保存开销' }
   for (const [lang, button] of [['en', 'English'], ['zh-CN', '简体中文']] as const) {
     await test.step(`screens in ${lang}`, async () => {
       await page.getByRole('button', { name: button }).click()
@@ -95,6 +100,17 @@ test('bilingual screens fit the viewport; guided, active and attention states re
           await check(page, testInfo, screen, lang)
         })
       }
+      await test.step('itemized editor with 2 items', async () => {
+        // The items fieldset once grew past 360px (fieldset min-width + file input) and swallowed taps on Save.
+        await page.goto(`/#/event/${eventId}/expenses/new`)
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText(headings[lang].editor)
+        await page.locator('select:has(option[value="items"])').selectOption('items')
+        await page.getByRole('button', { name: addItem[lang] }).click()
+        await expect(page.locator('.item-row')).toHaveCount(2)
+        await expectNoOverflow(page)
+        await page.getByRole('button', { name: saveExpense[lang] }).click({ trial: true })
+        await page.screenshot({ path: testInfo.outputPath(`editor-itemized-${lang}.png`), fullPage: true })
+      })
     })
   }
   await page.context().close()
