@@ -105,6 +105,29 @@ describe('eventRepository', () => {
     })
   })
 
+  it('compares allocations with the items subtotal (paid total minus adjustments) for attention items', async () => {
+    const row = { payer_user_id: 'user-1', creator_user_id: 'user-1', split_method: 'item_claim', created_at: '2026-10-24T12:00:00Z' }
+    const results: Record<string, Result> = {
+      events: { data: { id: 'event-1', name: 'Dinner', mode: 'single_bill', currency: 'MYR', state: 'open', revision: 1 }, error: null },
+      event_members: { data: [{ user_id: 'user-1', display_name: 'Dee', role: 'owner' }], error: null },
+      expenses: {
+        data: [
+          // Items 2857 fully allocated; voucher -500, SST +141, rounding +2 -> paid 2500: resolved.
+          { ...row, id: 'exp-3', description: 'Dinner', total_cents: 2500, allocations: [{ amount_cents: 2857 }],
+            expense_adjustments: [{ amount_cents: -500 }, { amount_cents: 141 }, { amount_cents: 2 }] },
+          // Items 1000, voucher -500 -> paid 500; only 500 allocated: one item still open.
+          { ...row, id: 'exp-4', description: 'Kopi', total_cents: 500, allocations: [{ amount_cents: 500 }],
+            expense_adjustments: [{ amount_cents: -500 }] },
+        ],
+        error: null,
+      },
+    }
+    const from = vi.fn((table: string) => builder(results[table]))
+    const getSession = vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null })
+    const home = await createEventRepository({ from, auth: { getSession } } as never).getEventHome('event-1')
+    expect(home.attention).toEqual([{ kind: 'unclaimed_items', expenseId: 'exp-4', description: 'Kopi', unallocatedCents: 500 }])
+  })
+
   it('rejects getEventHome when RLS hides the event from a non-member', async () => {
     const results: Record<string, Result> = {
       events: { data: null, error: null },

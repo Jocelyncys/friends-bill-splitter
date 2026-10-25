@@ -14,12 +14,12 @@ describe('claimRepository', () => {
     const repository = createClaimRepository({ rpc } as never)
     await repository.claimItem('item-1')
     await repository.unclaimItem('item-1')
-    await repository.assignItem('item-1', 'user-2')
+    await repository.assignItem('item-1', ['user-2', 'user-3'])
     await repository.setClaimingClosed('exp-1', true)
     expect(rpc.mock.calls).toEqual([
       ['claim_item', { item_id: 'item-1' }],
       ['unclaim_item', { item_id: 'item-1' }],
-      ['assign_item', { item_id: 'item-1', member_id: 'user-2' }],
+      ['assign_item', { item_id: 'item-1', member_ids: ['user-2', 'user-3'] }],
       ['set_claiming_closed', { expense_id: 'exp-1', closed: true }],
     ])
   })

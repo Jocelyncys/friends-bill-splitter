@@ -95,8 +95,13 @@ type ExpenseRow = {
   description: string
   payer_user_id: string
   total_cents: number
-  allocations: Array<{ participant_user_id: string; amount_cents: number }>
+  allocations: Array<{ amount_cents: number }>
+  expense_adjustments: Array<{ amount_cents: number }>
 }
+
+// get_event_owed_shares (migration 202610240010): what each participant owes per
+// expense, exactly as confirm_settlement computes it (adjustments split proportionally).
+type OwedShareRow = { expense_id: string; payer_user_id: string; participant_user_id: string; owed_cents: number }
 
 type SettlementRow = {
   id: string
@@ -123,21 +128,24 @@ function check(error: unknown): void {
 export function createSettlementRepository(client: SupabaseClient = supabase) {
   return {
     // Same inputs the server recomputes from, for the client-side preview (Task 8 functions).
+    // Owed shares come from the server so the preview equals confirm_settlement exactly.
     async getSettlementInputs(eventId: string): Promise<SettlementInputs> {
       // Revision FIRST: data read afterwards is at least as new, so a stale preview
       // can never carry a fresh revision past confirm_settlement's guard.
       const event = await client.from('events').select('revision').eq('id', eventId).single()
       check(event.error)
-      const [members, expenses] = await Promise.all([
+      const [members, expenses, owed] = await Promise.all([
         client.from('event_members').select('user_id, display_name, role').eq('event_id', eventId).order('joined_at'),
         client
           .from('expenses')
-          .select('id, description, payer_user_id, total_cents, allocations(participant_user_id, amount_cents)')
+          .select('id, description, payer_user_id, total_cents, allocations(amount_cents), expense_adjustments(amount_cents)')
           .eq('event_id', eventId)
           .order('created_at'),
+        client.rpc('get_event_owed_shares', { event_id: eventId }),
       ])
       check(members.error)
       check(expenses.error)
+      check(owed.error)
 
       const totals = new Map<string, Total>()
       const totalFor = (userId: string) => {
@@ -149,15 +157,16 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
       const unresolved: SettlementInputs['unresolved'] = []
       for (const x of expenses.data as unknown as ExpenseRow[]) {
         totalFor(x.payer_user_id).paidCents += x.total_cents
-        let allocated = 0
-        for (const a of x.allocations) {
-          totalFor(a.participant_user_id).owedCents += a.amount_cents
-          allocated += a.amount_cents
-          payerAllocations.push({ expenseId: x.id, payerId: x.payer_user_id, participantId: a.participant_user_id, amountCents: a.amount_cents })
+        // Allocations cover the items subtotal (paid total minus adjustments); same rule as confirm_settlement.
+        const allocated = x.allocations.reduce((sum, a) => sum + a.amount_cents, 0)
+        const subtotal = x.total_cents - x.expense_adjustments.reduce((sum, a) => sum + a.amount_cents, 0)
+        if (allocated !== subtotal) {
+          unresolved.push({ expenseId: x.id, description: x.description, unallocatedCents: subtotal - allocated })
         }
-        if (allocated !== x.total_cents) {
-          unresolved.push({ expenseId: x.id, description: x.description, unallocatedCents: x.total_cents - allocated })
-        }
+      }
+      for (const o of (owed.data ?? []) as OwedShareRow[]) {
+        totalFor(o.participant_user_id).owedCents += o.owed_cents
+        payerAllocations.push({ expenseId: o.expense_id, payerId: o.payer_user_id, participantId: o.participant_user_id, amountCents: o.owed_cents })
       }
 
       return {

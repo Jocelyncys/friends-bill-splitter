@@ -1,5 +1,5 @@
 begin;
-select plan(294);
+select plan(357);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -15,15 +15,16 @@ select policies_are('public', 'settlement_transfers', array['transfer_parties_re
 select policies_are('public', 'payment_details', array['authorized_read_payment_details', 'receiver_inserts_own_payment_details', 'receiver_updates_own_payment_details'], 'payment_details policies are exact');
 select policies_are('public', 'activity_log', array['members_read_activity'], 'activity_log policies are exact');
 select policies_are('public', 'payment_events', array['transfer_parties_read_payment_events'], 'payment_events policies are exact');
+select policies_are('public', 'expense_adjustments', array['members_read_expense_adjustments'], 'expense_adjustments policies are exact');
 
 select is(
   (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity),
-  11, 'RLS is enabled on all 11 public tables');
+  12, 'RLS is enabled on all 12 public tables');
 select is(
   (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r'),
-  11, 'there are exactly 11 public tables');
+  12, 'there are exactly 12 public tables');
 
 select row_eq(
   $$select public from storage.buckets where id = 'payment-qr'$$,
@@ -61,7 +62,7 @@ select is(
 -- No write policies on read-only tables (RLS default-deny for direct client writes).
 select is(
   (select count(*)::int from pg_policies where schemaname = 'public'
-    and tablename in ('allocations','settlements','settlement_balances','settlement_transfers','activity_log','payment_events')
+    and tablename in ('allocations','settlements','settlement_balances','settlement_transfers','activity_log','payment_events','expense_adjustments')
     and cmd <> 'SELECT'),
   0, 'server-managed tables have no client write policies');
 
@@ -409,11 +410,11 @@ select is((select count(*)::int from public.expense_items where expense_id = '5a
 
 -- Task 7a: claim / unclaim / assign / close-claiming / role RPCs + realtime ---
 select is((select count(*)::int from unnest(array[
-    'public.claim_item(uuid)', 'public.unclaim_item(uuid)', 'public.assign_item(uuid, uuid)',
+    'public.claim_item(uuid)', 'public.unclaim_item(uuid)', 'public.assign_item(uuid, uuid[])',
     'public.set_claiming_closed(uuid, boolean)', 'public.set_member_role(uuid, uuid, public.event_role)']) as f(sig)
   where has_function_privilege('anon', f.sig, 'execute')), 0, 'anon cannot execute any claim/role RPC');
 select is((select count(*)::int from unnest(array[
-    'public.claim_item(uuid)', 'public.unclaim_item(uuid)', 'public.assign_item(uuid, uuid)',
+    'public.claim_item(uuid)', 'public.unclaim_item(uuid)', 'public.assign_item(uuid, uuid[])',
     'public.set_claiming_closed(uuid, boolean)', 'public.set_member_role(uuid, uuid, public.event_role)']) as f(sig)
   where has_function_privilege('authenticated', f.sig, 'execute')), 5, 'authenticated can execute the claim/role RPCs');
 select is((select count(*)::int from unnest(array['public.resplit_item_claims(uuid)', 'public.lock_item_expense(uuid, uuid)']) as f(sig)
@@ -501,7 +502,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
 select throws_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000001', true)$$,
   '22023', 'not_allowed', 'a non-creator participant cannot close claiming');
-select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$,
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', array['cccccccc-cccc-cccc-cccc-cccccccccccc']::uuid[])$$,
   '22023', 'not_allowed', 'a participant cannot assign another person');
 reset role;
 
@@ -513,9 +514,9 @@ select throws_ok($$select public.claim_item('7a100000-0000-0000-0000-00000000000
   '22023', 'claiming_closed', 'participants cannot claim after closing');
 select throws_ok($$select public.unclaim_item('7a100000-0000-0000-0000-000000000001')$$,
   '22023', 'claiming_closed', 'participants cannot unclaim after closing');
-select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'dddddddd-dddd-dddd-dddd-dddddddddddd')$$,
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', array['dddddddd-dddd-dddd-dddd-dddddddddddd']::uuid[])$$,
   '22023', 'not_member', 'the creator cannot assign a non-member');
-select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')$$,
+select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', array['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa']::uuid[])$$,
   'the creator assigns an item on their own expense after closing');
 reset role;
 select is((select claiming_closed from public.expenses where id = '7a000000-0000-0000-0000-000000000001'), true, 'claiming is closed');
@@ -527,9 +528,9 @@ select results_eq($$select participant_user_id::text, amount_cents, source from 
 -- B: cohost assigns on someone else's expense.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
-select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000001', 'dddddddd-dddd-dddd-dddd-dddddddddddd')$$,
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000001', array['dddddddd-dddd-dddd-dddd-dddddddddddd']::uuid[])$$,
   '22023', 'not_member', 'managers cannot assign a non-member');
-select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000001', 'ffffffff-ffff-ffff-ffff-ffffffffffff')$$,
+select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000001', array['ffffffff-ffff-ffff-ffff-ffffffffffff']::uuid[])$$,
   'a cohost assigns an item of another member''s expense');
 select lives_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-000000000001', false)$$, 'a cohost reopens claiming');
 reset role;
@@ -582,7 +583,7 @@ select is((select metadata from public.activity_log where action = 'member_role_
 update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
-select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', 'ffffffff-ffff-ffff-ffff-ffffffffffff')$$, 'the owner assigns an item');
+select lives_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000002', array['ffffffff-ffff-ffff-ffff-ffffffffffff']::uuid[])$$, 'the owner assigns an item');
 reset role;
 select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7), 'assign bumps the event revision');
 select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
@@ -590,7 +591,7 @@ select results_eq($$select participant_user_id::text, amount_cents, source from 
   $$values ('ffffffff-ffff-ffff-ffff-ffffffffffff', 500::bigint, 'owner')$$,
   'an owner assignment has source owner');
 select is((select metadata from public.activity_log where action = 'item_assigned' order by id desc limit 1),
-  jsonb_build_object('expense_id', '7a000000-0000-0000-0000-000000000001', 'item_id', '7a100000-0000-0000-0000-000000000002', 'member_id', 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  jsonb_build_object('expense_id', '7a000000-0000-0000-0000-000000000001', 'item_id', '7a100000-0000-0000-0000-000000000002', 'member_ids', jsonb_build_array('ffffffff-ffff-ffff-ffff-ffffffffffff')),
   'assign activity is redacted to ids');
 update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
 set local role authenticated;
@@ -689,7 +690,7 @@ select throws_ok($$select public.set_claiming_closed('7a000000-0000-0000-0000-00
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
-select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$, '22023', 'event_not_open', 'assign on a settled event is rejected');
+select throws_ok($$select public.assign_item('7a100000-0000-0000-0000-000000000009', array['cccccccc-cccc-cccc-cccc-cccccccccccc']::uuid[])$$, '22023', 'event_not_open', 'assign on a settled event is rejected');
 select throws_ok($$select public.set_member_role('7ae00000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cohost')$$, '22023', 'event_not_open', 'role change on a settled event is rejected');
 reset role;
 
@@ -1177,6 +1178,335 @@ select is((select count(*)::int from public.expenses where id = 'd9000000-0000-0
 select is((select file_size_limit from storage.buckets where id = 'payment-qr'), 5242880::bigint, 'payment-qr accepts at most 5 MiB per object');
 select is((select allowed_mime_types from storage.buckets where id = 'payment-qr'), array['image/png', 'image/jpeg', 'image/webp'],
   'payment-qr accepts only png, jpeg and webp');
+
+
+-- Batch 2A (0010): multi-person assign_item, bill-level adjustments, owed shares --
+select is((select has_function_privilege('anon', 'public.get_event_owed_shares(uuid)', 'execute')), false,
+  'anon cannot execute get_event_owed_shares');
+select is((select has_function_privilege('authenticated', 'public.get_event_owed_shares(uuid)', 'execute')), true,
+  'authenticated can execute get_event_owed_shares');
+select is((select count(*)::int from unnest(array['public.expense_owed_shares(uuid)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute') or has_function_privilege('anon', f.sig, 'execute')),
+  0, 'clients cannot execute expense_owed_shares');
+select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'assign_item'), 1, 'only the multi-member assign_item signature exists');
+select ok(not has_table_privilege('authenticated', 'public.expense_adjustments', 'insert')
+    and not has_table_privilege('authenticated', 'public.expense_adjustments', 'update')
+    and not has_table_privilege('authenticated', 'public.expense_adjustments', 'delete')
+    and not has_table_privilege('anon', 'public.expense_adjustments', 'select'),
+  'clients cannot write expense_adjustments and anon cannot read them');
+
+create function pg_temp.adj(p_id uuid, p_kind text, p_label text, p_amt bigint, p_sort int) returns jsonb language sql as $$
+  select jsonb_build_object('id', p_id, 'kind', p_kind, 'label', p_label, 'amount_cents', p_amt, 'sort_order', p_sort) $$;
+create function pg_temp.with_adj(p_base jsonb, p_adj jsonb) returns jsonb language sql as $$
+  select p_base || jsonb_build_object('adjustments', p_adj) $$;
+grant execute on function pg_temp.adj(uuid, text, text, bigint, int), pg_temp.with_adj(jsonb, jsonb) to public;
+
+-- G: A owner, B cohost, C participant (creator of X), F participant; D outsider.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('b2ae0000-0000-0000-0000-000000000001', 'Multi', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b2a1');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('b2ae0000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner'),
+  ('b2ae0000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'B', 'cohost'),
+  ('b2ae0000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant'),
+  ('b2ae0000-0000-0000-0000-000000000001', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'F', 'participant');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.exp('b2000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '2201', 'item_claim',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000001', 1200, 0), pg_temp.it('b2100000-0000-0000-0000-000000000002', 1001, 1)), '[]',
+    'b2ae0000-0000-0000-0000-000000000001'))$$,
+  'C creates item_claim expense X (1200 + 1001)');
+reset role;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001',
+    array['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc']::uuid[])$$,
+  '22023', 'not_allowed', 'a participant who did not create the expense cannot assign to several members');
+reset role;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001',
+    array['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'dddddddd-dddd-dddd-dddd-dddddddddddd']::uuid[])$$,
+  '22023', 'not_member', 'every assignee must be a member');
+select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001',
+    array['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa']::uuid[])$$,
+  '22023', 'invalid_payload', 'duplicate assignees are rejected');
+select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001', array[]::uuid[])$$,
+  '22023', 'invalid_payload', 'an empty assignee list is rejected');
+select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001', null)$$,
+  '22023', 'invalid_payload', 'a null assignee list is rejected');
+select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001',
+    array['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', null]::uuid[])$$,
+  '22023', 'invalid_payload', 'a null assignee is rejected');
+reset role;
+select is((select count(*)::int from public.allocations where item_id = 'b2100000-0000-0000-0000-000000000001'), 0,
+  'rejected assignments wrote nothing');
+update rev7 set n = (select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000001');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001',
+    array['cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb']::uuid[])$$,
+  'the creator assigns one item to three members');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = 'b2100000-0000-0000-0000-000000000001' order by participant_user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 400::bigint, 'expense_creator'),
+           ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 400::bigint, 'expense_creator'),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc', 400::bigint, 'expense_creator')$$,
+  '1200 assigned to three members is 400 each');
+select is((select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000001'), (select n + 1 from rev7),
+  'a multi-member assignment bumps the revision exactly once');
+select is((select metadata from public.activity_log where action = 'item_assigned' order by id desc limit 1),
+  jsonb_build_object('expense_id', 'b2000000-0000-0000-0000-000000000001', 'item_id', 'b2100000-0000-0000-0000-000000000001',
+    'member_ids', jsonb_build_array('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cccccccc-cccc-cccc-cccc-cccccccccccc')),
+  'multi-assign activity is redacted to ids');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select lives_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000002',
+    array['ffffffff-ffff-ffff-ffff-ffffffffffff', 'cccccccc-cccc-cccc-cccc-cccccccccccc']::uuid[])$$,
+  'a cohost assigns 1001 to two members');
+select lives_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001', array['ffffffff-ffff-ffff-ffff-ffffffffffff']::uuid[])$$,
+  'a reassignment to one member replaces the three shares');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = 'b2100000-0000-0000-0000-000000000002' order by participant_user_id::text collate "C"$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 501::bigint, 'cohost'), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 500::bigint, 'cohost')$$,
+  '1001 to two members is 501/500, extra cent by ascending id');
+select results_eq($$select participant_user_id::text, amount_cents from public.allocations
+    where item_id = 'b2100000-0000-0000-0000-000000000001'$$,
+  $$values ('ffffffff-ffff-ffff-ffff-ffffffffffff', 1200::bigint)$$,
+  'reassigning replaces every previous share');
+
+-- save_expense: an item may carry several equal shares.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.exp('b2000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '1001', 'host_assignment',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000021', 1001, 0)),
+    jsonb_build_array(pg_temp.al('b2100000-0000-0000-0000-000000000021', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500),
+      pg_temp.al('b2100000-0000-0000-0000-000000000021', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 501)), 'b2ae0000-0000-0000-0000-000000000001'))$$,
+  '22023', 'invalid_allocation', 'shares of a multi-assigned item must follow the equal-split cent rule');
+select throws_ok($$select public.save_expense(pg_temp.exp('b2000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '1001', 'host_assignment',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000021', 1001, 0)),
+    jsonb_build_array(pg_temp.al('b2100000-0000-0000-0000-000000000021', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500)), 'b2ae0000-0000-0000-0000-000000000001'))$$,
+  '22023', 'invalid_allocation', 'a partially assigned item is rejected');
+select lives_ok($$select public.save_expense(pg_temp.exp('b2000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '1001', 'host_assignment',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000021', 1001, 0)),
+    jsonb_build_array(pg_temp.al('b2100000-0000-0000-0000-000000000021', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 500),
+      pg_temp.al('b2100000-0000-0000-0000-000000000021', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 501)), 'b2ae0000-0000-0000-0000-000000000001'))$$,
+  'host_assignment accepts one item shared by two members');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, source from public.allocations
+    where item_id = 'b2100000-0000-0000-0000-000000000021' order by participant_user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 501::bigint, 'owner'), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 500::bigint, 'owner')$$,
+  'the shared host assignment is stored per assignee');
+
+-- Adjustments: the user's receipt. Ali = A (payer), Ben = B; items 220 891 531 864 351 (2857),
+-- voucher -500, SST +141, rounding +2, paid 2500. Ali has 220 + 891, Ben the rest.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('b2ae0000-0000-0000-0000-000000000002', 'Receipt', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b2a2');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('b2ae0000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Ali', 'owner'),
+  ('b2ae0000-0000-0000-0000-000000000002', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Ben', 'participant'),
+  ('b2ae0000-0000-0000-0000-000000000002', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Cara', 'participant');
+create function pg_temp.receipt(p_total text, p_adj jsonb) returns jsonb language sql as $$
+  select pg_temp.with_adj(pg_temp.exp('b2000000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', p_total::jsonb, 'item_claim',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000011', 220, 0), pg_temp.it('b2100000-0000-0000-0000-000000000012', 891, 1),
+      pg_temp.it('b2100000-0000-0000-0000-000000000013', 531, 2), pg_temp.it('b2100000-0000-0000-0000-000000000014', 864, 3),
+      pg_temp.it('b2100000-0000-0000-0000-000000000015', 351, 4)),
+    jsonb_build_array(pg_temp.al('b2100000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 220),
+      pg_temp.al('b2100000-0000-0000-0000-000000000012', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 891),
+      pg_temp.al('b2100000-0000-0000-0000-000000000013', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 531),
+      pg_temp.al('b2100000-0000-0000-0000-000000000014', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 864),
+      pg_temp.al('b2100000-0000-0000-0000-000000000015', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 351)),
+    'b2ae0000-0000-0000-0000-000000000002'), p_adj) $$;
+create function pg_temp.receipt_adj() returns jsonb language sql as $$
+  select jsonb_build_array(
+    pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'discount', 'Voucher', -500, 0),
+    pg_temp.adj('b2200000-0000-0000-0000-000000000012', 'tax', 'SST 6%', 141, 1),
+    pg_temp.adj('b2200000-0000-0000-0000-000000000013', 'rounding', 'Rounding', 2, 2)) $$;
+grant execute on function pg_temp.receipt(text, jsonb), pg_temp.receipt_adj() to public;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.receipt('2501', pg_temp.receipt_adj()))$$,
+  '22023', 'adjustment_mismatch', 'the paid total must equal items plus adjustments');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2857', pg_temp.receipt_adj()))$$,
+  '22023', 'adjustment_mismatch', 'the items subtotal alone does not match once adjustments exist');
+select throws_ok($$select public.save_expense(pg_temp.with_adj(pg_temp.exp('b2000000-0000-0000-0000-000000000019', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '1000', 'equal', '[]',
+    jsonb_build_array(pg_temp.al(null, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 1000)), 'b2ae0000-0000-0000-0000-000000000002'),
+    jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000019', 'tax', 'SST', 60, 0))))$$,
+  '22023', 'adjustments_not_allowed', 'equal expenses take no adjustments');
+select throws_ok($$select public.save_expense(pg_temp.with_adj(pg_temp.exp('b2000000-0000-0000-0000-000000000019', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '1000', 'custom', '[]',
+    jsonb_build_array(pg_temp.al(null, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 1000)), 'b2ae0000-0000-0000-0000-000000000002'),
+    jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000019', 'tax', 'SST', 60, 0))))$$,
+  '22023', 'adjustments_not_allowed', 'custom expenses take no adjustments');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2857', jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'discount', 'Voucher', 0, 0))))$$,
+  '22023', 'invalid_adjustment', 'a zero adjustment is rejected');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2357', jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'coupon', 'Voucher', -500, 0))))$$,
+  '22023', 'invalid_adjustment', 'an unknown adjustment kind is rejected');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2357', jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'discount', '  ', -500, 0))))$$,
+  '22023', 'invalid_adjustment', 'a blank adjustment label is rejected');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2357', jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'discount', repeat('x', 61), -500, 0))))$$,
+  '22023', 'invalid_adjustment', 'an adjustment label over 60 characters is rejected');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2357', jsonb_build_array(jsonb_build_object('id', 'b2200000-0000-0000-0000-000000000011',
+    'kind', 'discount', 'label', 'Voucher', 'amount_cents', '-500', 'sort_order', 0))))$$,
+  '22023', 'invalid_adjustment', 'adjustment amounts must be JSON numbers');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2357', jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'discount', 'Voucher', -250, 0),
+    pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'discount', 'Voucher', -250, 1))))$$,
+  '22023', 'invalid_adjustment', 'duplicate adjustment ids are rejected');
+select throws_ok($$select public.save_expense(pg_temp.receipt('2857', '{}'))$$,
+  '22023', 'invalid_adjustment', 'adjustments must be an array');
+update rev7 set n = (select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000002');
+select is(public.save_expense(pg_temp.receipt('2500', pg_temp.receipt_adj())), 'b2000000-0000-0000-0000-000000000011'::uuid,
+  'the real receipt (items 2857, voucher -500, SST +141, rounding +2, paid 2500) is accepted');
+reset role;
+select is((select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000002'), (select n + 1 from rev7),
+  'saving with adjustments bumps the revision once');
+select results_eq($$select id::text, kind, label, amount_cents, sort_order from public.expense_adjustments
+    where expense_id = 'b2000000-0000-0000-0000-000000000011' order by sort_order$$,
+  $$values ('b2200000-0000-0000-0000-000000000011', 'discount', 'Voucher', -500::bigint, 0),
+           ('b2200000-0000-0000-0000-000000000012', 'tax', 'SST 6%', 141::bigint, 1),
+           ('b2200000-0000-0000-0000-000000000013', 'rounding', 'Rounding', 2::bigint, 2)$$,
+  'adjustment rows are stored');
+select is((select metadata from public.activity_log where event_id = 'b2ae0000-0000-0000-0000-000000000002' and action = 'expense_created'),
+  jsonb_build_object('expense_id', 'b2000000-0000-0000-0000-000000000011'), 'activity stays redacted with adjustments');
+select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b2000000-0000-0000-0000-000000000011') order by participant_user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 972::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 1528::bigint)$$,
+  'owed shares split the paid total proportionally: Ali 1111 -> 972, Ben 1746 -> 1528');
+
+-- Another member's expense cannot reuse the adjustment ids.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.with_adj(pg_temp.exp('b2000000-0000-0000-0000-000000000018', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '900', 'item_claim',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000018', 1000, 0)), '[]', 'b2ae0000-0000-0000-0000-000000000002'),
+    jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000011', 'discount', 'Voucher', -100, 0))))$$,
+  '22023', 'invalid_adjustment', 'an adjustment id owned by another expense is rejected');
+reset role;
+
+-- A shared item split three ways (host_assignment, payer B): items 1001 (A, B, C) + 700 (A) + 999 (B) = 2700,
+-- tax +162, discount -300, paid 2562. Item sums A 1034, B 1333, C 333 -> owed 981 / 1265 / 316.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.with_adj(pg_temp.exp('b2000000-0000-0000-0000-000000000012', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '2562', 'host_assignment',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000031', 1001, 0), pg_temp.it('b2100000-0000-0000-0000-000000000032', 700, 1),
+      pg_temp.it('b2100000-0000-0000-0000-000000000033', 999, 2)),
+    jsonb_build_array(pg_temp.al('b2100000-0000-0000-0000-000000000031', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 334),
+      pg_temp.al('b2100000-0000-0000-0000-000000000031', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 334),
+      pg_temp.al('b2100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 333),
+      pg_temp.al('b2100000-0000-0000-0000-000000000032', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 700),
+      pg_temp.al('b2100000-0000-0000-0000-000000000033', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 999)),
+    'b2ae0000-0000-0000-0000-000000000002'),
+    jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000021', 'tax', 'Service tax', 162, 0),
+      pg_temp.adj('b2200000-0000-0000-0000-000000000022', 'discount', 'Member discount', -300, 1))))$$,
+  'the owner saves a host_assignment expense with a three-way shared item and adjustments');
+reset role;
+select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b2000000-0000-0000-0000-000000000012') order by participant_user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 981::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 1265::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc', 316::bigint)$$,
+  'a shared item counts toward each sharer''s subtotal: 1034/1333/333 of 2700 -> 981/1265/316 of 2562');
+
+-- RLS: members read adjustments, outsiders do not, nobody writes them directly.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select is((select count(*)::int from public.expense_adjustments
+    where expense_id in ('b2000000-0000-0000-0000-000000000011', 'b2000000-0000-0000-0000-000000000012')), 5,
+  'a member reads the event''s adjustments');
+select throws_ok($$insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
+    values ('b2200000-0000-0000-0000-0000000000ff', 'b2000000-0000-0000-0000-000000000011', 'other', 'x', 1)$$,
+  '42501', null, 'members cannot insert adjustments directly');
+select throws_ok($$update public.expense_adjustments set amount_cents = 1 where expense_id = 'b2000000-0000-0000-0000-000000000011'$$,
+  '42501', null, 'members cannot update adjustments directly');
+select throws_ok($$delete from public.expense_adjustments where expense_id = 'b2000000-0000-0000-0000-000000000011'$$,
+  '42501', null, 'members cannot delete adjustments directly');
+select throws_ok($$select public.expense_owed_shares('b2000000-0000-0000-0000-000000000011')$$,
+  '42501', null, 'members cannot call the internal owed-shares helper');
+select results_eq($$select expense_id::text, payer_user_id::text, participant_user_id::text, owed_cents
+    from public.get_event_owed_shares('b2ae0000-0000-0000-0000-000000000002')$$,
+  $$values ('b2000000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 972::bigint),
+           ('b2000000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 1528::bigint),
+           ('b2000000-0000-0000-0000-000000000012', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 981::bigint),
+           ('b2000000-0000-0000-0000-000000000012', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 1265::bigint),
+           ('b2000000-0000-0000-0000-000000000012', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 316::bigint)$$,
+  'get_event_owed_shares returns per-expense owed shares to a member, by expense then participant id');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select is((select count(*)::int from public.expense_adjustments), 0, 'a non-member reads no adjustments');
+select throws_ok($$select * from public.get_event_owed_shares('b2ae0000-0000-0000-0000-000000000002')$$,
+  '22023', 'not_allowed', 'a non-member cannot read owed shares');
+set local request.jwt.claims = '{"role":"authenticated"}';
+select throws_ok($$select * from public.get_event_owed_shares('b2ae0000-0000-0000-0000-000000000002')$$,
+  '28000', 'not_authenticated', 'get_event_owed_shares needs a session');
+reset role;
+
+-- Settlement uses owed shares. Paid A 2500, B 2562; owed A 1953, B 2793, C 316; net +547 / -231 / -316.
+select results_eq(
+  $$select user_id, paid_cents, owed_cents, net_cents from public.compute_settlement_balances('b2ae0000-0000-0000-0000-000000000002')$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 2500::bigint, 1953::bigint, 547::bigint),
+           ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 2562::bigint, 2793::bigint, -231::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 0::bigint, 316::bigint, -316::bigint)$$,
+  'balances use owed shares and sum to zero');
+select results_eq(
+  $$select payer_user_id, receiver_user_id, amount_cents
+    from public.compute_settlement_transfers('b2ae0000-0000-0000-0000-000000000002', 'optimized_direct', null)$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 316::bigint),
+           ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 231::bigint)$$,
+  'optimized direct transfers from owed shares match settleOptimizedDirect');
+select results_eq(
+  $$select payer_user_id, receiver_user_id, amount_cents
+    from public.compute_settlement_transfers('b2ae0000-0000-0000-0000-000000000002', 'coordinator', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')$$,
+  $$values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 231::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 316::bigint)$$,
+  'coordinator transfers from owed shares match settleViaCoordinator');
+
+insert into s9 (k, n) select 'revb2', revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000002';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+insert into s9 (k, id) values ('sb2', public.confirm_settlement('b2ae0000-0000-0000-0000-000000000002', 'original_payers', null,
+  (select n from s9 where k = 'revb2')));
+reset role;
+select results_eq($$select ordinal, payer_user_id, receiver_user_id, amount_cents from public.settlement_transfers
+    where settlement_id = (select id from s9 where k = 'sb2') order by ordinal$$,
+  $$values (1, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 981::bigint),
+           (2, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 1528::bigint),
+           (3, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 316::bigint)$$,
+  'confirm_settlement (original payers) pays each payer the owed shares, matching settleOriginalPayers');
+select results_eq($$select user_id, owed_cents, net_cents from public.settlement_balances
+    where settlement_id = (select id from s9 where k = 'sb2') order by user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 1953::bigint, 547::bigint),
+           ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 2793::bigint, -231::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 316::bigint, -316::bigint)$$,
+  'the settled snapshot stores owed shares');
+select throws_ok($$insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
+    values ('b2200000-0000-0000-0000-0000000000fe', 'b2000000-0000-0000-0000-000000000011', 'other', 'Late', 1)$$,
+  '22023', 'event_not_open', 'adjustments are read-only once settled');
+
+-- Unresolved check uses the items subtotal: items 500 + 500, voucher -500, paid 500, only the first
+-- item assigned (500 allocated = paid total, but one item is still unallocated).
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('b2ae0000-0000-0000-0000-000000000003', 'Unresolved', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b2a3');
+insert into public.event_members (event_id, user_id, display_name, role)
+values ('b2ae0000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.with_adj(pg_temp.exp('b2000000-0000-0000-0000-000000000031', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '500', 'item_claim',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000041', 500, 0), pg_temp.it('b2100000-0000-0000-0000-000000000042', 500, 1)),
+    jsonb_build_array(pg_temp.al('b2100000-0000-0000-0000-000000000041', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500)),
+    'b2ae0000-0000-0000-0000-000000000003'),
+    jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000031', 'discount', 'Voucher', -500, 0))))$$,
+  'an item expense with one unallocated item and a voucher is saved');
+select results_eq($$select participant_user_id::text, owed_cents from public.get_event_owed_shares('b2ae0000-0000-0000-0000-000000000003')$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500::bigint)$$,
+  'an unresolved expense reports raw allocations (no proportional split yet)');
+select throws_ok($$select public.confirm_settlement('b2ae0000-0000-0000-0000-000000000003', 'optimized_direct', null,
+    (select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000003'))$$,
+  '22023', 'unresolved_expenses', 'allocations equal to the paid total do not resolve an expense with unallocated items');
+reset role;
 
 select * from finish();
 rollback;

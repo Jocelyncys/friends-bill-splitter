@@ -70,7 +70,7 @@ export function createEventRepository(client: SupabaseClient = supabase) {
         client.from('event_members').select('user_id, display_name, role').eq('event_id', eventId).order('joined_at'),
         client
           .from('expenses')
-          .select(`${EXPENSE_SUMMARY_COLUMNS}, allocations(amount_cents)`)
+          .select(`${EXPENSE_SUMMARY_COLUMNS}, allocations(amount_cents), expense_adjustments(amount_cents)`)
           .eq('event_id', eventId)
           .order('created_at', { ascending: false }),
       ])
@@ -86,13 +86,17 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       const me = members.find(m => m.userId === session.data.session?.user.id)
       if (!me) throw new Error('not_member')
 
-      const rows = expensesResult.data as Array<ExpenseRow & { allocations: Array<{ amount_cents: number }> }>
+      const rows = expensesResult.data as Array<
+        ExpenseRow & { allocations: Array<{ amount_cents: number }>; expense_adjustments?: Array<{ amount_cents: number }> }
+      >
       const attention: AttentionItem[] = []
       for (const row of rows) {
         if (row.split_method !== 'item_claim' && row.split_method !== 'host_assignment') continue
+        // Allocations cover the items subtotal: the paid total minus bill-level adjustments.
         const allocated = row.allocations.reduce((sum, a) => sum + a.amount_cents, 0)
-        if (allocated < row.total_cents) {
-          attention.push({ kind: 'unclaimed_items', expenseId: row.id, description: row.description, unallocatedCents: row.total_cents - allocated })
+        const subtotal = row.total_cents - (row.expense_adjustments ?? []).reduce((sum, a) => sum + a.amount_cents, 0)
+        if (allocated < subtotal) {
+          attention.push({ kind: 'unclaimed_items', expenseId: row.id, description: row.description, unallocatedCents: subtotal - allocated })
         }
       }
 

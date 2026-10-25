@@ -52,3 +52,13 @@ export function allocateProportionally(total: number, weights: AllocationMap): A
   for (const { id } of exact) if (remainder-- > 0) result[id] += 1
   return result
 }
+
+/**
+ * What each person owes for an itemized expense with bill-level adjustments
+ * (voucher, SST, service charge, rounding): the amount paid split in proportion to
+ * each person's item subtotal, shared items included. Display only; the server
+ * (expense_owed_shares) is authoritative and uses the same rule.
+ */
+export function owedShares(totalCents: number, perPersonItemCents: AllocationMap): AllocationMap {
+  return allocateProportionally(totalCents, perPersonItemCents)
+}

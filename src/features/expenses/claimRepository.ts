@@ -82,7 +82,8 @@ export function createClaimRepository(client: SupabaseClient = supabase) {
   return {
     claimItem: (itemId: string) => callAction(client, 'claim_item', { item_id: itemId }),
     unclaimItem: (itemId: string) => callAction(client, 'unclaim_item', { item_id: itemId }),
-    assignItem: (itemId: string, memberId: string) => callAction(client, 'assign_item', { item_id: itemId, member_id: memberId }),
+    // One or more distinct members; the server splits the item equally (extra cents by id order).
+    assignItem: (itemId: string, memberIds: string[]) => callAction(client, 'assign_item', { item_id: itemId, member_ids: memberIds }),
     setClaimingClosed: (expenseId: string, closed: boolean) =>
       callAction(client, 'set_claiming_closed', { expense_id: expenseId, closed }),
     async getExpenseClaims(expenseId: string): Promise<ExpenseClaims> {

@@ -21,9 +21,12 @@ function builder(result: Result): Builder {
 function fromTables(results: Record<string, Result>) {
   return vi.fn((table: string) => builder(results[table]))
 }
+function owedRpc(rows: unknown, error: unknown = null) {
+  return vi.fn().mockResolvedValue({ data: rows, error })
+}
 
 describe('settlementRepository.getSettlementInputs', () => {
-  it('builds totals, payer allocations and unresolved expenses for the client preview', async () => {
+  it('builds totals and payer allocations from the server owed shares, and unresolved from the items subtotal', async () => {
     const from = fromTables({
       events: { data: { revision: 7 }, error: null },
       event_members: {
@@ -36,15 +39,26 @@ describe('settlementRepository.getSettlementInputs', () => {
       },
       expenses: {
         data: [
-          { id: 'e1', description: 'Hotel', payer_user_id: 'ali', total_cents: 900,
-            allocations: [{ participant_user_id: 'ali', amount_cents: 300 }, { participant_user_id: 'cara', amount_cents: 600 }] },
+          // Items 2857 fully allocated; voucher -500, SST +141, rounding +2 -> paid 2500.
+          { id: 'e1', description: 'Dinner', payer_user_id: 'ali', total_cents: 2500,
+            allocations: [{ amount_cents: 220 }, { amount_cents: 891 }, { amount_cents: 1746 }],
+            expense_adjustments: [{ amount_cents: -500 }, { amount_cents: 141 }, { amount_cents: 2 }] },
           { id: 'e2', description: 'Snacks', payer_user_id: 'ben', total_cents: 500,
-            allocations: [{ participant_user_id: 'ben', amount_cents: 200 }] },
+            allocations: [{ amount_cents: 200 }], expense_adjustments: [] },
+          // Allocated 500 equals the paid total, but the items subtotal is 1000.
+          { id: 'e3', description: 'Kopi', payer_user_id: 'cara', total_cents: 500,
+            allocations: [{ amount_cents: 500 }], expense_adjustments: [{ amount_cents: -500 }] },
         ],
         error: null,
       },
     })
-    const inputs = await createSettlementRepository({ from } as never).getSettlementInputs('event-1')
+    const rpc = owedRpc([
+      { expense_id: 'e1', payer_user_id: 'ali', participant_user_id: 'ali', owed_cents: 972 },
+      { expense_id: 'e1', payer_user_id: 'ali', participant_user_id: 'ben', owed_cents: 1528 },
+      { expense_id: 'e2', payer_user_id: 'ben', participant_user_id: 'ben', owed_cents: 200 },
+      { expense_id: 'e3', payer_user_id: 'cara', participant_user_id: 'ali', owed_cents: 500 },
+    ])
+    const inputs = await createSettlementRepository({ from, rpc } as never).getSettlementInputs('event-1')
     expect(inputs).toEqual({
       revision: 7,
       members: [
@@ -53,18 +67,23 @@ describe('settlementRepository.getSettlementInputs', () => {
         { userId: 'cara', displayName: 'Cara', role: 'participant' },
       ],
       totals: [
-        { userId: 'ali', paidCents: 900, owedCents: 300 },
-        { userId: 'ben', paidCents: 500, owedCents: 200 },
-        { userId: 'cara', paidCents: 0, owedCents: 600 },
+        { userId: 'ali', paidCents: 2500, owedCents: 1472 },
+        { userId: 'ben', paidCents: 500, owedCents: 1728 },
+        { userId: 'cara', paidCents: 500, owedCents: 0 },
       ],
       payerAllocations: [
-        { expenseId: 'e1', payerId: 'ali', participantId: 'ali', amountCents: 300 },
-        { expenseId: 'e1', payerId: 'ali', participantId: 'cara', amountCents: 600 },
+        { expenseId: 'e1', payerId: 'ali', participantId: 'ali', amountCents: 972 },
+        { expenseId: 'e1', payerId: 'ali', participantId: 'ben', amountCents: 1528 },
         { expenseId: 'e2', payerId: 'ben', participantId: 'ben', amountCents: 200 },
+        { expenseId: 'e3', payerId: 'cara', participantId: 'ali', amountCents: 500 },
       ],
-      unresolved: [{ expenseId: 'e2', description: 'Snacks', unallocatedCents: 300 }],
+      unresolved: [
+        { expenseId: 'e2', description: 'Snacks', unallocatedCents: 300 },
+        { expenseId: 'e3', description: 'Kopi', unallocatedCents: 500 },
+      ],
     })
     expect(from.mock.calls.map(c => c[0])).toEqual(['events', 'event_members', 'expenses'])
+    expect(rpc).toHaveBeenCalledWith('get_event_owed_shares', { event_id: 'event-1' })
   })
 
   it('feeds the Task 8 functions once every expense is resolved', async () => {
@@ -73,16 +92,20 @@ describe('settlementRepository.getSettlementInputs', () => {
       event_members: { data: [], error: null },
       expenses: {
         data: [{ id: 'e1', description: 'x', payer_user_id: 'a', total_cents: 100,
-          allocations: [{ participant_user_id: 'a', amount_cents: 50 }, { participant_user_id: 'b', amount_cents: 50 }] }],
+          allocations: [{ amount_cents: 50 }, { amount_cents: 50 }], expense_adjustments: [] }],
         error: null,
       },
     })
-    const { totals, unresolved } = await createSettlementRepository({ from } as never).getSettlementInputs('event-1')
+    const rpc = owedRpc([
+      { expense_id: 'e1', payer_user_id: 'a', participant_user_id: 'a', owed_cents: 50 },
+      { expense_id: 'e1', payer_user_id: 'a', participant_user_id: 'b', owed_cents: 50 },
+    ])
+    const { totals, unresolved } = await createSettlementRepository({ from, rpc } as never).getSettlementInputs('event-1')
     expect(unresolved).toEqual([])
     expect(settleOptimizedDirect(calculateBalances(totals))).toEqual([{ payerId: 'b', receiverId: 'a', amountCents: 50 }])
   })
 
-  it('reads the revision before members and expenses, and filters every read by event id', async () => {
+  it('reads the revision before members, expenses and owed shares, and filters every read by event id', async () => {
     const log: string[] = []
     const from = vi.fn((table: string) => {
       log.push(`from:${table}`)
@@ -94,10 +117,15 @@ describe('settlementRepository.getSettlementInputs', () => {
       }
       return b
     })
-    await createSettlementRepository({ from } as never).getSettlementInputs('event-1')
+    const rpc = vi.fn((fn: string) => {
+      log.push(`rpc:${fn}`)
+      return Promise.resolve({ data: [], error: null })
+    })
+    await createSettlementRepository({ from, rpc } as never).getSettlementInputs('event-1')
     expect(log.indexOf('resolved:events')).toBeGreaterThan(-1)
     expect(log.indexOf('resolved:events')).toBeLessThan(log.indexOf('from:expenses'))
     expect(log.indexOf('resolved:events')).toBeLessThan(log.indexOf('from:event_members'))
+    expect(log.indexOf('resolved:events')).toBeLessThan(log.indexOf('rpc:get_event_owed_shares'))
     expect(log).toEqual(expect.arrayContaining([
       'eq:events.id=event-1', 'eq:event_members.event_id=event-1', 'eq:expenses.event_id=event-1',
     ]))
@@ -109,7 +137,18 @@ describe('settlementRepository.getSettlementInputs', () => {
       event_members: { data: [], error: null },
       expenses: { data: [], error: null },
     })
-    await expect(createSettlementRepository({ from } as never).getSettlementInputs('event-1'))
+    await expect(createSettlementRepository({ from, rpc: owedRpc([]) } as never).getSettlementInputs('event-1'))
+      .rejects.toMatchObject({ code: 'action_failed' })
+  })
+
+  it('maps a failed owed-shares rpc to action_failed', async () => {
+    const from = fromTables({
+      events: { data: { revision: 1 }, error: null },
+      event_members: { data: [], error: null },
+      expenses: { data: [], error: null },
+    })
+    const rpc = owedRpc(null, { code: '22023', message: 'not_allowed' })
+    await expect(createSettlementRepository({ from, rpc } as never).getSettlementInputs('event-1'))
       .rejects.toMatchObject({ code: 'action_failed' })
   })
 })

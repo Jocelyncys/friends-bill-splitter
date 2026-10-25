@@ -19,6 +19,17 @@ export type SaveExpenseAllocation = {
   amountCents: number
 }
 
+export type AdjustmentKind = 'discount' | 'tax' | 'service' | 'rounding' | 'other'
+
+/** Bill-level line (voucher negative; SST, service charge, rounding positive). Item methods only. */
+export type SaveExpenseAdjustment = {
+  id: string
+  kind: AdjustmentKind
+  label: string // 1-60 chars
+  amountCents: number // signed, never 0
+  sortOrder: number
+}
+
 export type SaveExpensePayload = {
   id: string // client-generated UUID, stable across retries
   eventId: string
@@ -30,6 +41,9 @@ export type SaveExpensePayload = {
   splitMethod: SplitMethod
   items: SaveExpenseItem[]
   allocations: SaveExpenseAllocation[]
+  // item_claim / host_assignment only: totalCents = items + adjustments. Missing = none
+  // (also for offline drafts saved before adjustments existed).
+  adjustments?: SaveExpenseAdjustment[]
 }
 
 export type ExpenseSummary = {
@@ -80,6 +94,9 @@ const FIELD_BY_CODE: Record<string, keyof SaveExpensePayload | undefined> = {
   not_member: 'allocations',
   allocation_mismatch: 'allocations',
   allocation_exceeds_item: 'allocations',
+  invalid_adjustment: 'adjustments',
+  adjustments_not_allowed: 'adjustments',
+  adjustment_mismatch: 'adjustments',
   // form-level: invalid_payload, not_event_member, event_not_open, event_mismatch, not_allowed
 }
 
@@ -125,6 +142,13 @@ function toRpcPayload(p: SaveExpensePayload) {
       participant_user_id: a.participantUserId,
       amount_cents: a.amountCents,
     })),
+    adjustments: (p.adjustments ?? []).map(a => ({
+      id: a.id,
+      kind: a.kind,
+      label: a.label,
+      amount_cents: a.amountCents,
+      sort_order: a.sortOrder,
+    })),
   }
 }
 
@@ -164,11 +188,13 @@ type SavedExpenseRow = {
   split_method: SplitMethod
   expense_items: Array<{ id: string; description: string; quantity: number; total_cents: number; sort_order: number }>
   allocations: Array<{ item_id: string | null; participant_user_id: string; amount_cents: number; source: string }>
+  expense_adjustments: Array<{ id: string; kind: AdjustmentKind; label: string; amount_cents: number; sort_order: number }>
 }
 
 const SAVED_EXPENSE_COLUMNS =
   'id, event_id, creator_user_id, payer_user_id, description, category, expense_date, total_cents, split_method, ' +
-  'expense_items(id, description, quantity, total_cents, sort_order), allocations(item_id, participant_user_id, amount_cents, source)'
+  'expense_items(id, description, quantity, total_cents, sort_order), allocations(item_id, participant_user_id, amount_cents, source), ' +
+  'expense_adjustments(id, kind, label, amount_cents, sort_order)'
 
 export function toSavedExpense(row: SavedExpenseRow): SavedExpense {
   const claims: Record<string, string[]> = {}
@@ -194,6 +220,9 @@ export function toSavedExpense(row: SavedExpenseRow): SavedExpense {
       allocations: row.allocations
         .filter(a => a.source !== 'self_claim')
         .map(a => ({ itemId: a.item_id, participantUserId: a.participant_user_id, amountCents: a.amount_cents })),
+      adjustments: [...row.expense_adjustments]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(a => ({ id: a.id, kind: a.kind, label: a.label, amountCents: a.amount_cents, sortOrder: a.sort_order })),
     },
   }
 }

@@ -39,7 +39,31 @@ describe('expenseRepository', () => {
         split_method: 'item_claim',
         items: [{ id: 'item-1', description: 'Rice', quantity: 2, total_cents: 1000, sort_order: 0 }],
         allocations: [{ item_id: 'item-1', participant_user_id: 'user-2', amount_cents: 400 }],
+        adjustments: [],
       },
+    })
+  })
+
+  it('sends bill adjustments as snake_case rows', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 'exp-1', error: null })
+    await createExpenseRepository({ rpc } as never).saveExpense({
+      ...payload,
+      totalCents: 900,
+      adjustments: [
+        { id: 'adj-1', kind: 'discount', label: 'Voucher', amountCents: -150, sortOrder: 0 },
+        { id: 'adj-2', kind: 'tax', label: 'SST', amountCents: 50, sortOrder: 1 },
+      ],
+    })
+    expect(rpc.mock.calls[0][1].payload.adjustments).toEqual([
+      { id: 'adj-1', kind: 'discount', label: 'Voucher', amount_cents: -150, sort_order: 0 },
+      { id: 'adj-2', kind: 'tax', label: 'SST', amount_cents: 50, sort_order: 1 },
+    ])
+  })
+
+  it.each(['invalid_adjustment', 'adjustments_not_allowed', 'adjustment_mismatch'])('maps %s to a form error on adjustments', async code => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: '22023', message: code } })
+    await expect(createExpenseRepository({ rpc } as never).saveExpense(payload)).rejects.toMatchObject({
+      formError: { field: 'adjustments', code },
     })
   })
 
@@ -106,6 +130,10 @@ describe('expenseRepository', () => {
         { item_id: 'item-1', participant_user_id: 'user-3', amount_cents: 500, source: 'self_claim' },
         { item_id: 'item-2', participant_user_id: 'user-1', amount_cents: 500, source: 'owner' },
       ],
+      expense_adjustments: [
+        { id: 'adj-2', kind: 'tax', label: 'SST', amount_cents: 90, sort_order: 1 },
+        { id: 'adj-1', kind: 'discount', label: 'Voucher', amount_cents: -100, sort_order: 0 },
+      ],
     }
     const maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null })
     const eq = vi.fn(() => ({ maybeSingle }))
@@ -123,8 +151,13 @@ describe('expenseRepository', () => {
           { id: 'item-2', description: 'Tea', quantity: 1, totalCents: 500, sortOrder: 1 },
         ],
         allocations: [{ itemId: 'item-2', participantUserId: 'user-1', amountCents: 500 }],
+        adjustments: [
+          { id: 'adj-1', kind: 'discount', label: 'Voucher', amountCents: -100, sortOrder: 0 },
+          { id: 'adj-2', kind: 'tax', label: 'SST', amountCents: 90, sortOrder: 1 },
+        ],
       },
     })
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('expense_adjustments(id, kind, label, amount_cents, sort_order)'))
     expect(from).toHaveBeenCalledWith('expenses')
     expect(eq).toHaveBeenCalledWith('id', 'exp-1')
   })
