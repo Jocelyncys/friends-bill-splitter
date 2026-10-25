@@ -21,7 +21,9 @@ export function PeoplePage() {
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
   const labels = displayNames(home.members)
-  const isOwner = home.me.role === 'owner'
+  const settled = home.event.state === 'settled'
+  // Role changes are writes: none once the event is settled.
+  const isOwner = home.me.role === 'owner' && !settled
 
   const changeRole = async (memberId: string, role: 'cohost' | 'participant') => {
     setBusy(true)
@@ -39,8 +41,9 @@ export function PeoplePage() {
   return (
     <main>
       <h1>{t('nav.people')}</h1>
+      {settled && <p className="muted">{t('event.settledNote')}</p>}
       {!online && isOwner && <p role="status" className="muted">{t('people.offline')}</p>}
-      {errorCode && <p className="form-error" role="alert">{t(`actionError.${errorCode}`)}</p>}
+      {errorCode && <p className="form-error" role="alert">{t(`actionError.${errorCode}`, { defaultValue: t('actionError.action_failed') })}</p>}
       <ul className="plain-list" aria-label={t('people.listLabel')}>
         {home.members.map(member => {
           const label = labels.get(member.userId) ?? member.displayName

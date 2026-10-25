@@ -76,4 +76,10 @@ describe('ClaimItemsPage', () => {
     expect(screen.getByRole('button', { name: 'Close claiming' })).toBeDisabled()
     expect(screen.getByRole('alert')).toHaveTextContent('Claiming is closed.')
   })
+
+  it('is read-only on a settled event: no claim, assign or close actions, and a settled note', () => {
+    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} settled />)
+    expect(screen.getByText('This event is settled. Expenses are now read-only.')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
 })

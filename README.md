@@ -80,13 +80,25 @@ repository **variables** (not secrets; both are public by design) `VITE_SUPABASE
 `/<repo>/` sub-path. `.github/workflows/ci.yml` runs lint, unit tests, build, the service-worker check, the
 Supabase database tests and the Playwright suite on every push and pull request.
 
+Deploys are gated on that release gate: `pages.yml` is triggered by `workflow_run` of **CI** and only deploys
+when CI concluded `success` for a push to `main`, checking out the exact commit CI tested. A manual
+`workflow_dispatch` run skips that check, so the deploy job itself also runs lint and unit tests before
+building. Run both workflows once on a branch or fork before the first real push to `main`.
+
 ## Release checklist
 
 - Production Supabase project created; migrations applied with `npx supabase db push`.
-- Anonymous sign-ins enabled with CAPTCHA / rate limiting.
-- Private `payment-qr` Storage bucket created and its policies verified.
+- Anonymous sign-ins enabled with IP rate limiting (`anonymous_users`). **Do not enable CAPTCHA yet:** with CAPTCHA
+  on, every `signInAnonymously()` without a token fails and nobody can create or join an event.
+  `ensureAnonymousSession({ captchaToken })` already forwards a token, but enabling CAPTCHA also requires wiring a
+  provider widget (Turnstile or hCaptcha) on the Create and Join pages and allowing its origin in the CSP
+  (`script-src`, `frame-src`, `connect-src`). That widget is not built (follow-up).
+- Private `payment-qr` Storage bucket created and its policies verified (migration 0009 limits it to 5 MiB
+  PNG/JPEG/WebP objects; confirm the limits in the hosted project).
 - Scheduled cleanup for `payment_details.delete_after` and the associated Storage objects.
 - Repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` set; Pages source = GitHub Actions.
 - No `service_role` key, bank account, receipt image or real invite token anywhere in Git history.
 - Final schema and RLS test output exported and archived.
 - Publish only after the full release gate passes (unit, database, build, end-to-end).
+- Known gap: a settled event cannot be reopened (spec §11 not built). Expenses can be edited or deleted only
+  before settlement; the Settle confirmation tells users to create a new event for later corrections.

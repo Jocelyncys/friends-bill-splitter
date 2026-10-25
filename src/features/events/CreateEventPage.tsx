@@ -32,12 +32,13 @@ export function CreateEventPage() {
         currency: 'MYR',
         displayName: displayName.trim(),
       })
+      let stored = true
       try {
         localStorage.setItem(`inviteToken:${eventId}`, inviteToken)
       } catch {
-        // storage unavailable; the invite link just cannot be re-shown later
+        stored = false // storage unavailable: hand the link to the event page once, with a warning
       }
-      navigate(`/event/${eventId}`)
+      navigate(`/event/${eventId}`, stored ? undefined : { state: { unsavedInviteToken: inviteToken } })
     } catch {
       setError(t('create.failed'))
       setBusy(false)

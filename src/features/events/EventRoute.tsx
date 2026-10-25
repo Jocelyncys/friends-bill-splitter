@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatMoney } from '../../domain/money'
 import { DraftList } from '../offline/DraftList'
 import { useDrafts } from '../offline/useDrafts'
@@ -13,7 +13,9 @@ export function EventRoute() {
   const { eventId = '' } = useParams()
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
-  const [showInvite, setShowInvite] = useState(false)
+  // Set only when the new event's invite token could not be stored on this device: show it once.
+  const unsavedInviteToken = (useLocation().state as { unsavedInviteToken?: string } | null)?.unsavedInviteToken
+  const [showInvite, setShowInvite] = useState(!!unsavedInviteToken)
   const state = useEventHome(eventId)
   const { drafts, loaded: draftsLoaded } = useDrafts(eventId)
   if (state.status !== 'ready') return <EventStatus state={state} />
@@ -40,7 +42,7 @@ export function EventRoute() {
       onViewPayments={() => navigate(`/event/${eventId}/payments`)}
     >
       <DraftList eventId={eventId} currency={home.event.currency} />
-      {showInvite && <InvitePanel eventId={eventId} />}
+      {showInvite && <InvitePanel eventId={eventId} token={unsavedInviteToken} />}
     </EventHomePage>
   )
 }

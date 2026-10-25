@@ -1,20 +1,33 @@
 name: Deploy Pages
+# Deploys only after the whole CI workflow (lint, unit, build, service-worker check, pgTAP, Playwright)
+# succeeded for a push to main. A manual run still repeats lint + unit tests before building.
 on:
-  push: { branches: [main] }
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: true }
 jobs:
   deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The exact commit CI tested (workflow_run otherwise checks out the default branch head).
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --run
       - uses: actions/cache@v4
         with:
           path: public/ocr-models

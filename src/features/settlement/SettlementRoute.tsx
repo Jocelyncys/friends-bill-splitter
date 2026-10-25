@@ -118,7 +118,7 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
         shell?.refresh()
         navigate(`/event/${eventId}/payments`)
       } catch (error) {
-        setErrorMessage(t(errorKey(error)))
+        setErrorMessage(t(errorKey(error), { defaultValue: t('settlementError.action_failed') }))
         reload() // show the server's current truth (an updated preview after stale_revision)
       } finally {
         setBusy(false)
@@ -158,7 +158,7 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
       await action()
       return true
     } catch (error) {
-      setErrorMessage(t(errorKey(error)))
+      setErrorMessage(t(errorKey(error), { defaultValue: t('settlementError.action_failed') }))
       return false
     } finally {
       setBusy(false)

@@ -27,6 +27,8 @@ type Props = {
   offline?: boolean
   /** An action is in flight. */
   busy?: boolean
+  /** The event is settled: everything is read-only. */
+  settled?: boolean
   errorMessage?: string
   onClaim?: (itemId: string) => void
   onUnclaim?: (itemId: string) => void
@@ -45,6 +47,7 @@ export function ClaimItemsPage({
   currency = 'MYR',
   offline = false,
   busy = false,
+  settled = false,
   errorMessage,
   onClaim,
   onUnclaim,
@@ -52,7 +55,7 @@ export function ClaimItemsPage({
   onToggleClosed,
 }: Props) {
   const { t, i18n } = useTranslation()
-  const manage = canManage ?? role !== 'participant'
+  const manage = !settled && (canManage ?? role !== 'participant')
   const locked = offline || busy
   const money = (cents: number) => formatMoney(cents, currency, i18n.language)
   const nameOf = (id: string) => participants.find(p => p.id === id)?.name ?? '?'
@@ -69,7 +72,8 @@ export function ClaimItemsPage({
     <main>
       <h1>{t('claim.title')}</h1>
       {errorMessage && <p className="form-error" role="alert">{errorMessage}</p>}
-      {offline && <p className="note" role="status">{t('claim.offline')}</p>}
+      {settled && <p className="note">{t('event.settledNote')}</p>}
+      {offline && !settled && <p className="note" role="status">{t('claim.offline')}</p>}
       {claimingClosed && <p className="note">{t('claim.closedNote')}</p>}
       {manage && (
         <button type="button" disabled={locked} onClick={() => onToggleClosed?.(!claimingClosed)}>
@@ -93,7 +97,7 @@ export function ClaimItemsPage({
                   ? t('claim.assignedTo', { names })
                   : t('claim.claimedBy', { names })}
             </p>
-            {splitMethod === 'item_claim' && !item.assigned && (
+            {splitMethod === 'item_claim' && !item.assigned && !settled && (
               <button
                 type="button"
                 disabled={locked || claimingClosed}

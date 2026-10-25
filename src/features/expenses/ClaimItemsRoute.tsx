@@ -99,7 +99,8 @@ export function ClaimItemsRoute() {
       currency={home.event.currency}
       offline={!online}
       busy={busy}
-      errorMessage={errorCode ? t(`actionError.${errorCode}`) : loadFailedFor === expenseId ? t('event.loadFailed') : undefined}
+      settled={home.event.state === 'settled'}
+      errorMessage={errorCode ? t(`actionError.${errorCode}`, { defaultValue: t('actionError.action_failed') }) : loadFailedFor === expenseId ? t('event.loadFailed') : undefined}
       onClaim={itemId => void run(() => repository.claimItem(itemId))}
       onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
       onAssign={(itemId, memberId) => void run(() => repository.assignItem(itemId, memberId))}

@@ -19,6 +19,22 @@ describe('eventRepository', () => {
     expect(localStorage.getItem('preferredName')).toBe('Dee')
   })
 
+  it('still returns the created event when storage throws', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ event_id: 'event-1', invite_token: 'secret' }], error: null })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+    try {
+      const repository = createEventRepository({ rpc } as never)
+      await expect(repository.createEvent({ name: 'x', mode: 'single_bill', currency: 'MYR', displayName: 'Dee' }))
+        .resolves.toEqual({ eventId: 'event-1', inviteToken: 'secret' })
+      rpc.mockResolvedValue({ data: [{ event_id: 'event-2' }], error: null })
+      await expect(repository.joinEvent('tok', 'Dee')).resolves.toBe('event-2')
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
   it('propagates createEvent rpc errors', async () => {
     const error = new Error('boom')
     const rpc = vi.fn().mockResolvedValue({ data: null, error })

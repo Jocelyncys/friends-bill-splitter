@@ -9,10 +9,11 @@ function readToken(eventId: string): string | null {
   }
 }
 
-export function InvitePanel({ eventId }: { eventId: string }) {
+/** `token` is passed only right after creating an event whose token could not be stored on this device. */
+export function InvitePanel({ eventId, token: unsavedToken }: { eventId: string; token?: string }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
-  const token = readToken(eventId)
+  const token = unsavedToken ?? readToken(eventId)
   if (!token) return <p className="note">{t('event.inviteOnlyOnCreatorDevice')}</p>
   const url = `${window.location.origin}${window.location.pathname}#/join/${token}`
   const copy = async () => {
@@ -25,6 +26,7 @@ export function InvitePanel({ eventId }: { eventId: string }) {
   }
   return (
     <section className="invite-panel">
+      {unsavedToken && <p role="alert" className="form-error">{t('event.inviteNotSaved')}</p>}
       <label>
         {t('event.inviteLinkLabel')}
         <input readOnly value={url} onFocus={e => e.currentTarget.select()} />

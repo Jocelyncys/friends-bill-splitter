@@ -75,4 +75,13 @@ describe('PeoplePage', () => {
     expect(screen.getByText(/You are offline/)).toBeInTheDocument()
     spy.mockRestore()
   })
+
+  it('hides role buttons on a settled event and says it is settled', async () => {
+    const settled = home('o')
+    settled.event.state = 'settled'
+    mocks.getEventHome.mockResolvedValue(settled)
+    renderPage()
+    expect(await screen.findByText('This event is settled. Expenses are now read-only.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /co-host|participant/i })).not.toBeInTheDocument()
+  })
 })

@@ -26,6 +26,16 @@ function firstRow<T>(data: T[] | null, fn: string): T {
   return row
 }
 
+// The event already exists on the server: a storage failure (quota, disabled storage)
+// must never turn that into a reported failure, or the one-time invite token is lost.
+function rememberName(name: string) {
+  try {
+    localStorage.setItem('preferredName', name)
+  } catch {
+    // only a convenience for the next form
+  }
+}
+
 export function createEventRepository(client: SupabaseClient = supabase) {
   return {
     async createEvent(input: CreateEventInput) {
@@ -38,7 +48,7 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       })
       if (error) throw error
       const row = firstRow<{ event_id: string; invite_token: string }>(data, 'create_event')
-      localStorage.setItem('preferredName', displayName)
+      rememberName(displayName)
       return { eventId: row.event_id, inviteToken: row.invite_token }
     },
     async joinEvent(inviteToken: string, displayName: string) {
@@ -46,7 +56,7 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       const { data, error } = await client.rpc('join_event', { invite_token: inviteToken, display_name: name })
       if (error) throw error
       const row = firstRow<{ event_id: string }>(data, 'join_event')
-      localStorage.setItem('preferredName', name)
+      rememberName(name)
       return row.event_id
     },
     // Owner only, participant <-> cohost; failures throw ActionError.

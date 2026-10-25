@@ -39,6 +39,8 @@ jobs:
       # Test-only: every browser context is a new anonymous user. Edits this runner's checkout only;
       # the committed config keeps 30 (never `supabase config push` a test override).
       - run: sed -i -E 's/^anonymous_users = [0-9]+$/anonymous_users = 1000/' supabase/config.toml
+      # Fail loudly if a config.toml reformat made the sed above match nothing.
+      - run: grep -q '^anonymous_users = 1000$' supabase/config.toml
       - run: npx supabase start
       # Public local values only (API URL + publishable key); the secret key is never exported.
       - name: Point the app at the local Supabase

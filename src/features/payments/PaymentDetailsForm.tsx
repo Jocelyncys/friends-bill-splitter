@@ -71,7 +71,7 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
       onSaved?.()
     } catch (e) {
       const code = e instanceof SettlementError ? e.code : 'action_failed'
-      setError(code === 'action_failed' ? t('paymentForm.saveFailed') : t(`settlementError.${code}`))
+      setError(code === 'action_failed' ? t('paymentForm.saveFailed') : t(`settlementError.${code}`, { defaultValue: t('settlementError.action_failed') }))
     } finally {
       setSaving(false)
     }
