@@ -1,5 +1,5 @@
 begin;
-select plan(276);
+select plan(294);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -397,7 +397,7 @@ select throws_ok($$update public.expenses set description = 'Bus' where id = '5a
   '22023', 'event_not_open', 'expense cannot be edited after settlement');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
-select throws_ok($$delete from public.expenses where id = '5a000000-0000-0000-0000-000000000004'$$,
+select throws_ok($$select public.delete_expense('5a000000-0000-0000-0000-000000000004')$$,
   '22023', 'event_not_open', 'creator cannot delete an expense after settlement');
 reset role;
 select throws_ok($$delete from public.allocations where expense_id = '5a000000-0000-0000-0000-000000000004'$$,
@@ -663,9 +663,9 @@ select is((select count(*)::int from public.event_members where event_id = '7be0
 update rev7 set n = (select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
-select lives_ok($$delete from public.expenses where id = '7a000000-0000-0000-0000-000000000003'$$, 'the owner deletes an expense directly');
+select lives_ok($$select public.delete_expense('7a000000-0000-0000-0000-000000000003')$$, 'the owner deletes an expense through delete_expense');
 reset role;
-select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7), 'a direct expense delete bumps the event revision');
+select is((select revision from public.events where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), (select n + 1 from rev7), 'an expense delete bumps the event revision exactly once');
 select is((select metadata from public.activity_log where action = 'expense_deleted' order by id desc limit 1),
   jsonb_build_object('expense_id', '7a000000-0000-0000-0000-000000000003'), 'delete activity is redacted to the expense id');
 
@@ -1112,6 +1112,71 @@ set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","r
 select throws_ok($$select public.mark_payment_sent((select t.id from public.settlement_transfers t
     where t.settlement_id = 'f2000000-0000-0000-0000-000000000001'))$$, '22023', 'event_not_settled', 'payments need a settled event');
 reset role;
+
+-- Final fix (0009): delete_expense RPC, no direct DELETE, payment-qr bucket limits --
+select is((select has_function_privilege('anon', 'public.delete_expense(uuid)', 'execute')), false, 'anon cannot execute delete_expense');
+select is((select has_function_privilege('authenticated', 'public.delete_expense(uuid)', 'execute')), true, 'authenticated can execute delete_expense');
+select is((select has_table_privilege('authenticated', 'public.expenses', 'delete')), false, 'clients cannot DELETE expenses directly');
+
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('d9e00000-0000-0000-0000-000000000001', 'Deletes', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-d9');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('d9e00000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner'),
+  ('d9e00000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'B', 'cohost'),
+  ('d9e00000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant'),
+  ('d9e00000-0000-0000-0000-000000000001', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'F', 'participant');
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+select x.id::uuid, 'd9e00000-0000-0000-0000-000000000001', x.who::uuid, x.who::uuid, 'Lunch', current_date, 1000, 'equal'
+from (values
+  ('d9000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+  ('d9000000-0000-0000-0000-000000000002', 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+  ('d9000000-0000-0000-0000-000000000003', 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  ('d9000000-0000-0000-0000-000000000004', 'cccccccc-cccc-cccc-cccc-cccccccccccc')) as x(id, who);
+insert into public.allocations (expense_id, participant_user_id, amount_cents, source)
+values ('d9000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 500, 'calculated'),
+  ('d9000000-0000-0000-0000-000000000001', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 500, 'calculated');
+
+set local role authenticated;
+set local request.jwt.claims = '{"role":"authenticated"}';
+select throws_ok($$select public.delete_expense('d9000000-0000-0000-0000-000000000001')$$, '28000', 'not_authenticated', 'delete_expense needs a session');
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select throws_ok($$select public.delete_expense('d9000000-0000-0000-0000-000000000001')$$, '22023', 'not_allowed', 'a participant cannot delete another person''s expense');
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select throws_ok($$select public.delete_expense('d9000000-0000-0000-0000-000000000001')$$, '22023', 'not_allowed', 'an outsider cannot delete an expense');
+select throws_ok($$select public.delete_expense('d9000000-0000-0000-0000-0000000000ff')$$, '22023', 'not_allowed', 'a missing expense looks like not_allowed');
+reset role;
+
+update rev7 set n = (select revision from public.events where id = 'd9e00000-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.delete_expense('d9000000-0000-0000-0000-000000000001')$$, 'the creator deletes their own expense');
+reset role;
+select is((select count(*)::int from public.expenses where id = 'd9000000-0000-0000-0000-000000000001'), 0, 'the expense is gone');
+select is((select count(*)::int from public.allocations where expense_id = 'd9000000-0000-0000-0000-000000000001'), 0, 'its allocations are gone');
+select is((select revision from public.events where id = 'd9e00000-0000-0000-0000-000000000001'), (select n + 1 from rev7),
+  'delete_expense bumps the revision exactly once');
+select is((select row(actor_user_id, metadata)::text from public.activity_log
+    where event_id = 'd9e00000-0000-0000-0000-000000000001' and action = 'expense_deleted'),
+  row('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, jsonb_build_object('expense_id', 'd9000000-0000-0000-0000-000000000001'))::text,
+  'one redacted expense_deleted row with the caller as actor');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+select lives_ok($$select public.delete_expense('d9000000-0000-0000-0000-000000000003')$$, 'a co-host deletes another person''s expense');
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.delete_expense('d9000000-0000-0000-0000-000000000002')$$, 'the owner deletes another person''s expense');
+reset role;
+
+update public.events set state = 'settled' where id = 'd9e00000-0000-0000-0000-000000000001';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.delete_expense('d9000000-0000-0000-0000-000000000004')$$, '22023', 'event_not_open', 'no delete after settlement');
+reset role;
+select is((select count(*)::int from public.expenses where id = 'd9000000-0000-0000-0000-000000000004'), 1, 'the settled expense remains');
+
+select is((select file_size_limit from storage.buckets where id = 'payment-qr'), 5242880::bigint, 'payment-qr accepts at most 5 MiB per object');
+select is((select allowed_mime_types from storage.buckets where id = 'payment-qr'), array['image/png', 'image/jpeg', 'image/webp'],
+  'payment-qr accepts only png, jpeg and webp');
 
 select * from finish();
 rollback;

@@ -67,7 +67,8 @@
     "inviteOnlyOnCreatorDevice": "Invite link is only available on the device that created the event",
     "settleNow": "Settle now",
     "viewPayments": "View payments",
-    "settledNote": "This event is settled. Expenses are now read-only."
+    "settledNote": "This event is settled. Expenses are now read-only.",
+    "inviteNotSaved": "This invite link could not be saved on this device. Copy it now: it will not be shown again."
   },
   "expenses": {
     "title": "Expenses",
@@ -75,7 +76,9 @@
     "empty": "No expenses yet.",
     "paidBy": "Paid by {{name}}",
     "claimItems": "Claim items",
-    "viewItems": "View items"
+    "viewItems": "View items",
+    "edit": "Edit",
+    "editNamed": "Edit {{description}}"
   },
   "editor": {
     "title": "Add expense",
@@ -122,7 +125,12 @@
       "confirm": "Confirm items",
       "failed": "Could not read this receipt. Enter the items by hand."
     },
-    "offlineHint": "You are offline. The expense will be saved on this device and sent when you are back online."
+    "offlineHint": "You are offline. The expense will be saved on this device and sent when you are back online.",
+    "editTitle": "Edit expense",
+    "delete": "Delete expense",
+    "deleteTitle": "Delete this expense?",
+    "deleteBody": "“{{description}}” will be removed for everyone in this event. This cannot be undone.",
+    "deleteConfirm": "Delete"
   },
   "expenseError": {
     "payer_not_allowed": "You cannot record an expense paid by someone else.",
@@ -151,7 +159,10 @@
     "save_failed": "Could not save the expense. Please try again.",
     "draft_failed": "Could not save the expense on this device. Please try again.",
     "network_error": "Could not reach the server. Check your connection and try again.",
-    "too_many_attempts": "Still couldn’t sync after several tries."
+    "too_many_attempts": "Still couldn’t sync after several tries.",
+    "item_has_claims": "Someone already claimed one of these items, so it cannot be assigned here.",
+    "expense_not_found": "This expense could not be found. It may have been deleted.",
+    "delete_failed": "Could not delete the expense. Please try again."
   },
   "realtime": {
     "offline": "Reconnecting… data may be out of date."
@@ -220,7 +231,7 @@
     "confirmTitle": "Settle this event?",
     "confirm": "Confirm and settle",
     "confirmMethod": "Method: {{method}}",
-    "confirmReadOnly": "After this, expenses become read-only and the payments below are fixed.",
+    "confirmReadOnly": "After this, expenses become read-only and the payments below are fixed. A settled event cannot be reopened yet: to correct anything afterwards, create a new event.",
     "offline": "You are offline. Settling needs an internet connection.",
     "notLive": "Reconnecting… wait until the connection is back before settling.",
     "notAllowed": "Only the owner or a co-host can settle this event.",

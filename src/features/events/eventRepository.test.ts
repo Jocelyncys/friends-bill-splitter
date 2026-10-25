@@ -61,9 +61,9 @@ describe('eventRepository', () => {
       },
       expenses: {
         data: [
-          { id: 'exp-2', description: 'Lunch', total_cents: 1200, payer_user_id: 'user-2', split_method: 'item_claim', created_at: '2026-10-24T12:00:00Z',
+          { id: 'exp-2', description: 'Lunch', total_cents: 1200, payer_user_id: 'user-2', creator_user_id: 'user-2', split_method: 'item_claim', created_at: '2026-10-24T12:00:00Z',
             allocations: [{ amount_cents: 400 }, { amount_cents: 300 }] },
-          { id: 'exp-1', description: 'Petrol', total_cents: 9000, payer_user_id: 'user-1', split_method: 'equal', created_at: '2026-10-24T08:00:00Z',
+          { id: 'exp-1', description: 'Petrol', total_cents: 9000, payer_user_id: 'user-1', creator_user_id: 'user-1', split_method: 'equal', created_at: '2026-10-24T08:00:00Z',
             allocations: [{ amount_cents: 4500 }, { amount_cents: 4500 }] },
         ],
         error: null,
@@ -81,8 +81,8 @@ describe('eventRepository', () => {
         { userId: 'user-2', displayName: 'Ali', role: 'participant' },
       ],
       expenses: [
-        { id: 'exp-2', description: 'Lunch', totalCents: 1200, payerUserId: 'user-2', splitMethod: 'item_claim', createdAt: '2026-10-24T12:00:00Z' },
-        { id: 'exp-1', description: 'Petrol', totalCents: 9000, payerUserId: 'user-1', splitMethod: 'equal', createdAt: '2026-10-24T08:00:00Z' },
+        { id: 'exp-2', description: 'Lunch', totalCents: 1200, payerUserId: 'user-2', creatorUserId: 'user-2', splitMethod: 'item_claim', createdAt: '2026-10-24T12:00:00Z' },
+        { id: 'exp-1', description: 'Petrol', totalCents: 9000, payerUserId: 'user-1', creatorUserId: 'user-1', splitMethod: 'equal', createdAt: '2026-10-24T08:00:00Z' },
       ],
       groupTotalCents: 10200,
       attention: [{ kind: 'unclaimed_items', expenseId: 'exp-2', description: 'Lunch', unallocatedCents: 500 }],

@@ -138,3 +138,47 @@ describe('draftFromPayload', () => {
     roundTrip({ ...head, splitMethod: 'host_assignment', items })
   })
 })
+
+describe('final-review fixes', () => {
+  const okPayload = (draft: ExpenseDraft, extra: { category?: string } = {}) => {
+    const r = validateDraft(draft)
+    if (!r.ok) throw new Error(JSON.stringify(r.errors))
+    return buildPayload({ ...ctx, ...extra }, r.values)
+  }
+
+  it.each(['0', '0.00', '0.0'])('custom share %j counts as excluded, not a mismatch', zero => {
+    const payload = okPayload({ ...base, splitMethod: 'custom', shares: { 'u-a': '10', 'u-b': zero } })
+    expect(payload.allocations).toEqual([{ itemId: null, participantUserId: 'u-a', amountCents: 1000 }])
+    expect(customDifference('10', { 'u-a': '10', 'u-b': zero })).toBe(0)
+  })
+
+  it('still needs a total of at least 1 cent when every share is zero', () => {
+    expect(validateDraft({ ...base, splitMethod: 'custom', amount: '0', shares: { 'u-a': '0' } })).toMatchObject({
+      ok: false,
+      errors: { amount: 'amount_invalid' },
+    })
+    expect(validateDraft({ ...base, splitMethod: 'custom', shares: { 'u-a': '0', 'u-b': '0.00' } })).toMatchObject({
+      ok: false,
+      errors: { shares: 'shares_mismatch' },
+    })
+  })
+
+  it('itemized (claim) mode keeps an existing whole-item assignment and leaves other items unallocated', () => {
+    const payload = okPayload({
+      ...base,
+      splitMethod: 'items',
+      amount: '',
+      items: [
+        { id: 'i1', description: 'Noodles', price: '8.10', assigneeId: 'u-b' },
+        { id: 'i2', description: 'Tea', price: '2.35', assigneeId: '' },
+      ],
+    })
+    expect(payload.splitMethod).toBe('item_claim')
+    expect(payload.allocations).toEqual([{ itemId: 'i1', participantUserId: 'u-b', amountCents: 810 }])
+  })
+
+  it('keeps the saved category when one is given', () => {
+    expect(okPayload(base, { category: 'food' }).category).toBe('food')
+    expect(okPayload(base).category).toBeUndefined()
+  })
+})

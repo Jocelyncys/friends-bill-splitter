@@ -6,12 +6,15 @@ import type { SaveExpensePayload } from './expenseRepository'
 
 const MONEY_RE = /^(\d+)(?:\.(\d{1,2}))?$/
 
-/** "12" | "12.5" | "12.50" -> cents. Anything else (>2 decimals, zero, negative, junk) -> null. */
-export function parseMoneyToCents(text: string): number | null {
+/**
+ * "12" | "12.5" | "12.50" -> cents. Anything else (>2 decimals, zero, negative, junk) -> null.
+ * `allowZero` accepts "0" / "0.00" (a custom share for someone who owes nothing).
+ */
+export function parseMoneyToCents(text: string, { allowZero = false }: { allowZero?: boolean } = {}): number | null {
   const match = MONEY_RE.exec(text.trim())
   if (!match) return null
   const cents = Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'))
-  return Number.isSafeInteger(cents) && cents >= 1 ? cents : null
+  return Number.isSafeInteger(cents) && cents >= (allowZero ? 0 : 1) ? cents : null
 }
 
 /** integer cents -> "12.50" without float maths */
@@ -48,9 +51,11 @@ const common = {
 }
 
 const rowItem = z.object({ id, description: z.string().trim().min(1), priceCents: cents })
+// Itemized (claim) items may carry an existing whole-item assignment from the saved expense.
+const claimItem = rowItem.extend({ assigneeId: z.string().optional() })
 
 export const expenseFormSchema = z.discriminatedUnion('splitMethod', [
-  z.object({ ...common, splitMethod: z.literal('items'), items: z.array(rowItem).min(1) }),
+  z.object({ ...common, splitMethod: z.literal('items'), items: z.array(claimItem).min(1) }),
   z.object({ ...common, splitMethod: z.literal('equal'), totalCents: cents, participantIds: z.array(id).min(1) }),
   z
     .object({
@@ -96,7 +101,7 @@ export function validateDraft(draft: ExpenseDraft): { ok: true; values: ExpenseF
       draft.splitMethod === 'custom'
         ? Object.entries(draft.shares)
             .filter(([, text]) => text.trim() !== '')
-            .map(([userId, text]) => ({ userId, cents: parseMoneyToCents(text) }))
+            .map(([userId, text]) => ({ userId, cents: parseMoneyToCents(text, { allowZero: true }) }))
         : []
     if (shares.some(s => s.cents === null)) errors.shares = 'shares_mismatch'
     raw = { ...draft, totalCents, shares }
@@ -115,16 +120,17 @@ export function validateDraft(draft: ExpenseDraft): { ok: true; values: ExpenseF
 /** Live "remaining" for custom split: total minus the valid share inputs, in cents. */
 export function customDifference(amountText: string, shareTexts: Record<string, string>): number {
   const total = parseMoneyToCents(amountText) ?? 0
-  const allocated = Object.values(shareTexts).reduce((sum, text) => sum + (parseMoneyToCents(text) ?? 0), 0)
+  const allocated = Object.values(shareTexts).reduce((sum, text) => sum + (parseMoneyToCents(text, { allowZero: true }) ?? 0), 0)
   return total - allocated
 }
 
 // ---- values -> RPC payload ----
 
-export function buildPayload(ctx: { id: string; eventId: string }, values: ExpenseFormValues): SaveExpensePayload {
+export function buildPayload(ctx: { id: string; eventId: string; category?: string }, values: ExpenseFormValues): SaveExpensePayload {
   const head = {
     id: ctx.id,
     eventId: ctx.eventId,
+    ...(ctx.category ? { category: ctx.category } : {}),
     payerUserId: values.payerUserId,
     description: values.description,
     expenseDate: values.expenseDate,
@@ -162,7 +168,17 @@ export function buildPayload(ctx: { id: string; eventId: string }, values: Expen
         sortOrder,
       }))
       const totalCents = items.reduce((sum, item) => sum + item.totalCents, 0)
-      if (values.splitMethod === 'items') return { ...head, totalCents, splitMethod: 'item_claim', items, allocations: [] }
+      if (values.splitMethod === 'items') {
+        // Items with self-claims never carry an assignee here (the server keeps their claims).
+        const assigned = values.items.filter(item => item.assigneeId)
+        return {
+          ...head,
+          totalCents,
+          splitMethod: 'item_claim',
+          items,
+          allocations: assigned.map(item => ({ itemId: item.id, participantUserId: item.assigneeId as string, amountCents: item.priceCents })),
+        }
+      }
       return {
         ...head,
         totalCents,

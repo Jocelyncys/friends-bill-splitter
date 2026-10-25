@@ -26,6 +26,7 @@ export const router = createHashRouter([
       { path: '/event/:eventId', element: suspend(<EventRoute />) },
       { path: '/event/:eventId/expenses', element: suspend(<ExpenseListPage />) },
       { path: '/event/:eventId/expenses/new', element: suspend(<ExpenseEditorPage />) },
+      { path: '/event/:eventId/expenses/:expenseId/edit', element: suspend(<ExpenseEditorPage />) },
       { path: '/event/:eventId/expenses/:expenseId/claim', element: suspend(<ClaimItemsRoute />) },
       { path: '/event/:eventId/people', element: suspend(<PeoplePage />) },
       { path: '/event/:eventId/settle', element: suspend(<SettlementRoute phase="preview" />) },

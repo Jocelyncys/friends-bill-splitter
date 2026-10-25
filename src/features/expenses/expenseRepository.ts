@@ -37,8 +37,17 @@ export type ExpenseSummary = {
   description: string
   totalCents: number
   payerUserId: string
+  creatorUserId: string
   splitMethod: SplitMethod
   createdAt: string
+}
+
+/** A saved expense reopened for editing. */
+export type SavedExpense = {
+  payload: SaveExpensePayload // allocations exclude self-claims (save_expense keeps those)
+  creatorUserId: string
+  /** item id -> user ids that self-claimed it; such items must not get allocations on save. */
+  claims: Record<string, string[]>
 }
 
 export type ExpenseFormError = { field?: keyof SaveExpensePayload; code: string }
@@ -124,11 +133,12 @@ export type ExpenseRow = {
   description: string
   total_cents: number
   payer_user_id: string
+  creator_user_id: string
   split_method: SplitMethod
   created_at: string
 }
 
-export const EXPENSE_SUMMARY_COLUMNS = 'id, description, total_cents, payer_user_id, split_method, created_at'
+export const EXPENSE_SUMMARY_COLUMNS = 'id, description, total_cents, payer_user_id, creator_user_id, split_method, created_at'
 
 export function toExpenseSummary(row: ExpenseRow): ExpenseSummary {
   return {
@@ -136,8 +146,55 @@ export function toExpenseSummary(row: ExpenseRow): ExpenseSummary {
     description: row.description,
     totalCents: row.total_cents,
     payerUserId: row.payer_user_id,
+    creatorUserId: row.creator_user_id,
     splitMethod: row.split_method,
     createdAt: row.created_at,
+  }
+}
+
+type SavedExpenseRow = {
+  id: string
+  event_id: string
+  creator_user_id: string
+  payer_user_id: string
+  description: string
+  category: string
+  expense_date: string
+  total_cents: number
+  split_method: SplitMethod
+  expense_items: Array<{ id: string; description: string; quantity: number; total_cents: number; sort_order: number }>
+  allocations: Array<{ item_id: string | null; participant_user_id: string; amount_cents: number; source: string }>
+}
+
+const SAVED_EXPENSE_COLUMNS =
+  'id, event_id, creator_user_id, payer_user_id, description, category, expense_date, total_cents, split_method, ' +
+  'expense_items(id, description, quantity, total_cents, sort_order), allocations(item_id, participant_user_id, amount_cents, source)'
+
+export function toSavedExpense(row: SavedExpenseRow): SavedExpense {
+  const claims: Record<string, string[]> = {}
+  for (const a of row.allocations) {
+    if (a.source === 'self_claim' && a.item_id) (claims[a.item_id] ??= []).push(a.participant_user_id)
+  }
+  for (const ids of Object.values(claims)) ids.sort()
+  return {
+    creatorUserId: row.creator_user_id,
+    claims,
+    payload: {
+      id: row.id,
+      eventId: row.event_id,
+      payerUserId: row.payer_user_id,
+      description: row.description,
+      category: row.category,
+      expenseDate: row.expense_date,
+      totalCents: row.total_cents,
+      splitMethod: row.split_method,
+      items: [...row.expense_items]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(i => ({ id: i.id, description: i.description, quantity: i.quantity, totalCents: i.total_cents, sortOrder: i.sort_order })),
+      allocations: row.allocations
+        .filter(a => a.source !== 'self_claim')
+        .map(a => ({ itemId: a.item_id, participantUserId: a.participant_user_id, amountCents: a.amount_cents })),
+    },
   }
 }
 
@@ -148,6 +205,18 @@ export function createExpenseRepository(client: SupabaseClient = supabase) {
       const { data, error, status } = await client.rpc('save_expense', { payload: toRpcPayload(payload) })
       if (error) throw new ExpenseSaveError(toFormError(error, status), error)
       return { id: data as string }
+    },
+    /** RLS-protected read; a non-member (or a deleted expense) gets expense_not_found. */
+    async getExpense(expenseId: string): Promise<SavedExpense> {
+      const { data, error } = await client.from('expenses').select(SAVED_EXPENSE_COLUMNS).eq('id', expenseId).maybeSingle()
+      if (error) throw error
+      if (!data) throw new Error('expense_not_found')
+      return toSavedExpense(data as unknown as SavedExpenseRow)
+    },
+    // Creator or owner/co-host, open event only; the server bumps the revision.
+    async deleteExpense(expenseId: string): Promise<void> {
+      const { error, status } = await client.rpc('delete_expense', { expense_id: expenseId })
+      if (error) throw new ExpenseSaveError(toFormError(error, status), error)
     },
     async listExpenses(eventId: string): Promise<ExpenseSummary[]> {
       const { data, error } = await client

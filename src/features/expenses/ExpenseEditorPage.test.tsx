@@ -7,6 +7,8 @@ import { ExpenseSaveError } from './expenseRepository'
 import '../../i18n'
 
 const saveExpense = vi.fn()
+const getExpense = vi.fn()
+const deleteExpense = vi.fn()
 const getEventHome = vi.fn()
 const recognizeReceipt = vi.fn()
 const saveDraft = vi.fn()
@@ -20,7 +22,7 @@ vi.mock('../offline/draftDb', () => ({
 vi.mock('../ocr/ocrEngine', () => ({ recognizeReceipt: (...args: unknown[]) => recognizeReceipt(...args) }))
 vi.mock('./expenseRepository', async importOriginal => ({
   ...(await importOriginal<typeof import('./expenseRepository')>()),
-  createExpenseRepository: () => ({ saveExpense }),
+  createExpenseRepository: () => ({ saveExpense, getExpense, deleteExpense }),
 }))
 vi.mock('../events/eventRepository', () => ({ createEventRepository: () => ({ getEventHome }) }))
 
@@ -41,6 +43,8 @@ function renderEditor(entry = '/event/ev-1/expenses/new') {
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/event/:eventId/expenses/new" element={<ExpenseEditorPage />} />
+        <Route path="/event/:eventId/expenses/:expenseId/edit" element={<ExpenseEditorPage />} />
+        <Route path="/event/:eventId/expenses" element={<p>expense list</p>} />
         <Route path="/event/:eventId" element={<p>event home</p>} />
       </Routes>
     </MemoryRouter>,
@@ -54,6 +58,8 @@ async function fillSimple() {
 
 beforeEach(() => {
   saveExpense.mockReset()
+  getExpense.mockReset()
+  deleteExpense.mockReset()
   getEventHome.mockReset()
   recognizeReceipt.mockReset()
   saveDraft.mockReset().mockResolvedValue(undefined)
@@ -297,4 +303,117 @@ it('has exactly one field labelled "Amount" (the split-method select must not ma
   expect(screen.getAllByLabelText('Amount')).toHaveLength(1)
   expect(screen.getAllByLabelText(/amount/i)).toEqual([screen.getByRole('textbox', { name: 'Amount' })])
   expect(screen.getByLabelText('Split method').tagName).toBe('SELECT')
+})
+
+describe('ExpenseEditorPage (saved expense)', () => {
+  describe('editing a saved expense', () => {
+    const equalSaved = {
+      creatorUserId: 'u-a',
+      claims: {},
+      payload: {
+        id: 'x-1', eventId: 'ev-1', payerUserId: 'u-a', description: 'Dinner', category: 'food', expenseDate: '2026-10-20',
+        totalCents: 1000, splitMethod: 'equal', items: [],
+        allocations: [
+          { itemId: null, participantUserId: 'u-a', amountCents: 500 },
+          { itemId: null, participantUserId: 'u-b', amountCents: 500 },
+        ],
+      },
+    }
+
+    it('prefills the form and saves with the same id and category', async () => {
+      getExpense.mockResolvedValue(equalSaved)
+      saveExpense.mockResolvedValue({ id: 'x-1' })
+      renderEditor('/event/ev-1/expenses/x-1/edit')
+      expect(await screen.findByRole('heading', { name: 'Edit expense' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Description')).toHaveValue('Dinner')
+      expect(screen.getByLabelText('Amount')).toHaveValue('10.00')
+      expect(screen.getByLabelText('Date')).toHaveValue('2026-10-20')
+      await userEvent.clear(screen.getByLabelText('Amount'))
+      await userEvent.type(screen.getByLabelText('Amount'), '12')
+      await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
+
+      expect(await screen.findByText('expense list')).toBeInTheDocument()
+      expect(getExpense).toHaveBeenCalledWith('x-1')
+      expect(saveExpense.mock.calls[0][0]).toMatchObject({
+        id: 'x-1',
+        category: 'food',
+        totalCents: 1200,
+        allocations: [
+          { itemId: null, participantUserId: 'u-a', amountCents: 600 },
+          { itemId: null, participantUserId: 'u-b', amountCents: 600 },
+        ],
+      })
+    })
+
+    it('shows self-claims read-only and sends no allocations for claimed items', async () => {
+      getExpense.mockResolvedValue({
+        creatorUserId: 'u-a',
+        claims: { 'it-1': ['u-b'] },
+        payload: {
+          id: 'x-2', eventId: 'ev-1', payerUserId: 'u-a', description: 'Hawker', category: 'other', expenseDate: '2026-10-20',
+          totalCents: 1500, splitMethod: 'item_claim',
+          items: [
+            { id: 'it-1', description: 'Rice', quantity: 1, totalCents: 1000, sortOrder: 0 },
+            { id: 'it-2', description: 'Tea', quantity: 1, totalCents: 500, sortOrder: 1 },
+          ],
+          allocations: [],
+        },
+      })
+      saveExpense.mockResolvedValue({ id: 'x-2' })
+      renderEditor('/event/ev-1/expenses/x-2/edit')
+      expect(await screen.findByText('Claimed by: Bob')).toBeInTheDocument()
+      await userEvent.clear(screen.getByLabelText('Item 2 price'))
+      await userEvent.type(screen.getByLabelText('Item 2 price'), '6')
+      await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
+      expect(await screen.findByText('expense list')).toBeInTheDocument()
+      expect(saveExpense.mock.calls[0][0]).toMatchObject({ id: 'x-2', splitMethod: 'item_claim', totalCents: 1600, allocations: [] })
+    })
+
+    it('deletes after confirmation', async () => {
+      getExpense.mockResolvedValue(equalSaved)
+      deleteExpense.mockResolvedValue(undefined)
+      renderEditor('/event/ev-1/expenses/x-1/edit')
+      await userEvent.click(await screen.findByRole('button', { name: 'Delete expense' }))
+      const dialog = screen.getByRole('dialog', { name: 'Delete this expense?' })
+      expect(deleteExpense).not.toHaveBeenCalled()
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+      expect(await screen.findByText('expense list')).toBeInTheDocument()
+      expect(deleteExpense).toHaveBeenCalledWith('x-1')
+    })
+
+    it('keeps the expense when the delete is cancelled and shows a server refusal', async () => {
+      getExpense.mockResolvedValue(equalSaved)
+      deleteExpense.mockRejectedValue(new ExpenseSaveError({ code: 'event_not_open' }, null))
+      renderEditor('/event/ev-1/expenses/x-1/edit')
+      await userEvent.click(await screen.findByRole('button', { name: 'Delete expense' }))
+      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Back' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Delete expense' }))
+      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('This event is closed')
+      expect(deleteExpense).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not open another person's expense for a participant", async () => {
+      getExpense.mockResolvedValue({ ...equalSaved, creatorUserId: 'u-b' })
+      renderEditor('/event/ev-1/expenses/x-1/edit')
+      expect(await screen.findByRole('alert')).toHaveTextContent('You are not allowed to change this expense.')
+      expect(screen.queryByRole('button', { name: /Save expense|Delete expense/ })).not.toBeInTheDocument()
+    })
+
+    it('is read-only on a settled event when editing', async () => {
+      getEventHome.mockResolvedValue({ ...home, event: { ...home.event, state: 'settled' } })
+      getExpense.mockResolvedValue(equalSaved)
+      renderEditor('/event/ev-1/expenses/x-1/edit')
+      expect(await screen.findByText('This event is settled. Expenses are now read-only.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Save expense|Delete expense/ })).not.toBeInTheDocument()
+    })
+
+    it('does not offer a new expense form on a settled event', async () => {
+      getEventHome.mockResolvedValue({ ...home, event: { ...home.event, state: 'settled' } })
+      renderEditor()
+      expect(await screen.findByText('This event is settled. Expenses are now read-only.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Save expense' })).not.toBeInTheDocument()
+    })
+  })
 })

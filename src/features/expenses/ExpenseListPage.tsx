@@ -35,12 +35,16 @@ export function ExpenseListPage() {
   const { home } = state
   const current = loaded?.eventId === eventId ? loaded : null
   const names = displayNames(home.members)
+  const settled = home.event.state === 'settled'
+  const canEdit = (expense: ExpenseSummary) =>
+    !settled && (home.me.role !== 'participant' || expense.creatorUserId === home.me.userId)
   const expenses = current && 'expenses' in current ? [...current.expenses].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : []
 
   return (
     <main>
       <h1>{t('expenses.title')}</h1>
-      {home.event.state !== 'settled' && <Link className="button primary" to={`/event/${eventId}/expenses/new`}>{t('expenses.add')}</Link>}
+      {settled && <p className="muted">{t('event.settledNote')}</p>}
+      {!settled && <Link className="button primary" to={`/event/${eventId}/expenses/new`}>{t('expenses.add')}</Link>}
       <DraftList eventId={eventId} currency={home.event.currency} />
       {!current && <p role="status">{t('common.loading')}</p>}
       {current && 'failed' in current && <p role="alert">{t('event.loadFailed')}</p>}
@@ -55,6 +59,11 @@ export function ExpenseListPage() {
           {(expense.splitMethod === 'item_claim' || expense.splitMethod === 'host_assignment') && (
             <Link to={`/event/${eventId}/expenses/${expense.id}/claim`}>
               {expense.splitMethod === 'item_claim' ? t('expenses.claimItems') : t('expenses.viewItems')}
+            </Link>
+          )}
+          {canEdit(expense) && (
+            <Link to={`/event/${eventId}/expenses/${expense.id}/edit`} aria-label={t('expenses.editNamed', { description: expense.description })}>
+              {t('expenses.edit')}
             </Link>
           )}
         </article>

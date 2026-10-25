@@ -66,6 +66,15 @@ select:focus-visible {
   padding: 0 1.25rem;
 }
 
+/* Destructive action: outlined, never the filled primary look. */
+.danger {
+  background: transparent;
+  color: var(--color-primary-strong);
+  border: 2px solid var(--color-primary-strong);
+  border-radius: var(--radius-card);
+  padding: 0 1.25rem;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

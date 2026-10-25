@@ -83,13 +83,65 @@ describe('expenseRepository', () => {
 
   it('lists expenses newest first as summaries', async () => {
     const from = vi.fn(() => builder({
-      data: [{ id: 'exp-1', description: 'Lunch', total_cents: 1000, payer_user_id: 'user-1', split_method: 'equal', created_at: '2026-10-24T10:00:00Z' }],
+      data: [{ id: 'exp-1', description: 'Lunch', total_cents: 1000, payer_user_id: 'user-1', creator_user_id: 'user-3', split_method: 'equal', created_at: '2026-10-24T10:00:00Z' }],
       error: null,
     }))
     const repository = createExpenseRepository({ from } as never)
     await expect(repository.listExpenses('event-1')).resolves.toEqual([
-      { id: 'exp-1', description: 'Lunch', totalCents: 1000, payerUserId: 'user-1', splitMethod: 'equal', createdAt: '2026-10-24T10:00:00Z' },
+      { id: 'exp-1', description: 'Lunch', totalCents: 1000, payerUserId: 'user-1', creatorUserId: 'user-3', splitMethod: 'equal', createdAt: '2026-10-24T10:00:00Z' },
     ])
     expect(from).toHaveBeenCalledWith('expenses')
+  })
+
+  it('loads a saved expense as a save payload, keeping self-claims out of the allocations', async () => {
+    const row = {
+      id: 'exp-1', event_id: 'event-1', creator_user_id: 'user-1', payer_user_id: 'user-1', description: 'Lunch', category: 'food',
+      expense_date: '2026-10-24', total_cents: 1500, split_method: 'item_claim',
+      expense_items: [
+        { id: 'item-2', description: 'Tea', quantity: 1, total_cents: 500, sort_order: 1 },
+        { id: 'item-1', description: 'Rice', quantity: 1, total_cents: 1000, sort_order: 0 },
+      ],
+      allocations: [
+        { item_id: 'item-1', participant_user_id: 'user-2', amount_cents: 500, source: 'self_claim' },
+        { item_id: 'item-1', participant_user_id: 'user-3', amount_cents: 500, source: 'self_claim' },
+        { item_id: 'item-2', participant_user_id: 'user-1', amount_cents: 500, source: 'owner' },
+      ],
+    }
+    const maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null })
+    const eq = vi.fn(() => ({ maybeSingle }))
+    const select = vi.fn(() => ({ eq }))
+    const from = vi.fn(() => ({ select }))
+    const repository = createExpenseRepository({ from } as never)
+    await expect(repository.getExpense('exp-1')).resolves.toEqual({
+      creatorUserId: 'user-1',
+      claims: { 'item-1': ['user-2', 'user-3'] },
+      payload: {
+        id: 'exp-1', eventId: 'event-1', payerUserId: 'user-1', description: 'Lunch', category: 'food', expenseDate: '2026-10-24',
+        totalCents: 1500, splitMethod: 'item_claim',
+        items: [
+          { id: 'item-1', description: 'Rice', quantity: 1, totalCents: 1000, sortOrder: 0 },
+          { id: 'item-2', description: 'Tea', quantity: 1, totalCents: 500, sortOrder: 1 },
+        ],
+        allocations: [{ itemId: 'item-2', participantUserId: 'user-1', amountCents: 500 }],
+      },
+    })
+    expect(from).toHaveBeenCalledWith('expenses')
+    expect(eq).toHaveBeenCalledWith('id', 'exp-1')
+  })
+
+  it('reports a missing expense as expense_not_found', async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null })
+    const from = vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle }) }) }))
+    await expect(createExpenseRepository({ from } as never).getExpense('nope')).rejects.toThrow('expense_not_found')
+  })
+
+  it('deletes through the delete_expense rpc and maps its error keys', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: '22023', message: 'not_allowed' } })
+    const repository = createExpenseRepository({ rpc } as never)
+    await expect(repository.deleteExpense('exp-1')).resolves.toBeUndefined()
+    expect(rpc).toHaveBeenCalledWith('delete_expense', { expense_id: 'exp-1' })
+    await expect(repository.deleteExpense('exp-1')).rejects.toMatchObject({ formError: { code: 'not_allowed' } })
   })
 })

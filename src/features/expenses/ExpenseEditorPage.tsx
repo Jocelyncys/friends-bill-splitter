@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import type { ShellContext } from '../../components/shellContext'
 import { useOnline } from '../../lib/useOnline'
 import { deleteDraft, getDraft, saveDraft } from '../offline/draftDb'
@@ -22,7 +23,7 @@ import {
   type ExpenseDraft,
   type FormErrors,
 } from './expenseForm'
-import { createExpenseRepository, ExpenseSaveError, type SaveExpensePayload } from './expenseRepository'
+import { createExpenseRepository, ExpenseSaveError, type SavedExpense, type SaveExpensePayload } from './expenseRepository'
 import { recognizeReceipt } from '../ocr/ocrEngine'
 import { parseReceiptLines } from './receiptParser'
 
@@ -40,11 +41,28 @@ const isUntouched = (items: DraftItem[]) => items.length === 1 && items[0].descr
 
 const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', price: '', assigneeId: '' })
 
+type Existing = { id: string; result: SavedExpense | 'failed' }
+
 export function ExpenseEditorPage() {
-  const { eventId = '' } = useParams()
+  const { eventId = '', expenseId: editId } = useParams()
   const { t } = useTranslation()
   const draftId = useSearchParams()[0].get('draft')
   const state = useEventHome(eventId)
+  // A saved expense being edited (/expenses/:expenseId/edit).
+  const [existing, setExisting] = useState<Existing | null>(null)
+  useEffect(() => {
+    if (!editId) return
+    let cancelled = false
+    createExpenseRepository()
+      .getExpense(editId)
+      .then(
+        result => !cancelled && setExisting({ id: editId, result }),
+        () => !cancelled && setExisting({ id: editId, result: 'failed' }),
+      )
+    return () => {
+      cancelled = true
+    }
+  }, [editId])
   // A saved draft being reopened (?draft=id). A missing draft opens a blank form.
   const [saved, setSaved] = useState<{ id: string; payload: SaveExpensePayload | null } | null>(null)
   useEffect(() => {
@@ -59,11 +77,45 @@ export function ExpenseEditorPage() {
     }
   }, [draftId])
   if (state.status !== 'ready') return <EventStatus state={state} />
+  const { home } = state
+  if (home.event.state === 'settled') {
+    return (
+      <main>
+        <h1>{t(editId ? 'editor.editTitle' : 'editor.title')}</h1>
+        <p className="muted">{t('event.settledNote')}</p>
+        <Link to={`/event/${eventId}`}>{t('common.back')}</Link>
+      </main>
+    )
+  }
+  if (editId) {
+    if (existing?.id !== editId) return <p role="status">{t('common.loading')}</p>
+    const { result } = existing
+    const allowed = result !== 'failed' && (home.me.role !== 'participant' || result.creatorUserId === home.me.userId)
+    if (result === 'failed' || !allowed || result.payload.eventId !== eventId) {
+      return (
+        <main>
+          <h1>{t('editor.editTitle')}</h1>
+          <p role="alert" className="form-error">{t(result === 'failed' ? 'expenseError.expense_not_found' : 'expenseError.not_allowed')}</p>
+          <Link to={`/event/${eventId}/expenses`}>{t('common.back')}</Link>
+        </main>
+      )
+    }
+    return <EditorForm key={`edit:${editId}`} home={home} saved={result.payload} claims={result.claims} editing />
+  }
   if (draftId && saved?.id !== draftId) return <p role="status">{t('common.loading')}</p>
-  return <EditorForm key={draftId ?? 'new'} home={state.home} saved={draftId ? saved?.payload ?? null : null} />
+  return <EditorForm key={draftId ?? 'new'} home={home} saved={draftId ? saved?.payload ?? null : null} />
 }
 
-function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayload | null }) {
+type EditorProps = {
+  home: EventHome
+  saved: SaveExpensePayload | null
+  /** Editing a saved expense (not a local draft): Delete is offered and saving returns to the list. */
+  editing?: boolean
+  /** item id -> self-claimers; shown read-only, and such items never get allocations from this form. */
+  claims?: Record<string, string[]>
+}
+
+function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) {
   const labels = displayNames(home.members)
   const nameOf = (userId: string, fallback: string) => labels.get(userId) ?? fallback
   const { t, i18n } = useTranslation()
@@ -90,6 +142,7 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
   const [errors, setErrors] = useState<FormErrors>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [ocrState, setOcrState] = useState<OcrState>('idle')
   const [ocrMessage, setOcrMessage] = useState('')
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
@@ -158,12 +211,13 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
     if (!result.ok) return setErrors(result.errors)
     setErrors({})
     setBusy(true)
-    const payload = buildPayload({ id: expenseId, eventId }, result.values)
+    const payload = buildPayload({ id: expenseId, eventId, category: saved?.category }, result.values)
+    const done = editing ? `/event/${eventId}/expenses` : `/event/${eventId}`
     // Offline (or the network dropped mid-save): keep the reviewed payload on this device. Images are never stored.
     const keepOnDevice = async () => {
       try {
         await saveDraft(payload)
-        navigate(`/event/${eventId}`)
+        navigate(done)
       } catch {
         setServerError(t('expenseError.draft_failed'))
         setBusy(false)
@@ -172,8 +226,8 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
     if (!online) return keepOnDevice()
     try {
       await createExpenseRepository().saveExpense(payload)
-      if (saved) await deleteDraft(expenseId).catch(() => undefined)
-      navigate(`/event/${eventId}`)
+      if (saved && !editing) await deleteDraft(expenseId).catch(() => undefined)
+      navigate(done)
       void syncDrafts?.()
     } catch (err) {
       if (isTransientSaveError(err)) return keepOnDevice()
@@ -183,9 +237,24 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
     }
   }
 
+  const deleteExpense = async () => {
+    setConfirmingDelete(false)
+    setServerError(null)
+    setBusy(true)
+    try {
+      await createExpenseRepository().deleteExpense(expenseId)
+      navigate(`/event/${eventId}/expenses`)
+    } catch (err) {
+      // A generic save_failed verdict would say "could not save": report it as a failed delete instead.
+      const code = err instanceof ExpenseSaveError && err.formError.code !== 'save_failed' ? err.formError.code : 'delete_failed'
+      setServerError(t(`expenseError.${code}`, { defaultValue: t('expenseError.delete_failed') }))
+      setBusy(false)
+    }
+  }
+
   return (
     <main>
-      <h1>{t('editor.title')}</h1>
+      <h1>{t(editing ? 'editor.editTitle' : 'editor.title')}</h1>
       {!online && <p role="status" className="muted">{t('editor.offlineHint')}</p>}
       <form className="form" onSubmit={e => void submit(e)} noValidate>
         <label>
@@ -214,7 +283,7 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
             </select>
           </div>
         ) : (
-          <p>{t('editor.payer')}: <strong>{nameOf(home.me.userId, home.me.displayName)}</strong></p>
+          <p>{t('editor.payer')}: <strong>{nameOf(draft.payerUserId, home.me.displayName)}</strong></p>
         )}
         {fieldError('payer')}
 
@@ -301,6 +370,12 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
                     </select>
                   </label>
                 )}
+                {draft.splitMethod === 'items' && claims[item.id] && (
+                  <p className="note">{t('claim.claimedBy', { names: claims[item.id].map(id => nameOf(id, '?')).join(', ') })}</p>
+                )}
+                {draft.splitMethod === 'items' && item.assigneeId && (
+                  <p className="note">{t('claim.assignedTo', { names: nameOf(item.assigneeId, '?') })}</p>
+                )}
                 {draft.items.length > 1 && (
                   <button type="button" onClick={() => set('items', draft.items.filter((_, i) => i !== index))}>
                     {t('editor.removeItem', { n: index + 1 })}
@@ -323,7 +398,23 @@ function EditorForm({ home, saved }: { home: EventHome; saved: SaveExpensePayloa
         {!reviewing && (
           <button type="submit" className="primary" disabled={busy || (itemized && ocrState === 'recognizing')}>{busy ? t('editor.saving') : t('editor.save')}</button>
         )}
+        {editing && (
+          <button type="button" className="danger" disabled={busy || !online} onClick={() => setConfirmingDelete(true)}>
+            {t('editor.delete')}
+          </button>
+        )}
       </form>
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={t('editor.deleteTitle')}
+          confirmLabel={t('editor.deleteConfirm')}
+          busy={busy}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => void deleteExpense()}
+        >
+          <p>{t('editor.deleteBody', { description: saved?.description ?? '' })}</p>
+        </ConfirmDialog>
+      )}
     </main>
   )
 }

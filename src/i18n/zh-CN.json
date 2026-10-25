@@ -67,7 +67,8 @@
     "inviteOnlyOnCreatorDevice": "邀请链接仅在创建此活动的设备上可用",
     "settleNow": "立即结算",
     "viewPayments": "查看付款",
-    "settledNote": "此活动已结算，开销现在为只读。"
+    "settledNote": "此活动已结算，开销现在为只读。",
+    "inviteNotSaved": "此邀请链接无法保存在此设备上。请立即复制：之后将不会再显示。"
   },
   "expenses": {
     "title": "开销",
@@ -75,7 +76,9 @@
     "empty": "还没有开销。",
     "paidBy": "由 {{name}} 支付",
     "claimItems": "认领项目",
-    "viewItems": "查看项目"
+    "viewItems": "查看项目",
+    "edit": "编辑",
+    "editNamed": "编辑 {{description}}"
   },
   "editor": {
     "title": "添加开销",
@@ -122,7 +125,12 @@
       "confirm": "确认项目",
       "failed": "无法识别此收据，请手动输入项目。"
     },
-    "offlineHint": "你目前离线。这笔支出会先保存在此设备上，恢复联网后自动发送。"
+    "offlineHint": "你目前离线。这笔支出会先保存在此设备上，恢复联网后自动发送。",
+    "editTitle": "编辑开销",
+    "delete": "删除开销",
+    "deleteTitle": "删除此开销？",
+    "deleteBody": "“{{description}}”将从此活动中为所有人删除，且无法撤销。",
+    "deleteConfirm": "删除"
   },
   "expenseError": {
     "payer_not_allowed": "你不能记录由他人支付的开销。",
@@ -151,7 +159,10 @@
     "save_failed": "无法保存开销，请重试。",
     "draft_failed": "无法将支出保存到此设备，请重试。",
     "network_error": "无法连接服务器，请检查网络后重试。",
-    "too_many_attempts": "多次尝试后仍无法同步。"
+    "too_many_attempts": "多次尝试后仍无法同步。",
+    "item_has_claims": "已有人认领了其中的项目，因此无法在此分配。",
+    "expense_not_found": "找不到此开销，可能已被删除。",
+    "delete_failed": "无法删除此开销，请重试。"
   },
   "realtime": {
     "offline": "正在重新连接…数据可能已过时。"
@@ -220,7 +231,7 @@
     "confirmTitle": "确定结算此活动？",
     "confirm": "确认并结算",
     "confirmMethod": "方式：{{method}}",
-    "confirmReadOnly": "此后开销将变为只读，下列付款也将固定。",
+    "confirmReadOnly": "此后开销将变为只读，下列付款也将固定。已结算的活动目前无法重新打开：如需之后更正，请创建新活动。",
     "offline": "你已离线。结算需要网络连接。",
     "notLive": "正在重新连接…请等连接恢复后再结算。",
     "notAllowed": "只有所有者或共同主持人可以结算此活动。",

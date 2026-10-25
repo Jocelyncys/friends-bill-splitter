@@ -93,6 +93,7 @@ describe('SettlementPage', () => {
       const dialog = screen.getByRole('dialog')
       expect(dialog).toHaveTextContent('Optimized direct settlement')
       expect(dialog).toHaveTextContent('read-only')
+      expect(dialog).toHaveTextContent('create a new event')
       await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm and settle' }))
       expect(onSettleNow).toHaveBeenCalledWith('optimized_direct', null)
     })

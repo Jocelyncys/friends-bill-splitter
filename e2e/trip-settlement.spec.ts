@@ -43,7 +43,30 @@ test('two friends split a trip, settle with the optimized plan, and complete the
   // Petrol RM 90 paid by Ana, Lunch RM 30 paid by Ben, both split equally → Ben owes 45 − 15 = 30.
   await goHome(owner)
   await addSimpleExpense(owner, 'Petrol', '90.00')
-  await addSimpleExpense(ben, 'Lunch', '30.00')
+  // Ben mistypes Lunch as RM 3 and corrects it before settlement.
+  await addSimpleExpense(ben, 'Lunch', '3.00')
+  await ben.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Expenses' }).click()
+  await ben.getByRole('link', { name: 'Edit Lunch' }).click()
+  await expect(ben.getByRole('heading', { name: 'Edit expense' })).toBeVisible()
+  await expect(ben.getByLabel('Amount')).toHaveValue('3.00')
+  await ben.getByLabel('Amount').fill('30.00')
+  await ben.getByRole('button', { name: 'Save expense' }).click()
+  await expect(ben.locator('.expense-row', { hasText: 'Lunch' })).toContainText(rm('30.00'))
+  // A participant cannot edit someone else's expense.
+  await expect(ben.locator('.expense-row', { hasText: 'Petrol' })).toBeVisible()
+  await expect(ben.getByRole('link', { name: 'Edit Petrol' })).toHaveCount(0)
+  await goHome(ben)
+
+  // The owner adds a wrong expense and deletes it (after confirming).
+  await goHome(owner)
+  await addSimpleExpense(owner, 'Snacks', '50.00')
+  await owner.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Expenses' }).click()
+  await owner.getByRole('link', { name: 'Edit Snacks' }).click()
+  await owner.getByRole('button', { name: 'Delete expense' }).click()
+  await owner.getByRole('dialog', { name: 'Delete this expense?' }).getByRole('button', { name: 'Delete' }).click()
+  await expect(owner.getByRole('heading', { name: 'Expenses', level: 1 })).toBeVisible()
+  await expect(owner.locator('.expense-row', { hasText: 'Petrol' })).toBeVisible()
+  await expect(owner.locator('.expense-row', { hasText: 'Snacks' })).toHaveCount(0)
 
   await goHome(owner)
   await expect(owner.locator('.expense-row', { hasText: 'Lunch' })).toBeVisible({ timeout: 15_000 })
@@ -63,6 +86,7 @@ test('two friends split a trip, settle with the optimized plan, and complete the
   await owner.locator('.settlement__footer').getByRole('button', { name: 'Settle now' }).click()
   const dialog = owner.getByRole('dialog', { name: 'Settle this event?' })
   await expect(dialog).toContainText('Method: Optimized direct settlement')
+  await expect(dialog).toContainText('create a new event')
   await dialog.getByRole('button', { name: 'Confirm and settle' }).click()
 
   await expect(owner.getByRole('heading', { name: 'Payments', level: 1 })).toBeVisible()
@@ -94,6 +118,12 @@ test('two friends split a trip, settle with the optimized plan, and complete the
   await expect(benRow).toContainText('Received', { timeout: 15_000 })
   // Details are dropped once the payment is received.
   await expect(benRow).not.toContainText('1234567890')
+
+  // After settlement the expense list is read-only.
+  await ben.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Expenses' }).click()
+  await expect(ben.getByText('This event is settled. Expenses are now read-only.')).toBeVisible()
+  await expect(ben.locator('.expense-row', { hasText: 'Lunch' })).toBeVisible()
+  await expect(ben.getByRole('link', { name: /^Edit / })).toHaveCount(0)
 
   await owner.context().close()
   await ben.context().close()
