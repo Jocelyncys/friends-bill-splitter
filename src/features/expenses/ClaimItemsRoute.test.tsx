@@ -72,21 +72,24 @@ describe('ClaimItemsRoute', () => {
     mocks.getExpenseClaims.mockResolvedValue({ ...claims, creatorUserId: 'me' })
     mocks.assignItem.mockResolvedValue(undefined)
     renderRoute()
-    await userEvent.click(await screen.findByRole('button', { name: 'Share between people' }))
-    const who = screen.getByRole('group', { name: 'Who had Satay' })
+    const who = await screen.findByRole('group', { name: 'Who had Satay' })
     await userEvent.click(within(who).getByRole('button', { name: 'Mia' }))
     await userEvent.click(within(who).getByRole('button', { name: 'Xan' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Assign' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
     expect(mocks.assignItem).toHaveBeenCalledWith('i1', ['me', 'x'])
     await vi.waitFor(() => expect(mocks.getExpenseClaims).toHaveBeenCalledTimes(2))
   })
 
-  it('still assigns to one person with a single tap', async () => {
+  it('keeps the picked people when the assignment fails', async () => {
     mocks.getExpenseClaims.mockResolvedValue({ ...claims, creatorUserId: 'me' })
-    mocks.assignItem.mockResolvedValue(undefined)
+    mocks.assignItem.mockRejectedValue(new ActionError('not_member'))
     renderRoute()
-    await userEvent.click(await screen.findByRole('button', { name: 'Assign to Xan' }))
-    expect(mocks.assignItem).toHaveBeenCalledWith('i1', ['x'])
+    const who = await screen.findByRole('group', { name: 'Who had Satay' })
+    await userEvent.click(within(who).getByRole('button', { name: 'Xan' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await vi.waitFor(() => expect(mocks.getExpenseClaims).toHaveBeenCalledTimes(2))
+    expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Xan' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('keeps the previous claims and shows a banner when a reload fails', async () => {

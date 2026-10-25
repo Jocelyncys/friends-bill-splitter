@@ -1255,55 +1255,20 @@ input[type='radio']:focus-visible {
   padding-left: 16px;
 }
 
+/* The host's one assignment control: who had it (toggle chips, wrapping), then Assign. */
 .claim-assign {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-/* Assigning is the host's secondary tool: lighter pills than "Claim for me". */
-.claim-assign .chip {
-  border-width: 1px;
-  border-color: var(--rose-deep);
-  background: var(--paper);
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.claim-assign .chip:hover:not(:disabled) {
-  border-color: var(--plum);
-  background: var(--paper);
-  color: var(--plum);
-}
-
-/* Opens the several-people picker: dashed like the other "add more" controls. */
-.claim-assign .claim-assign__share {
-  border-style: dashed;
-  border-color: var(--plum);
-  background: transparent;
-  color: var(--plum);
-  font-weight: 600;
-}
-
-.claim-assign .claim-assign__share[aria-expanded='true'] {
-  border-style: solid;
-  background: var(--petal-press);
-}
-
-.who-had--claim {
   display: grid;
-  gap: 12px;
+  justify-items: start;
+  gap: 10px;
   margin-top: 10px;
-  padding: 12px;
-  border: 1px solid var(--rose);
-  border-radius: var(--radius-control);
-  background: var(--paper);
-  animation: rise 180ms ease-out;
 }
 
-.who-had--claim .who-had__people {
+.claim-assign > .who-had__people {
   margin-top: 0;
+}
+
+.claim-assign__go {
+  padding: 0 20px;
 }
 
 .receipt__paid {

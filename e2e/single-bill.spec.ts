@@ -36,7 +36,8 @@ test('single bill: itemized entry, a friend claims an item, the host assigns the
   // The owner assigns the teh tarik to themselves.
   await attention.click()
   const ownerItem = owner.getByRole('article').filter({ hasText: 'Teh tarik' })
-  await ownerItem.getByRole('group', { name: 'Assign Teh tarik' }).getByRole('button', { name: 'Assign to Ana' }).click()
+  await ownerItem.getByRole('group', { name: 'Who had Teh tarik' }).getByRole('button', { name: 'Ana' }).click()
+  await ownerItem.getByRole('button', { name: 'Assign Teh tarik' }).click()
   await expect(ownerItem).toContainText('Assigned to: Ana')
   await expect(owner.getByRole('article').filter({ hasText: 'Nasi lemak' })).toContainText('Claimed by: Ben')
   await expect(owner.getByText(/Not yet claimed/)).toHaveCount(0)

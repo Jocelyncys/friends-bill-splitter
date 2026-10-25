@@ -72,13 +72,16 @@ export function ClaimItemsRoute() {
   })
 
   // After any action (even a failed one) reload so the page shows the server's truth.
-  const run = async (action: () => Promise<void>) => {
+  // Resolves true when the action succeeded.
+  const run = async (action: () => Promise<void>): Promise<boolean> => {
     setBusy(true)
     setErrorCode(null)
     try {
       await action()
+      return true
     } catch (error) {
       setErrorCode(error instanceof ActionError ? error.code : 'action_failed')
+      return false
     } finally {
       setBusy(false)
       setLocalTick(tick => tick + 1)
@@ -105,7 +108,7 @@ export function ClaimItemsRoute() {
       onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
       adjustments={claims.adjustments}
       totalCents={claims.totalCents}
-      onAssign={(itemId, memberIds) => void run(() => repository.assignItem(itemId, memberIds))}
+      onAssign={(itemId, memberIds) => run(() => repository.assignItem(itemId, memberIds))}
       onToggleClosed={closed => void run(() => repository.setClaimingClosed(expenseId, closed))}
     />
   )

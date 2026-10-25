@@ -254,7 +254,11 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
   const paidTotal = itemsTotal + adjustmentsCents(adjustments)
   const difference = customDifference(draft.amount, draft.shares)
   const people = home.members.map(m => ({ id: m.userId, name: nameOf(m.userId, m.displayName) }))
-  const personItems = itemized && adjustments.length > 0 ? itemCentsByPerson(draft.items) : null
+  // Self-claimed items (friends-claim) count for their claimers: the server splits them with the same equal rule.
+  const personItems =
+    itemized && adjustments.length > 0
+      ? itemCentsByPerson(draft.items.map(item => (item.assigneeIds.length > 0 ? item : { ...item, assigneeIds: claims[item.id] ?? [] })))
+      : null
   const pays = personItems ? paysRows(paidTotal, personItems, people) : []
 
   const submit = async (e: FormEvent) => {
@@ -502,10 +506,14 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
                           <span className="sr-only">{t('editor.adj.subtract', { n })}</span>
                         </button>
                       ) : (
-                        <span className="signed-input__sign" aria-hidden="true">{minus ? '−' : '+'}</span>
+                        <span className="signed-input__sign">
+                          <span aria-hidden="true">{minus ? '−' : '+'}</span>
+                          <span className="sr-only" id={`${formId}-adj-sign-${a.id}`}>{t(minus ? 'editor.adj.subtracted' : 'editor.adj.added')}</span>
+                        </span>
                       )}
                       <input
                         id={`${formId}-adj-amount-${a.id}`}
+                        aria-describedby={hasSignChoice(a.kind) ? undefined : `${formId}-adj-sign-${a.id}`}
                         inputMode="decimal"
                         value={a.amount}
                         onChange={e => setAdjustment(index, { amount: e.target.value })}

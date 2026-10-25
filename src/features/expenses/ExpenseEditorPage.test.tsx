@@ -461,6 +461,36 @@ describe('ExpenseEditorPage (itemized, several people and adjustments)', () => {
     })
   })
 
+  it('tells screen readers whether a fixed-sign amount is subtracted or added', async () => {
+    await startHostAssign()
+    await fillItem(1, 'Rice', '10', ['Alice'])
+    await addAdjustment(1, 'discount', 'Voucher', '2')
+    await addAdjustment(2, 'tax', 'SST', '0.60')
+    expect(screen.getByLabelText('Adjustment 1 amount')).toHaveAccessibleDescription('subtracted')
+    expect(screen.getByLabelText('Adjustment 2 amount')).toHaveAccessibleDescription('added')
+  })
+
+  it('counts self-claims of a friends-claim expense, so what each person pays shows once every item has someone', async () => {
+    getExpense.mockResolvedValue({
+      creatorUserId: 'u-a',
+      claims: { 'it-1': ['u-b'] },
+      payload: {
+        id: 'x-4', eventId: 'ev-1', payerUserId: 'u-a', description: 'Hawker', category: 'other', expenseDate: '2026-10-20',
+        totalCents: 2500, splitMethod: 'item_claim',
+        items: [
+          { id: 'it-1', description: 'Pork', quantity: 1, totalCents: 1746, sortOrder: 0 },
+          { id: 'it-2', description: 'Rice', quantity: 1, totalCents: 1111, sortOrder: 1 },
+        ],
+        allocations: [{ itemId: 'it-2', participantUserId: 'u-a', amountCents: 1111 }],
+        adjustments: [{ id: 'ad-1', kind: 'discount', label: 'Voucher', amountCents: -357, sortOrder: 0 }],
+      },
+    })
+    renderEditor('/event/ev-1/expenses/x-4/edit')
+    const pays = await screen.findByRole('list', { name: 'What each person pays' })
+    expect(within(pays).getByText('Items RM 11.11 → pays RM 9.72')).toBeInTheDocument()
+    expect(within(pays).getByText('Items RM 17.46 → pays RM 15.28')).toBeInTheDocument()
+  })
+
   it('blocks saving an adjustment without a label or amount', async () => {
     await startHostAssign()
     await fillItem(1, 'Rice', '10', ['Alice'])

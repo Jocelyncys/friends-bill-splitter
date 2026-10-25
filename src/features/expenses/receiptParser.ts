@@ -11,14 +11,17 @@ const EXCLUDED =
 
 // Bill-level adjustments, by their first word(s). Longer names first so "discount" wins over "disc".
 const ADJUSTMENT = /^[^\p{L}]*(bill\s*rounding|rounding|voucher|discount|disc|sst|gst|tax|service|svc)\b/iu
-// The rightmost amount on the line, with its sign: "-5.00", "RM 10.00", "1,00".
-const AMOUNT_AT_END = /(-)?\s*(?:RM\s*)?(\d{1,3}(?:,\d{3})+|\d+)[.,](\d{2})\s*$/i
-const KIND_BY_WORD: Array<[RegExp, AdjustmentKind]> = [
-  [/rounding/i, 'rounding'],
-  [/voucher|disc/i, 'discount'],
-  [/sst|gst|tax/i, 'tax'],
-  [/service|svc/i, 'service'],
-]
+// The rightmost amount on the line, with its sign: "-5.00", "RM 10.00", "1,00"; "(0.02)" is negative.
+const AMOUNT_AT_END = /(-)?\s*(?:RM\s*)?(\()?\s*(?:RM\s*)?(\d{1,3}(?:,\d{3})+|\d+)[.,](\d{2})\s*\)?\s*$/i
+const SUBTOTAL = /^[^\p{L}]*sub\s*-?\s*total\b/iu
+
+/** The keyword picks the kind, but "Service Tax" is a tax: tax words anywhere in the label win over service. */
+function kindOf(word: string, label: string): AdjustmentKind {
+  if (/rounding/i.test(word)) return 'rounding'
+  if (/voucher|disc/i.test(word)) return 'discount'
+  if (/\b(sst|gst|tax)\b/i.test(label)) return 'tax'
+  return 'service'
+}
 
 // Malaysian POS noise around an item name.
 const REF_NOTE = /\s*[(（]\s*ref\s*:[^)）]*[)）]?/giu // "(ref: Member Discount)"
@@ -49,11 +52,11 @@ function parseAdjustment(text: string): ParsedAdjustment | null | undefined {
   if (!word) return undefined // not an adjustment line
   const amount = AMOUNT_AT_END.exec(text)
   if (!amount) return null
-  const cents = parseMoneyToCents(`${amount[2].replace(/,/g, '')}.${amount[3]}`)
+  const cents = parseMoneyToCents(`${amount[3].replace(/,/g, '')}.${amount[4]}`)
   const label = cleanLabel(text.slice(0, amount.index))
   if (cents === null || !label) return null
-  const kind = KIND_BY_WORD.find(([re]) => re.test(word))?.[1] ?? 'other'
-  const sign = kind === 'discount' || (kind === 'rounding' && amount[1]) ? -1 : 1
+  const kind = kindOf(word, label)
+  const sign = kind === 'discount' || (kind === 'rounding' && (amount[1] || amount[2])) ? -1 : 1
   return { kind, label, amountCents: sign * cents }
 }
 
@@ -64,9 +67,14 @@ function parseAdjustment(text: string): ParsedAdjustment | null | undefined {
 export function parseReceipt(lines: string[]): { items: ParsedReceiptItem[]; adjustments: ParsedAdjustment[] } {
   const items: ParsedReceiptItem[] = []
   const adjustments: ParsedAdjustment[] = []
+  // Discount lines above the subtotal belong to an item (its price already reflects them); only those after it
+  // are bill-level. A receipt without a subtotal line keeps every discount line.
+  let beforeSubtotal = lines.some(line => SUBTOTAL.test(line.trim()))
   for (const line of lines) {
     const text = line.trim().replace(/\s+/g, ' ')
+    if (SUBTOTAL.test(text)) beforeSubtotal = false
     const adjustment = parseAdjustment(text)
+    if (adjustment && adjustment.kind === 'discount' && beforeSubtotal) continue
     if (adjustment) adjustments.push(adjustment)
     if (adjustment !== undefined || EXCLUDED.test(text)) continue
     const match = text.match(PRICE)

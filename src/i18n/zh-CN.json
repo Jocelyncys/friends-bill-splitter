@@ -167,7 +167,9 @@
       "paid": "实付金额",
       "switchTitle": "移除调整项？",
       "switchBody": "平均分摊和自定义金额按实付金额（{{amount}}）计算，调整项将被移除。",
-      "switchConfirm": "移除调整项"
+      "switchConfirm": "移除调整项",
+      "subtracted": "扣减",
+      "added": "加上"
     }
   },
   "expenseError": {
@@ -213,8 +215,6 @@
     "title": "认领项目",
     "claimForMe": "我来认领",
     "unclaim": "取消认领",
-    "assignTo": "分配给{{name}}",
-    "assignGroup": "分配{{item}}",
     "close": "关闭认领",
     "reopen": "重新开放认领",
     "closedNote": "认领已关闭，只有主持人可以继续分配项目。",
@@ -227,12 +227,12 @@
     "unclaimedTotal": "尚未认领：{{amount}}",
     "sharedEach": "{{count}} 人分摊，每人 {{amount}}",
     "amountRange": "{{min}} 至 {{max}}",
-    "shareBetween": "多人分摊",
     "whoHad": "谁点了{{item}}",
     "assign": "分配",
     "paysTitle": "每人实付",
     "paysLine": "项目 {{items}} → 实付 {{pays}}",
-    "paysWaiting": "每个项目都有人后，会显示计入调整项后的每人实付金额。"
+    "paysWaiting": "每个项目都有人后，会显示计入调整项后的每人实付金额。",
+    "assignItem": "分配{{item}}"
   },
   "actionError": {
     "item_not_found": "找不到这个项目。",

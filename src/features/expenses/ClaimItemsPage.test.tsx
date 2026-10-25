@@ -11,7 +11,8 @@ describe('ClaimItemsPage', () => {
   it('lets a participant claim for themselves but not assign another person', async () => {
     render(<ClaimItemsPage role="participant" currentUserId="alice" participants={[{ id: 'alice', name: 'Alice' }, { id: 'ben', name: 'Ben' }]} items={[unclaimed]} />)
     expect(screen.getByRole('button', { name: 'Claim for me' })).toBeEnabled()
-    expect(screen.queryByRole('button', { name: 'Assign to Ben' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Assign Satay' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Who had Satay' })).not.toBeInTheDocument()
   })
 
   it('calls onClaim and onUnclaim with the item id', async () => {
@@ -37,23 +38,28 @@ describe('ClaimItemsPage', () => {
     expect(within(shares).getByText('RM 5.00')).toBeInTheDocument()
   })
 
-  it('gives managers per-member assign buttons and a close/reopen toggle', async () => {
-    const onAssign = vi.fn()
+  it('gives managers one people picker per item and a close/reopen toggle', async () => {
+    const onAssign = vi.fn().mockResolvedValue(true)
     const onToggleClosed = vi.fn()
     render(
       <ClaimItemsPage role="cohost" currentUserId="alice" canManage participants={participants} items={[unclaimed]}
         onAssign={onAssign} onToggleClosed={onToggleClosed} />,
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Assign to Ben' }))
+    const who = screen.getByRole('group', { name: 'Who had Satay' })
+    expect(within(who).getAllByRole('button')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /Assign to|Share between/ })).not.toBeInTheDocument()
+    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
     expect(onAssign).toHaveBeenCalledWith('i1', ['ben'])
     await userEvent.click(screen.getByRole('button', { name: 'Close claiming' }))
     expect(onToggleClosed).toHaveBeenCalledWith(true)
   })
 
-  it('disables claiming when closed (managers can still assign) and offers reopen', () => {
+  it('disables claiming when closed (managers can still assign) and offers reopen', async () => {
     render(<ClaimItemsPage role="owner" currentUserId="alice" claimingClosed participants={participants} items={[unclaimed]} />)
     expect(screen.getByRole('button', { name: 'Claim for me' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Assign to Ben' })).toBeEnabled()
+    await userEvent.click(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Ben' }))
+    expect(screen.getByRole('button', { name: 'Assign Satay' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Reopen claiming' })).toBeEnabled()
   })
 
@@ -72,35 +78,49 @@ describe('ClaimItemsPage', () => {
   it('disables every mutation while offline and announces action errors', () => {
     render(<ClaimItemsPage role="owner" currentUserId="alice" offline errorMessage="Claiming is closed." participants={participants} items={[unclaimed]} />)
     expect(screen.getByRole('button', { name: 'Claim for me' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Assign to Ben' })).toBeDisabled()
+    expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Ben' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Assign Satay' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Close claiming' })).toBeDisabled()
     expect(screen.getByRole('alert')).toHaveTextContent('Claiming is closed.')
   })
 
-  it('lets a manager pick several people for one item, then Assign', async () => {
-    const onAssign = vi.fn()
+  it('starts from the current assignees, assigns several people, and resets after success', async () => {
+    const onAssign = vi.fn().mockResolvedValue(true)
     const assignedToAlice: ClaimItemView = { ...unclaimed, assigned: true, claims: [{ userId: 'alice', amountCents: 1001 }] }
     render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assignedToAlice]} onAssign={onAssign} />)
-    const share = screen.getByRole('button', { name: 'Share between people' })
-    expect(share).toHaveAttribute('aria-expanded', 'false')
-    await userEvent.click(share)
-    expect(share).toHaveAttribute('aria-expanded', 'true')
     const who = screen.getByRole('group', { name: 'Who had Satay' })
-    // Starts from the current assignment.
     expect(within(who).getByRole('button', { name: 'Alice' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(who).getByRole('button', { name: 'Ben' })).toHaveAttribute('aria-pressed', 'false')
     await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Assign' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
     expect(onAssign).toHaveBeenCalledWith('i1', ['alice', 'ben'])
-    expect(screen.queryByRole('group', { name: 'Who had Satay' })).not.toBeInTheDocument()
+    // Back to the (unchanged in this test) current assignment.
+    await vi.waitFor(() => expect(within(who).getByRole('button', { name: 'Ben' })).toHaveAttribute('aria-pressed', 'false'))
   })
 
-  it('disables Assign until someone is picked', async () => {
-    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Share between people' }))
-    expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled()
-    await userEvent.click(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Ben' }))
-    expect(screen.getByRole('button', { name: 'Assign' })).toBeEnabled()
+  it('keeps the selection when the assignment fails', async () => {
+    const onAssign = vi.fn().mockResolvedValue(false)
+    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} />)
+    const who = screen.getByRole('group', { name: 'Who had Satay' })
+    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
+    expect(onAssign).toHaveBeenCalledTimes(1)
+    expect(within(who).getByRole('button', { name: 'Ben' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('disables Assign until the selection differs from the current assignment and is not empty', async () => {
+    const assigned: ClaimItemView = { ...unclaimed, assigned: true, claims: [{ userId: 'ben', amountCents: 1001 }] }
+    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assigned]} />)
+    const who = screen.getByRole('group', { name: 'Who had Satay' })
+    const assign = screen.getByRole('button', { name: 'Assign Satay' })
+    expect(assign).toBeDisabled()
+    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
+    expect(assign).toBeDisabled() // nobody picked
+    await userEvent.click(within(who).getByRole('button', { name: 'Alice' }))
+    expect(assign).toBeEnabled()
+    await userEvent.click(within(who).getByRole('button', { name: 'Alice' }))
+    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
+    expect(assign).toBeDisabled() // same as now
   })
 
   it('shows a shared item as shared, with each person’s part', () => {

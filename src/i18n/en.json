@@ -167,7 +167,9 @@
       "paid": "Amount paid",
       "switchTitle": "Remove the adjustments?",
       "switchBody": "Split equally and Custom amounts work from the amount paid ({{amount}}), so the adjustment lines will be removed.",
-      "switchConfirm": "Remove adjustments"
+      "switchConfirm": "Remove adjustments",
+      "subtracted": "subtracted",
+      "added": "added"
     }
   },
   "expenseError": {
@@ -213,8 +215,6 @@
     "title": "Claim items",
     "claimForMe": "Claim for me",
     "unclaim": "Unclaim",
-    "assignTo": "Assign to {{name}}",
-    "assignGroup": "Assign {{item}}",
     "close": "Close claiming",
     "reopen": "Reopen claiming",
     "closedNote": "Claiming is closed. Only the host can still assign items.",
@@ -227,12 +227,12 @@
     "unclaimedTotal": "Not yet claimed: {{amount}}",
     "sharedEach": "Shared by {{count}}, {{amount}} each",
     "amountRange": "{{min}} to {{max}}",
-    "shareBetween": "Share between people",
     "whoHad": "Who had {{item}}",
     "assign": "Assign",
     "paysTitle": "What each person pays",
     "paysLine": "Items {{items}} → pays {{pays}}",
-    "paysWaiting": "What each person pays, adjustments included, appears once every item has someone."
+    "paysWaiting": "What each person pays, adjustments included, appears once every item has someone.",
+    "assignItem": "Assign {{item}}"
   },
   "actionError": {
     "item_not_found": "This item could not be found.",

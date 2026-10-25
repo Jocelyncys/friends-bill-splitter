@@ -144,6 +144,30 @@ describe('parseReceipt adjustments', () => {
     ).toEqual({ items: [], adjustments: [] })
   })
 
+  it('ignores discount lines above the subtotal (they belong to an item) and keeps those after it', () => {
+    expect(
+      parseReceipt(['1 Kailan Garlic 3.90', 'Discount -0.39', 'Subtotal 3.51', 'Discount 1.00', 'SST 6% 0.15']).adjustments,
+    ).toEqual([
+      { kind: 'discount', label: 'Discount', amountCents: -100 },
+      { kind: 'tax', label: 'SST 6%', amountCents: 15 },
+    ])
+  })
+
+  it('still reads a voucher on a receipt without a subtotal line', () => {
+    expect(parseReceipt(['Teh 3.00', 'Voucher -1.00']).adjustments).toEqual([{ kind: 'discount', label: 'Voucher', amountCents: -100 }])
+  })
+
+  it('reads "Service Tax" as tax, not service charge', () => {
+    expect(parseReceipt(['Service Tax 6% 1.41']).adjustments).toEqual([{ kind: 'tax', label: 'Service Tax 6%', amountCents: 141 }])
+  })
+
+  it('treats a parenthesised amount as negative', () => {
+    expect(parseReceipt(['Rounding (0.02)', 'Bill rounding RM (0.01)']).adjustments).toEqual([
+      { kind: 'rounding', label: 'Rounding', amountCents: -2 },
+      { kind: 'rounding', label: 'Bill rounding', amountCents: -1 },
+    ])
+  })
+
   it('caps a long label at 60 characters', () => {
     const { adjustments } = parseReceipt([`Service charge ${'x'.repeat(80)} 1.00`])
     expect(adjustments[0].label).toHaveLength(60)

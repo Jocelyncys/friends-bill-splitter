@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
-import { addSimpleExpense, createEvent, eventIdOf, newUser } from './helpers.ts'
+import { addSimpleExpense, createEvent, eventIdOf, inviteLink, joinEvent, newUser } from './helpers.ts'
 
 // Automated part of the plan's manual bilingual/mobile checks (Step 5). Runs at 360×800 (mobile project)
 // and 1280×800 (desktop project).
@@ -72,7 +72,8 @@ test('bilingual screens fit the viewport; guided, active and attention states re
   await expectNoOverflow(page)
   // Resolve it so the settlement screen below shows the three plan cards.
   await page.getByRole('button', { name: /Steamboat dinner: .* not yet assigned/ }).click()
-  await page.getByRole('button', { name: 'Assign to Ana' }).click()
+  await page.getByRole('group', { name: 'Who had Seafood set' }).getByRole('button', { name: 'Ana' }).click()
+  await page.getByRole('button', { name: 'Assign Seafood set' }).click()
   await expect(page.getByText('Assigned to: Ana')).toBeVisible()
 
   const screens: Array<[string, string]> = [
@@ -127,6 +128,36 @@ test('bilingual screens fit the viewport; guided, active and attention states re
     })
   }
   await page.context().close()
+})
+
+test('claim page with nine people: the assignment chips wrap without overflow', async ({ browser }, testInfo) => {
+  test.setTimeout(180_000)
+  const owner = await newUser(browser)
+  await createEvent(owner, 'Single Bill', 'Big table', 'Ana')
+  const link = await inviteLink(owner)
+  const names = ['Benjamin', 'Chong Wei Ming', 'Dewi', 'Elangovan', 'Farah Nabila', 'Gopal', 'Hui Min', 'Ismail bin Abdullah']
+  const guests = []
+  for (const name of names) {
+    const guest = await newUser(browser)
+    await joinEvent(guest, link, name)
+    guests.push(guest)
+  }
+  await owner.reload()
+  await owner.getByRole('button', { name: 'Add simple expense' }).click()
+  await owner.getByLabel('Description').fill('Banquet')
+  await owner.getByLabel('Split method').selectOption({ label: 'Itemized (friends claim items)' })
+  await owner.getByLabel('Item 1 name').fill('Steamed fish')
+  await owner.getByLabel('Item 1 price').fill('88.00')
+  await owner.getByRole('button', { name: 'Save expense' }).click()
+  await owner.getByRole('button', { name: /Banquet.*not yet assigned/ }).click()
+  const who = owner.getByRole('group', { name: 'Who had Steamed fish' })
+  await expect(who.getByRole('button')).toHaveCount(9)
+  await who.getByRole('button', { name: 'Ismail bin Abdullah' }).click()
+  await expectNoOverflow(owner)
+  await owner.screenshot({ path: testInfo.outputPath('claim-nine-people.png'), fullPage: true })
+  await owner.getByRole('button', { name: 'Assign Steamed fish' }).click()
+  await expect(owner.getByText('Assigned to: Ismail bin Abdullah')).toBeVisible()
+  for (const page of [owner, ...guests]) await page.context().close()
 })
 
 test('anonymous identity: same browser keeps membership, a fresh browser is a stranger', async ({ browser }) => {

@@ -42,8 +42,11 @@ type Props = {
   totalCents?: number
   onClaim?: (itemId: string) => void
   onUnclaim?: (itemId: string) => void
-  /** One or more members; the server splits the item equally between them. */
-  onAssign?: (itemId: string, memberIds: string[]) => void
+  /**
+   * One or more members; the server splits the item equally between them. Resolve false when it failed:
+   * the picked people then stay selected.
+   */
+  onAssign?: (itemId: string, memberIds: string[]) => Promise<boolean> | void
   onToggleClosed?: (closed: boolean) => void
 }
 
@@ -68,7 +71,7 @@ export function ClaimItemsPage({
   onToggleClosed,
 }: Props) {
   const { t, i18n } = useTranslation()
-  // item id -> people picked in the open "Share between people" panel.
+  // item id -> people picked but not yet assigned. Missing = the item's current assignees.
   const [picking, setPicking] = useState<Record<string, string[]>>({})
   const manage = !settled && (canManage ?? role !== 'participant')
   const locked = offline || busy
@@ -88,17 +91,19 @@ export function ClaimItemsPage({
   const paidCents = totalCents ?? itemsCents + adjustments.reduce((sum, a) => sum + a.amountCents, 0)
   const pays = adjustments.length > 0 && unallocated === 0 ? paysRows(paidCents, Object.fromEntries(shares), participants) : []
 
-  const togglePick = (itemId: string, userId: string) =>
+  const togglePick = (itemId: string, current: string[], userId: string) =>
     setPicking(p => {
-      const ids = p[itemId] ?? []
+      const ids = p[itemId] ?? current
       return { ...p, [itemId]: ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId] }
     })
-  const closePicker = (itemId: string) =>
+  const assign = async (itemId: string, memberIds: string[]) => {
+    if ((await onAssign?.(itemId, memberIds)) === false) return
     setPicking(p => {
       const next = { ...p }
       delete next[itemId]
       return next
     })
+  }
 
   return (
     <main>
@@ -119,8 +124,9 @@ export function ClaimItemsPage({
       {items.map(item => {
         const mine = item.claims.some(c => c.userId === currentUserId)
         const names = item.claims.map(c => nameOf(c.userId)).join(', ')
-        const picked = picking[item.id]
-        const pickerId = `who-had-${item.id}`
+        const current = item.claims.map(c => c.userId)
+        const picked = picking[item.id] ?? current
+        const changed = picked.length > 0 && (picked.length !== current.length || picked.some(id => !current.includes(id)))
         return (
           <article key={item.id} className={mine ? 'claim-item claim-item--mine' : 'claim-item'}>
             <div className="expense-row">
@@ -147,32 +153,20 @@ export function ClaimItemsPage({
               </button>
             )}
             {manage && (
-              <div className="claim-assign" role="group" aria-label={t('claim.assignGroup', { item: item.description })}>
-                {participants.map(p => (
-                  <button key={p.id} type="button" className="chip" disabled={locked} onClick={() => onAssign?.(item.id, [p.id])}>
-                    {t('claim.assignTo', { name: p.name })}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="chip claim-assign__share"
-                  aria-expanded={picked !== undefined}
-                  aria-controls={picked ? pickerId : undefined}
-                  onClick={() =>
-                    picked ? closePicker(item.id) : setPicking(p => ({ ...p, [item.id]: item.claims.map(c => c.userId) }))
-                  }
-                >
-                  {t('claim.shareBetween')}
-                </button>
-              </div>
-            )}
-            {manage && picked && (
-              <div id={pickerId} className="who-had who-had--claim">
-                <div className="who-had__people" role="group" aria-label={t('claim.whoHad', { item: item.description })}>
+              <div className="claim-assign">
+                <span id={`who-had-${item.id}`} className="field__label">{t('claim.whoHad', { item: item.description })}</span>
+                <div className="who-had__people" role="group" aria-labelledby={`who-had-${item.id}`}>
                   {participants.map(p => {
                     const on = picked.includes(p.id)
                     return (
-                      <button key={p.id} type="button" className="chip toggle-chip" aria-pressed={on} onClick={() => togglePick(item.id, p.id)}>
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="chip toggle-chip"
+                        aria-pressed={on}
+                        disabled={locked}
+                        onClick={() => togglePick(item.id, current, p.id)}
+                      >
                         {on && <CheckIcon />}
                         {p.name}
                       </button>
@@ -181,12 +175,10 @@ export function ClaimItemsPage({
                 </div>
                 <button
                   type="button"
-                  className="primary"
-                  disabled={locked || picked.length === 0}
-                  onClick={() => {
-                    onAssign?.(item.id, picked)
-                    closePicker(item.id)
-                  }}
+                  className="chip primary claim-assign__go"
+                  aria-label={t('claim.assignItem', { item: item.description })}
+                  disabled={locked || !changed}
+                  onClick={() => void assign(item.id, picked)}
                 >
                   {t('claim.assign')}
                 </button>
