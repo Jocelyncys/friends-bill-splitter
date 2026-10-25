@@ -1,5 +1,5 @@
 begin;
-select plan(367);
+select plan(368);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -1548,6 +1548,26 @@ select results_eq($$select participant_user_id::text, owed_cents from public.exp
   'proportional owed shares near 9e15 match allocateProportionally exactly');
 select is((select sum(owed_cents) from public.expense_owed_shares('b2000000-0000-0000-0000-000000000041')), 9007199254740991::numeric,
   'owed shares near the bound sum to the paid total');
+
+-- Three-way regression: weights 499999999 / 300000000 / 200000000, rounding +2, paid 1000000001.
+-- allocateProportionally -> 500000000 / 300000001 / 200000000 (largest remainder goes to B).
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+values ('b2000000-0000-0000-0000-000000000049', 'b2ae0000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Three way', current_date, 1000000001, 'host_assignment');
+insert into public.expense_items (id, expense_id, description, total_cents) values
+  ('b2100000-0000-0000-0000-000000000071', 'b2000000-0000-0000-0000-000000000049', 'a', 499999999),
+  ('b2100000-0000-0000-0000-000000000072', 'b2000000-0000-0000-0000-000000000049', 'b', 300000000),
+  ('b2100000-0000-0000-0000-000000000073', 'b2000000-0000-0000-0000-000000000049', 'c', 200000000);
+insert into public.allocations (expense_id, item_id, participant_user_id, amount_cents, source) values
+  ('b2000000-0000-0000-0000-000000000049', 'b2100000-0000-0000-0000-000000000071', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 499999999, 'owner'),
+  ('b2000000-0000-0000-0000-000000000049', 'b2100000-0000-0000-0000-000000000072', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 300000000, 'owner'),
+  ('b2000000-0000-0000-0000-000000000049', 'b2100000-0000-0000-0000-000000000073', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 200000000, 'owner');
+insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
+values ('b2200000-0000-0000-0000-000000000049', 'b2000000-0000-0000-0000-000000000049', 'rounding', 'Rounding', 2);
+select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b2000000-0000-0000-0000-000000000049')$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500000000::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 300000001::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc', 200000000::bigint)$$,
+  'three-way proportional owed shares match allocateProportionally (largest remainder to B)');
 
 -- Equal split near the bound: 9007199254740991 over three -> allocateEqual 3002399751580331 / ...330 / ...330.
 insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)

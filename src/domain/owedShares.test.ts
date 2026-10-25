@@ -34,6 +34,12 @@ describe('owedShares', () => {
     })
   })
 
+  it('matches the server on the three-way regression case', () => {
+    expect(owedShares(1_000_000_001, { [A]: 499_999_999, [B]: 300_000_000, [C]: 200_000_000 })).toEqual({
+      [A]: 500_000_000, [B]: 300_000_001, [C]: 200_000_000,
+    })
+  })
+
   it('always sums to the paid total', () => {
     const shares = owedShares(9999, { a: 1, b: 2, c: 3, d: 4 })
     expect(Object.values(shares).reduce((s, v) => s + v, 0)).toBe(9999)
