@@ -686,6 +686,182 @@ input[type='radio']:focus-visible {
   animation: rise 180ms ease-out;
 }
 
+/* Two ways in: the rear camera ("Take photo") and the gallery ("Choose photo"). */
+.photo-picks {
+  grid-template-columns: 1fr 1fr;
+}
+
+.photo-picks .file-pick {
+  gap: 6px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+/* "Who had Item N": people as toggle chips, several may be on. */
+.item-row > .who-had {
+  grid-column: 1 / -1;
+  padding: 2px 0 10px;
+}
+
+.who-had__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.toggle-chip {
+  border-width: 1px;
+  border-color: var(--rose-deep);
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.toggle-chip:hover:not(:disabled) {
+  border-color: var(--plum);
+  background: var(--paper);
+  color: var(--plum);
+}
+
+.toggle-chip[aria-pressed='true'],
+.toggle-chip[aria-pressed='true']:hover:not(:disabled) {
+  border-color: var(--plum);
+  background: var(--plum);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.toggle-chip[aria-pressed='true']:active:not(:disabled) {
+  background: var(--plum-press);
+}
+
+/* Bill adjustments: kind, then label, then the signed amount beside its remove button (stacked so the
+   numbered labels never wrap at 360px). */
+.item-row + .item-row,
+.adj-row + .adj-row {
+  border-top: 1px solid var(--rose);
+  padding-top: 8px;
+}
+
+.adj-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  column-gap: 12px;
+  align-items: end;
+  padding: 4px 0;
+}
+
+.adj-row > .field {
+  grid-column: 1 / -1;
+  padding: 6px 0;
+}
+
+.adj-row > .adj-row__amount {
+  grid-column: 1;
+}
+
+.adj-row > .icon-button {
+  align-self: center;
+  margin-top: 18px;
+}
+
+.adj-row:not(:first-of-type) {
+  animation: rise 180ms ease-out;
+}
+
+.signed-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.signed-input__sign,
+.sign-toggle {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 650;
+  line-height: 1;
+}
+
+.signed-input__sign {
+  width: 20px;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.sign-toggle {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-width: 1px;
+  border-color: var(--rose-deep);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--plum);
+}
+
+.sign-toggle:hover:not(:disabled) {
+  border-color: var(--plum);
+  background: var(--paper);
+}
+
+.group__hint {
+  margin: 0;
+  padding: 0 0 4px;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+/* Items, each adjustment, then the amount paid under a dashed rule (the receipt's own rule). */
+.bill-summary {
+  padding: 8px 0 12px;
+  border-top: 1px solid var(--rose);
+}
+
+.bill-summary__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.bill-summary__row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bill-summary__paid {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1.5px dashed var(--rose-deep);
+  font-weight: 650;
+}
+
+.bill-summary__paid .amount {
+  font-size: var(--text-lg);
+}
+
+.bill-summary .pays-list {
+  margin-top: 8px;
+  border-top: 1px solid var(--rose);
+}
+
+.bill-summary .pays-list .expense-row {
+  padding: 10px 0;
+}
+
+.bill-summary .pays-list .expense-row + .expense-row {
+  border-top: 1px solid var(--rose);
+}
+
+.bill-summary > .note {
+  margin: 8px 0 0;
+}
+
 .receipt-preview {
   display: block;
   max-height: 14rem;
@@ -1099,6 +1275,43 @@ input[type='radio']:focus-visible {
   border-color: var(--plum);
   background: var(--paper);
   color: var(--plum);
+}
+
+/* Opens the several-people picker: dashed like the other "add more" controls. */
+.claim-assign .claim-assign__share {
+  border-style: dashed;
+  border-color: var(--plum);
+  background: transparent;
+  color: var(--plum);
+  font-weight: 600;
+}
+
+.claim-assign .claim-assign__share[aria-expanded='true'] {
+  border-style: solid;
+  background: var(--petal-press);
+}
+
+.who-had--claim {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--rose);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  animation: rise 180ms ease-out;
+}
+
+.who-had--claim .who-had__people {
+  margin-top: 0;
+}
+
+.receipt__paid {
+  font-weight: 650;
+}
+
+.receipt .expense-row + .note {
+  margin: 4px 0 0;
 }
 
 /* ---------- Settlement ---------- */

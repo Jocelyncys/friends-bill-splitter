@@ -103,7 +103,9 @@ export function ClaimItemsRoute() {
       errorMessage={errorCode ? t(`actionError.${errorCode}`, { defaultValue: t('actionError.action_failed') }) : loadFailedFor === expenseId ? t('event.loadFailed') : undefined}
       onClaim={itemId => void run(() => repository.claimItem(itemId))}
       onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
-      onAssign={(itemId, memberId) => void run(() => repository.assignItem(itemId, [memberId]))}
+      adjustments={claims.adjustments}
+      totalCents={claims.totalCents}
+      onAssign={(itemId, memberIds) => void run(() => repository.assignItem(itemId, memberIds))}
       onToggleClosed={closed => void run(() => repository.setClaimingClosed(expenseId, closed))}
     />
   )

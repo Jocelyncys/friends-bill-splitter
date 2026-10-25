@@ -60,6 +60,13 @@ export const TrashIcon = () => (
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4h6v3" />
   </Icon>
 )
+export const ImageIcon = () => (
+  <Icon>
+    <rect x="4" y="5" width="16" height="14" rx="1.5" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="M20 15.5l-4.5-4.5L6 19" />
+  </Icon>
+)
 export const CheckIcon = () => (
   <Icon>
     <path d="M5 12.5l4.5 4.5L19 7.5" />

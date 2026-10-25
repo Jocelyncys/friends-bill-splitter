@@ -112,8 +112,6 @@
     "items": "Items",
     "itemDescription": "Item {{n}} name",
     "itemPrice": "Item {{n}} price",
-    "itemAssignee": "Item {{n}} assigned to",
-    "chooseMember": "Choose a person",
     "addItem": "Add item",
     "removeItem": "Remove item {{n}}",
     "total": "Total",
@@ -126,24 +124,51 @@
       "date_invalid": "Please choose a valid date.",
       "participants_required": "Choose at least one person to split with.",
       "shares_mismatch": "The amounts must add up to the total.",
-      "items_invalid": "Every item needs a name, a valid price and (if required) an assignee."
+      "items_invalid": "Every item needs a name, a valid price and (if required) an assignee.",
+      "invalid_adjustment": "Each adjustment needs a label (up to 60 characters) and an amount other than 0.",
+      "adjustments_need_items": "Add items with a price before adding adjustments.",
+      "adjustments_total": "The amount paid must be at least 0.01."
     },
     "scan": {
-      "scan": "Scan a receipt",
-      "choose": "Choose receipt photo",
       "previewAlt": "Receipt photo preview",
       "loadingModel": "Loading the text reader… the first time can take a while.",
       "recognizing": "Reading your receipt…",
       "reviewHint": "Check the items and prices, then confirm.",
       "confirm": "Confirm items",
-      "failed": "Could not read this receipt. Enter the items by hand."
+      "failed": "Could not read this receipt. Enter the items by hand.",
+      "takePhoto": "Take photo",
+      "choosePhoto": "Choose photo"
     },
     "offlineHint": "You are offline. The expense will be saved on this device and sent when you are back online.",
     "editTitle": "Edit expense",
     "delete": "Delete expense",
     "deleteTitle": "Delete this expense?",
     "deleteBody": "“{{description}}” will be removed for everyone in this event. This cannot be undone.",
-    "deleteConfirm": "Delete"
+    "deleteConfirm": "Delete",
+    "whoHad": "Who had Item {{n}}",
+    "adj": {
+      "title": "Adjustments",
+      "hint": "Voucher, tax, service charge or rounding on the bill.",
+      "add": "Add adjustment",
+      "type": "Adjustment {{n}} type",
+      "label": "Adjustment {{n}} label",
+      "amount": "Adjustment {{n}} amount",
+      "subtract": "Subtract adjustment {{n}}",
+      "remove": "Remove adjustment {{n}}",
+      "kind": {
+        "discount": "Discount",
+        "tax": "Tax",
+        "service": "Service charge",
+        "rounding": "Rounding",
+        "other": "Other"
+      },
+      "summary": "Bill summary",
+      "items": "Items",
+      "paid": "Amount paid",
+      "switchTitle": "Remove the adjustments?",
+      "switchBody": "Split equally and Custom amounts work from the amount paid ({{amount}}), so the adjustment lines will be removed.",
+      "switchConfirm": "Remove adjustments"
+    }
   },
   "expenseError": {
     "payer_not_allowed": "You cannot record an expense paid by someone else.",
@@ -199,7 +224,15 @@
     "claimedBy": "Claimed by: {{names}}",
     "assignedTo": "Assigned to: {{names}}",
     "sharesTitle": "Each person’s share",
-    "unclaimedTotal": "Not yet claimed: {{amount}}"
+    "unclaimedTotal": "Not yet claimed: {{amount}}",
+    "sharedEach": "Shared by {{count}}, {{amount}} each",
+    "amountRange": "{{min}} to {{max}}",
+    "shareBetween": "Share between people",
+    "whoHad": "Who had {{item}}",
+    "assign": "Assign",
+    "paysTitle": "What each person pays",
+    "paysLine": "Items {{items}} → pays {{pays}}",
+    "paysWaiting": "What each person pays, adjustments included, appears once every item has someone."
   },
   "actionError": {
     "item_not_found": "This item could not be found.",

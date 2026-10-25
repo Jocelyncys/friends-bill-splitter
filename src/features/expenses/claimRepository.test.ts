@@ -51,6 +51,10 @@ describe('claimRepository', () => {
           { id: 'item-1', description: 'Rice', quantity: 2, total_cents: 1001, sort_order: 0 },
         ],
         allocations: [{ id: 'a-1', item_id: 'item-1', participant_user_id: 'user-2', amount_cents: 1001, source: 'self_claim' }],
+        expense_adjustments: [
+          { id: 'adj-2', kind: 'rounding', label: 'Rounding', amount_cents: 2, sort_order: 1 },
+          { id: 'adj-1', kind: 'discount', label: 'Voucher', amount_cents: -500, sort_order: 0 },
+        ],
       },
       error: null,
     }))
@@ -63,6 +67,10 @@ describe('claimRepository', () => {
         { id: 'item-2', description: 'Tea', quantity: 1, totalCents: 500, sortOrder: 1 },
       ],
       allocations: [{ id: 'a-1', itemId: 'item-1', participantUserId: 'user-2', amountCents: 1001, source: 'self_claim' }],
+      adjustments: [
+        { id: 'adj-1', kind: 'discount', label: 'Voucher', amountCents: -500, sortOrder: 0 },
+        { id: 'adj-2', kind: 'rounding', label: 'Rounding', amountCents: 2, sortOrder: 1 },
+      ],
     })
     expect(from).toHaveBeenCalledWith('expenses')
   })

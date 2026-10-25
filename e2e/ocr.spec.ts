@@ -20,7 +20,7 @@ test('@slow scans a receipt in the browser without contacting third-party origin
   await page.getByRole('button', { name: 'Scan a receipt' }).click()
   await expect(page.getByLabel('Split method')).toHaveValue('items')
   await page.getByLabel('Description').fill('Breakfast')
-  await page.getByLabel('Scan a receipt').setInputFiles(RECEIPT)
+  await page.getByLabel('Choose photo').setInputFiles(RECEIPT)
 
   await expect(page.getByText('Check the items and prices, then confirm.')).toBeVisible({ timeout: 240_000 })
   await expect(page.getByLabel('Item 1 name')).toHaveValue(/nasi lemak/i)

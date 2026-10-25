@@ -45,7 +45,7 @@ describe('ClaimItemsPage', () => {
         onAssign={onAssign} onToggleClosed={onToggleClosed} />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Assign to Ben' }))
-    expect(onAssign).toHaveBeenCalledWith('i1', 'ben')
+    expect(onAssign).toHaveBeenCalledWith('i1', ['ben'])
     await userEvent.click(screen.getByRole('button', { name: 'Close claiming' }))
     expect(onToggleClosed).toHaveBeenCalledWith(true)
   })
@@ -75,6 +75,67 @@ describe('ClaimItemsPage', () => {
     expect(screen.getByRole('button', { name: 'Assign to Ben' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Close claiming' })).toBeDisabled()
     expect(screen.getByRole('alert')).toHaveTextContent('Claiming is closed.')
+  })
+
+  it('lets a manager pick several people for one item, then Assign', async () => {
+    const onAssign = vi.fn()
+    const assignedToAlice: ClaimItemView = { ...unclaimed, assigned: true, claims: [{ userId: 'alice', amountCents: 1001 }] }
+    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assignedToAlice]} onAssign={onAssign} />)
+    const share = screen.getByRole('button', { name: 'Share between people' })
+    expect(share).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(share)
+    expect(share).toHaveAttribute('aria-expanded', 'true')
+    const who = screen.getByRole('group', { name: 'Who had Satay' })
+    // Starts from the current assignment.
+    expect(within(who).getByRole('button', { name: 'Alice' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(who).getByRole('button', { name: 'Ben' })).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assign' }))
+    expect(onAssign).toHaveBeenCalledWith('i1', ['alice', 'ben'])
+    expect(screen.queryByRole('group', { name: 'Who had Satay' })).not.toBeInTheDocument()
+  })
+
+  it('disables Assign until someone is picked', async () => {
+    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Share between people' }))
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled()
+    await userEvent.click(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Ben' }))
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeEnabled()
+  })
+
+  it('shows a shared item as shared, with each person’s part', () => {
+    const items: ClaimItemView[] = [{ ...unclaimed, assigned: true, claims: [{ userId: 'alice', amountCents: 501 }, { userId: 'ben', amountCents: 500 }] }]
+    render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants} items={items} />)
+    expect(screen.getByText('Assigned to: Alice, Ben')).toBeInTheDocument()
+    expect(screen.getByText('Shared by 2, RM 5.00 to RM 5.01 each')).toBeInTheDocument()
+  })
+
+  describe('with bill adjustments', () => {
+    const rice: ClaimItemView = { id: 'i1', description: 'Rice', quantity: 1, totalCents: 1111, assigned: true, claims: [{ userId: 'alice', amountCents: 1111 }] }
+    const pork: ClaimItemView = { id: 'i2', description: 'Pork', quantity: 1, totalCents: 1746, assigned: true, claims: [{ userId: 'ben', amountCents: 1746 }] }
+    const adjustments = [
+      { id: 'a1', label: 'Voucher', amountCents: -500 },
+      { id: 'a2', label: 'SST (6%)', amountCents: 141 },
+      { id: 'a3', label: 'Bill rounding', amountCents: 2 },
+    ]
+
+    it('shows each person’s items and what they pay after the voucher, tax and rounding', () => {
+      render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants} items={[rice, pork]} adjustments={adjustments} totalCents={2500} />)
+      const shares = screen.getByRole('list', { name: 'Each person’s share' })
+      expect(within(shares).getByText('Items RM 11.11 → pays RM 9.72')).toBeInTheDocument()
+      expect(within(shares).getByText('RM 9.72')).toBeInTheDocument()
+      expect(within(shares).getByText('Items RM 17.46 → pays RM 15.28')).toBeInTheDocument()
+      expect(screen.getByText('Voucher').parentElement).toHaveTextContent('-RM 5.00')
+      expect(screen.getByText('Amount paid').parentElement).toHaveTextContent('RM 25.00')
+    })
+
+    it('waits for every item to have someone before showing what each person pays', () => {
+      const open = { ...pork, assigned: false, claims: [] }
+      render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants} items={[rice, open]} adjustments={adjustments} totalCents={2500} />)
+      expect(screen.getByText('What each person pays, adjustments included, appears once every item has someone.')).toBeInTheDocument()
+      expect(screen.queryByText(/→ pays/)).not.toBeInTheDocument()
+      expect(within(screen.getByRole('list', { name: 'Each person’s share' })).getByText('RM 11.11')).toBeInTheDocument()
+    })
   })
 
   it('is read-only on a settled event: no claim, assign or close actions, and a settled note', () => {

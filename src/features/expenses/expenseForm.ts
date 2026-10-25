@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { allocateEqual, validateCustomAllocation } from '../../domain/allocation'
-import type { SaveExpenseAdjustment, SaveExpensePayload } from './expenseRepository'
+import type { AdjustmentKind, SaveExpensePayload } from './expenseRepository'
 
 // ---- money text <-> integer cents (string parsing only, never float math) ----
 
@@ -24,7 +24,46 @@ export const centsToText = (cents: number) => `${Math.floor(cents / 100)}.${Stri
 
 export type DraftSplitMethod = 'equal' | 'custom' | 'items' | 'host_assignment'
 
-export type DraftItem = { id: string; description: string; price: string; assigneeId: string }
+/** assigneeIds: the people who had the item; it is split equally between them. */
+export type DraftItem = { id: string; description: string; price: string; assigneeIds: string[] }
+
+/** A bill-level line as typed: an unsigned amount plus a sign (discount minus, tax and service plus). */
+export type DraftAdjustment = { id: string; kind: AdjustmentKind; label: string; amount: string; sign: 1 | -1 }
+
+export const ADJUSTMENT_KINDS: AdjustmentKind[] = ['discount', 'tax', 'service', 'rounding', 'other']
+
+/** Discount always takes money off, tax and service charge always add; rounding and other keep the chosen sign. */
+export function signForKind(kind: AdjustmentKind, current: 1 | -1): 1 | -1 {
+  if (kind === 'discount') return -1
+  if (kind === 'tax' || kind === 'service') return 1
+  return current
+}
+
+export const hasSignChoice = (kind: AdjustmentKind) => kind === 'rounding' || kind === 'other'
+
+const adjustmentCents = (a: DraftAdjustment): number | null => {
+  const cents = parseMoneyToCents(a.amount)
+  return cents === null ? null : signForKind(a.kind, a.sign) * cents
+}
+
+/** Sum of the valid adjustment rows in signed cents (live display). */
+export function adjustmentsCents(adjustments: DraftAdjustment[] | undefined): number {
+  return (adjustments ?? []).reduce((sum, a) => sum + (adjustmentCents(a) ?? 0), 0)
+}
+
+/**
+ * Each person's items subtotal (shared items split with allocateEqual), or null while any item has no valid
+ * price or nobody assigned. Feeds owedShares for the live "pays" preview.
+ */
+export function itemCentsByPerson(items: DraftItem[]): Record<string, number> | null {
+  const totals: Record<string, number> = {}
+  for (const item of items) {
+    const cents = parseMoneyToCents(item.price)
+    if (cents === null || item.assigneeIds.length === 0) return null
+    for (const [userId, share] of Object.entries(allocateEqual(cents, item.assigneeIds))) totals[userId] = (totals[userId] ?? 0) + share
+  }
+  return totals
+}
 
 export type ExpenseDraft = {
   description: string
@@ -35,11 +74,13 @@ export type ExpenseDraft = {
   participantIds: string[]
   shares: Record<string, string>
   items: DraftItem[]
-  // Bill-level adjustments of an itemized expense, carried through unchanged (no editing UI yet).
-  adjustments?: SaveExpenseAdjustment[]
+  // Bill-level adjustments (voucher, SST, service charge, rounding) of an itemized expense.
+  adjustments?: DraftAdjustment[]
 }
 
-export type FormErrors = Partial<Record<'description' | 'amount' | 'payer' | 'date' | 'participants' | 'shares' | 'items', string>>
+export type FormErrors = Partial<
+  Record<'description' | 'amount' | 'payer' | 'date' | 'participants' | 'shares' | 'items' | 'adjustments', string>
+>
 
 // ---- validated values (cents) ----
 
@@ -53,13 +94,13 @@ const common = {
 }
 
 const rowItem = z.object({ id, description: z.string().trim().min(1), priceCents: cents })
-// Itemized (claim) items may carry an existing whole-item assignment from the saved expense.
-const claimItem = rowItem.extend({ assigneeId: z.string().optional() })
+// Itemized (claim) items may carry an existing assignment (one or more people) from the saved expense.
+const claimItem = rowItem.extend({ assigneeIds: z.array(id) })
 const adjustment = z.object({
   id,
   kind: z.enum(['discount', 'tax', 'service', 'rounding', 'other']),
-  label: z.string(),
-  amountCents: z.number().int(),
+  label: z.string().trim().min(1).max(60),
+  amountCents: z.number().int().refine(v => v !== 0),
   sortOrder: z.number().int(),
 })
 const adjustments = z.array(adjustment).default([])
@@ -80,7 +121,7 @@ export const expenseFormSchema = z.discriminatedUnion('splitMethod', [
   z.object({
     ...common,
     splitMethod: z.literal('host_assignment'),
-    items: z.array(rowItem.extend({ assigneeId: id })).min(1),
+    items: z.array(rowItem.extend({ assigneeIds: z.array(id).min(1) })).min(1),
     adjustments,
   }),
 ])
@@ -104,7 +145,23 @@ export function validateDraft(draft: ExpenseDraft): { ok: true; values: ExpenseF
   if (draft.splitMethod === 'items' || draft.splitMethod === 'host_assignment') {
     const items = draft.items.map(item => ({ ...item, priceCents: parseMoneyToCents(item.price) }))
     if (items.some(item => item.priceCents === null)) errors.items = 'items_invalid'
-    raw = { ...draft, items }
+    // Mirrors save_expense: invalid_adjustment (label 1-60, non-zero amount), adjustments_need_items,
+    // and a paid total of at least one cent (adjustments_total; the server would say invalid_total).
+    const adjustments = (draft.adjustments ?? []).map((a, sortOrder) => ({
+      id: a.id,
+      kind: a.kind,
+      label: a.label.trim(),
+      amountCents: adjustmentCents(a),
+      sortOrder,
+    }))
+    const itemsCents = items.reduce((sum, item) => sum + (item.priceCents ?? 0), 0)
+    if (adjustments.some(a => a.amountCents === null || a.label.length < 1 || a.label.length > 60)) {
+      errors.adjustments = 'invalid_adjustment'
+    } else if (adjustments.length > 0 && !errors.items) {
+      if (itemsCents <= 0) errors.adjustments = 'adjustments_need_items'
+      else if (itemsCents + adjustments.reduce((sum, a) => sum + (a.amountCents ?? 0), 0) < 1) errors.adjustments = 'adjustments_total'
+    }
+    raw = { ...draft, items, adjustments }
   } else {
     const totalCents = parseMoneyToCents(draft.amount)
     if (totalCents === null) errors.amount = 'amount_invalid'
@@ -182,24 +239,23 @@ export function buildPayload(ctx: { id: string; eventId: string; category?: stri
       const adjustments = values.adjustments
       const totalCents =
         items.reduce((sum, item) => sum + item.totalCents, 0) + adjustments.reduce((sum, a) => sum + a.amountCents, 0)
-      if (values.splitMethod === 'items') {
-        // Items with self-claims never carry an assignee here (the server keeps their claims).
-        const assigned = values.items.filter(item => item.assigneeId)
-        return {
-          ...head,
-          totalCents,
-          splitMethod: 'item_claim',
-          items,
-          allocations: assigned.map(item => ({ itemId: item.id, participantUserId: item.assigneeId as string, amountCents: item.priceCents })),
-          adjustments,
-        }
-      }
+      // One allocation per assignee: the equal split of the item (save_expense checks the same rule).
+      // Items with self-claims never carry assignees here (the server keeps their claims).
+      const allocations = values.items.flatMap(item =>
+        item.assigneeIds.length === 0
+          ? []
+          : Object.entries(allocateEqual(item.priceCents, item.assigneeIds)).map(([participantUserId, amountCents]) => ({
+              itemId: item.id,
+              participantUserId,
+              amountCents,
+            })),
+      )
       return {
         ...head,
         totalCents,
-        splitMethod: 'host_assignment',
+        splitMethod: values.splitMethod === 'items' ? 'item_claim' : 'host_assignment',
         items,
-        allocations: values.items.map(item => ({ itemId: item.id, participantUserId: item.assigneeId, amountCents: item.priceCents })),
+        allocations,
         adjustments,
       }
     }
@@ -221,9 +277,15 @@ export function draftFromPayload(payload: SaveExpensePayload): ExpenseDraft {
         id: item.id,
         description: item.description,
         price: centsToText(item.totalCents),
-        assigneeId: payload.allocations.find(a => a.itemId === item.id)?.participantUserId ?? '',
+        assigneeIds: payload.allocations.filter(a => a.itemId === item.id).map(a => a.participantUserId),
       })),
-      adjustments: payload.adjustments ?? [],
+      adjustments: (payload.adjustments ?? []).map(a => ({
+        id: a.id,
+        kind: a.kind,
+        label: a.label,
+        amount: centsToText(Math.abs(a.amountCents)),
+        sign: a.amountCents < 0 ? -1 : 1,
+      })),
     }
   }
   return {
@@ -232,6 +294,6 @@ export function draftFromPayload(payload: SaveExpensePayload): ExpenseDraft {
     splitMethod: payload.splitMethod,
     participantIds: payload.splitMethod === 'equal' ? ids : [],
     shares: payload.splitMethod === 'custom' ? Object.fromEntries(payload.allocations.map(a => [a.participantUserId, centsToText(a.amountCents)])) : {},
-    items: [{ id: crypto.randomUUID(), description: '', price: '', assigneeId: '' }],
+    items: [{ id: crypto.randomUUID(), description: '', price: '', assigneeIds: [] }],
   }
 }

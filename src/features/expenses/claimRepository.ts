@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import type { SplitMethod } from '../../domain/types'
+import type { SaveExpenseAdjustment } from './expenseRepository'
 
 // Claim / assignment / close-claiming RPCs from migration 202610240006. Writes go
 // only through these RPCs; reads are plain RLS selects. Money is integer cents.
@@ -27,6 +28,8 @@ export type ExpenseClaims = {
   claimingClosed: boolean
   items: ClaimItem[] // by sortOrder
   allocations: ClaimAllocation[]
+  /** Voucher, SST, service charge, rounding (by sortOrder); totalCents = items + adjustments. */
+  adjustments: SaveExpenseAdjustment[]
 }
 
 // The RPCs raise SQLSTATE 22023 with one of these message keys.
@@ -76,6 +79,7 @@ type ExpenseClaimsRow = {
   claiming_closed: boolean
   expense_items: Array<{ id: string; description: string; quantity: number; total_cents: number; sort_order: number }>
   allocations: Array<{ id: string; item_id: string | null; participant_user_id: string; amount_cents: number; source: AllocationSource }>
+  expense_adjustments?: Array<{ id: string; kind: SaveExpenseAdjustment['kind']; label: string; amount_cents: number; sort_order: number }>
 }
 
 export function createClaimRepository(client: SupabaseClient = supabase) {
@@ -92,7 +96,8 @@ export function createClaimRepository(client: SupabaseClient = supabase) {
         .select(
           'id, event_id, creator_user_id, description, total_cents, split_method, claiming_closed, ' +
             'expense_items(id, description, quantity, total_cents, sort_order), ' +
-            'allocations(id, item_id, participant_user_id, amount_cents, source)',
+            'allocations(id, item_id, participant_user_id, amount_cents, source), ' +
+            'expense_adjustments(id, kind, label, amount_cents, sort_order)',
         )
         .eq('id', expenseId)
         .maybeSingle()
@@ -117,6 +122,9 @@ export function createClaimRepository(client: SupabaseClient = supabase) {
           amountCents: a.amount_cents,
           source: a.source,
         })),
+        adjustments: (row.expense_adjustments ?? [])
+          .map(a => ({ id: a.id, kind: a.kind, label: a.label, amountCents: a.amount_cents, sortOrder: a.sort_order }))
+          .sort((a, b) => a.sortOrder - b.sortOrder),
       }
     },
   }

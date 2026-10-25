@@ -112,8 +112,6 @@
     "items": "项目",
     "itemDescription": "项目 {{n}} 名称",
     "itemPrice": "项目 {{n}} 价格",
-    "itemAssignee": "项目 {{n}} 分配给",
-    "chooseMember": "选择成员",
     "addItem": "添加项目",
     "removeItem": "删除项目 {{n}}",
     "total": "合计",
@@ -126,24 +124,51 @@
       "date_invalid": "请选择有效日期。",
       "participants_required": "请至少选择一位分摊对象。",
       "shares_mismatch": "各项金额之和必须等于总额。",
-      "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。"
+      "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。",
+      "invalid_adjustment": "每个调整项都需要名称（最多 60 个字符）和不为 0 的金额。",
+      "adjustments_need_items": "请先添加有价格的项目，再添加调整项。",
+      "adjustments_total": "实付金额至少为 0.01。"
     },
     "scan": {
-      "scan": "扫描收据",
-      "choose": "选择收据照片",
       "previewAlt": "收据照片预览",
       "loadingModel": "正在加载文字识别…首次可能需要一些时间。",
       "recognizing": "正在识别收据…",
       "reviewHint": "请检查项目和价格，然后确认。",
       "confirm": "确认项目",
-      "failed": "无法识别此收据，请手动输入项目。"
+      "failed": "无法识别此收据，请手动输入项目。",
+      "takePhoto": "拍照",
+      "choosePhoto": "选择照片"
     },
     "offlineHint": "你目前离线。这笔支出会先保存在此设备上，恢复联网后自动发送。",
     "editTitle": "编辑开销",
     "delete": "删除开销",
     "deleteTitle": "删除此开销？",
     "deleteBody": "“{{description}}”将从此活动中为所有人删除，且无法撤销。",
-    "deleteConfirm": "删除"
+    "deleteConfirm": "删除",
+    "whoHad": "谁点了项目 {{n}}",
+    "adj": {
+      "title": "调整项",
+      "hint": "账单上的优惠券、税、服务费或凑整。",
+      "add": "添加调整项",
+      "type": "调整项 {{n}} 类型",
+      "label": "调整项 {{n}} 名称",
+      "amount": "调整项 {{n}} 金额",
+      "subtract": "调整项 {{n}} 改为扣减",
+      "remove": "删除调整项 {{n}}",
+      "kind": {
+        "discount": "折扣",
+        "tax": "税",
+        "service": "服务费",
+        "rounding": "凑整",
+        "other": "其他"
+      },
+      "summary": "账单小结",
+      "items": "项目",
+      "paid": "实付金额",
+      "switchTitle": "移除调整项？",
+      "switchBody": "平均分摊和自定义金额按实付金额（{{amount}}）计算，调整项将被移除。",
+      "switchConfirm": "移除调整项"
+    }
   },
   "expenseError": {
     "payer_not_allowed": "你不能记录由他人支付的开销。",
@@ -199,7 +224,15 @@
     "claimedBy": "认领者：{{names}}",
     "assignedTo": "分配给：{{names}}",
     "sharesTitle": "每人应付金额",
-    "unclaimedTotal": "尚未认领：{{amount}}"
+    "unclaimedTotal": "尚未认领：{{amount}}",
+    "sharedEach": "{{count}} 人分摊，每人 {{amount}}",
+    "amountRange": "{{min}} 至 {{max}}",
+    "shareBetween": "多人分摊",
+    "whoHad": "谁点了{{item}}",
+    "assign": "分配",
+    "paysTitle": "每人实付",
+    "paysLine": "项目 {{items}} → 实付 {{pays}}",
+    "paysWaiting": "每个项目都有人后，会显示计入调整项后的每人实付金额。"
   },
   "actionError": {
     "item_not_found": "找不到这个项目。",

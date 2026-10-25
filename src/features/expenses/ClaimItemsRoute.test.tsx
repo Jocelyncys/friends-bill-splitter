@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -34,6 +34,7 @@ const claims: ExpenseClaims = {
   id: 'x1', eventId: 'e1', creatorUserId: 'x', description: 'Dinner', totalCents: 1000, splitMethod: 'item_claim', claimingClosed: false,
   items: [{ id: 'i1', description: 'Satay', quantity: 1, totalCents: 1000, sortOrder: 0 }],
   allocations: [],
+  adjustments: [],
 }
 
 function renderRoute() {
@@ -65,6 +66,27 @@ describe('ClaimItemsRoute', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Claim for me' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Claiming is closed for this expense.')
     await vi.waitFor(() => expect(mocks.getExpenseClaims).toHaveBeenCalledTimes(2))
+  })
+
+  it('assigns one item to several people in one call (expense creator)', async () => {
+    mocks.getExpenseClaims.mockResolvedValue({ ...claims, creatorUserId: 'me' })
+    mocks.assignItem.mockResolvedValue(undefined)
+    renderRoute()
+    await userEvent.click(await screen.findByRole('button', { name: 'Share between people' }))
+    const who = screen.getByRole('group', { name: 'Who had Satay' })
+    await userEvent.click(within(who).getByRole('button', { name: 'Mia' }))
+    await userEvent.click(within(who).getByRole('button', { name: 'Xan' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assign' }))
+    expect(mocks.assignItem).toHaveBeenCalledWith('i1', ['me', 'x'])
+    await vi.waitFor(() => expect(mocks.getExpenseClaims).toHaveBeenCalledTimes(2))
+  })
+
+  it('still assigns to one person with a single tap', async () => {
+    mocks.getExpenseClaims.mockResolvedValue({ ...claims, creatorUserId: 'me' })
+    mocks.assignItem.mockResolvedValue(undefined)
+    renderRoute()
+    await userEvent.click(await screen.findByRole('button', { name: 'Assign to Xan' }))
+    expect(mocks.assignItem).toHaveBeenCalledWith('i1', ['x'])
   })
 
   it('keeps the previous claims and shows a banner when a reload fails', async () => {

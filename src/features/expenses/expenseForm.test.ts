@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { buildPayload, customDifference, draftFromPayload, parseMoneyToCents, validateDraft, type ExpenseDraft } from './expenseForm'
+import {
+  adjustmentsCents,
+  buildPayload,
+  customDifference,
+  draftFromPayload,
+  itemCentsByPerson,
+  parseMoneyToCents,
+  signForKind,
+  validateDraft,
+  type DraftAdjustment,
+  type ExpenseDraft,
+} from './expenseForm'
 
 describe('parseMoneyToCents', () => {
   it.each([
@@ -69,8 +80,8 @@ describe('validateDraft + buildPayload', () => {
       splitMethod: 'items',
       amount: '',
       items: [
-        { id: 'i1', description: 'Noodles', price: '8.10', assigneeId: '' },
-        { id: 'i2', description: 'Tea', price: '2.35', assigneeId: '' },
+        { id: 'i1', description: 'Noodles', price: '8.10', assigneeIds: [] },
+        { id: 'i2', description: 'Tea', price: '2.35', assigneeIds: [] },
       ],
     })
     expect(payload.splitMethod).toBe('item_claim')
@@ -88,8 +99,8 @@ describe('validateDraft + buildPayload', () => {
       splitMethod: 'host_assignment',
       amount: '',
       items: [
-        { id: 'i1', description: 'Noodles', price: '8.10', assigneeId: 'u-b' },
-        { id: 'i2', description: 'Tea', price: '2.35', assigneeId: 'u-c' },
+        { id: 'i1', description: 'Noodles', price: '8.10', assigneeIds: ['u-b'] },
+        { id: 'i2', description: 'Tea', price: '2.35', assigneeIds: ['u-c'] },
       ],
     })
     expect(payload.splitMethod).toBe('host_assignment')
@@ -101,14 +112,14 @@ describe('validateDraft + buildPayload', () => {
   })
 
   it('host_assignment requires an assignee per item', () => {
-    const r = validateDraft({ ...base, splitMethod: 'host_assignment', items: [{ id: 'i1', description: 'A', price: '1', assigneeId: '' }] })
+    const r = validateDraft({ ...base, splitMethod: 'host_assignment', items: [{ id: 'i1', description: 'A', price: '1', assigneeIds: [] }] })
     expect(r).toMatchObject({ ok: false, errors: { items: 'items_invalid' } })
   })
 
   it('rejects more than two decimals and sub-cent totals', () => {
     expect(validateDraft({ ...base, amount: '10.005' })).toMatchObject({ ok: false, errors: { amount: 'amount_invalid' } })
     expect(validateDraft({ ...base, amount: '0.00' })).toMatchObject({ ok: false, errors: { amount: 'amount_invalid' } })
-    expect(validateDraft({ ...base, splitMethod: 'items', items: [{ id: 'i', description: 'x', price: '1.001', assigneeId: '' }] })).toMatchObject({ ok: false })
+    expect(validateDraft({ ...base, splitMethod: 'items', items: [{ id: 'i', description: 'x', price: '1.001', assigneeIds: [] }] })).toMatchObject({ ok: false })
   })
 
   it('requires a description', () => {
@@ -127,8 +138,8 @@ describe('draftFromPayload', () => {
     expect(buildPayload({ id: 'e1', eventId: 'ev' }, again.values)).toEqual(payload)
   }
   const items = [
-    { id: 'i1', description: 'Noodles', price: '8.10', assigneeId: 'u-b' },
-    { id: 'i2', description: 'Tea', price: '2.35', assigneeId: 'u-a' },
+    { id: 'i1', description: 'Noodles', price: '8.10', assigneeIds: ['u-b'] },
+    { id: 'i2', description: 'Tea', price: '2.35', assigneeIds: ['u-a'] },
   ]
 
   it('refills every split method so saving again yields the identical payload', () => {
@@ -159,7 +170,11 @@ describe('draftFromPayload', () => {
         adjustments,
       }
       const draft = draftFromPayload(saved)
-      expect(draft.adjustments).toEqual(adjustments)
+      expect(draft.adjustments).toEqual([
+        { id: 'a1', kind: 'discount', label: 'Voucher', amount: '5.00', sign: -1 },
+        { id: 'a2', kind: 'tax', label: 'SST', amount: '1.41', sign: 1 },
+        { id: 'a3', kind: 'rounding', label: 'Rounding', amount: '0.02', sign: 1 },
+      ])
       const again = validateDraft(draft)
       if (!again.ok) throw new Error('refilled form invalid')
       expect(buildPayload({ id: 'e1', eventId: 'ev' }, again.values)).toEqual(saved)
@@ -206,8 +221,8 @@ describe('final-review fixes', () => {
       splitMethod: 'items',
       amount: '',
       items: [
-        { id: 'i1', description: 'Noodles', price: '8.10', assigneeId: 'u-b' },
-        { id: 'i2', description: 'Tea', price: '2.35', assigneeId: '' },
+        { id: 'i1', description: 'Noodles', price: '8.10', assigneeIds: ['u-b'] },
+        { id: 'i2', description: 'Tea', price: '2.35', assigneeIds: [] },
       ],
     })
     expect(payload.splitMethod).toBe('item_claim')
@@ -217,5 +232,128 @@ describe('final-review fixes', () => {
   it('keeps the saved category when one is given', () => {
     expect(okPayload(base, { category: 'food' }).category).toBe('food')
     expect(okPayload(base).category).toBeUndefined()
+  })
+})
+
+describe('multi-person assignment', () => {
+  const itemized = (items: ExpenseDraft['items'], splitMethod: ExpenseDraft['splitMethod'] = 'host_assignment'): ExpenseDraft => ({
+    ...base,
+    splitMethod,
+    amount: '',
+    items,
+  })
+
+  it('host_assignment splits a shared item equally, extra cents by id order', () => {
+    const payload = ok(itemized([
+      { id: 'i1', description: 'Platter', price: '10.01', assigneeIds: ['u-c', 'u-a', 'u-b'] },
+      { id: 'i2', description: 'Tea', price: '2.00', assigneeIds: ['u-b'] },
+    ]))
+    expect(payload.totalCents).toBe(1201)
+    expect(payload.allocations).toEqual([
+      { itemId: 'i1', participantUserId: 'u-a', amountCents: 334 },
+      { itemId: 'i1', participantUserId: 'u-b', amountCents: 334 },
+      { itemId: 'i1', participantUserId: 'u-c', amountCents: 333 },
+      { itemId: 'i2', participantUserId: 'u-b', amountCents: 200 },
+    ])
+  })
+
+  it('itemized (claim) keeps a multi-person assignment from the saved expense', () => {
+    const payload = ok(itemized([{ id: 'i1', description: 'Platter', price: '8.00', assigneeIds: ['u-b', 'u-a'] }], 'items'))
+    expect(payload.allocations).toEqual([
+      { itemId: 'i1', participantUserId: 'u-a', amountCents: 400 },
+      { itemId: 'i1', participantUserId: 'u-b', amountCents: 400 },
+    ])
+  })
+
+  it('draftFromPayload carries every assignee of an item and round-trips', () => {
+    const saved = ok(itemized([
+      { id: 'i1', description: 'Platter', price: '10.01', assigneeIds: ['u-a', 'u-b', 'u-c'] },
+      { id: 'i2', description: 'Tea', price: '2.00', assigneeIds: ['u-b'] },
+    ]))
+    const draft = draftFromPayload(saved)
+    expect(draft.items.map(i => i.assigneeIds)).toEqual([['u-a', 'u-b', 'u-c'], ['u-b']])
+    const again = validateDraft(draft)
+    if (!again.ok) throw new Error('refilled form invalid')
+    expect(buildPayload(ctx, again.values)).toEqual(saved)
+  })
+
+  it('itemCentsByPerson sums each person item shares, or null while anything is unassigned or unpriced', () => {
+    expect(itemCentsByPerson([
+      { id: 'i1', description: 'Platter', price: '10.01', assigneeIds: ['u-c', 'u-a', 'u-b'] },
+      { id: 'i2', description: 'Tea', price: '2.00', assigneeIds: ['u-b'] },
+    ])).toEqual({ 'u-a': 334, 'u-b': 534, 'u-c': 333 })
+    expect(itemCentsByPerson([{ id: 'i1', description: 'Tea', price: '2.00', assigneeIds: [] }])).toBeNull()
+    expect(itemCentsByPerson([{ id: 'i1', description: 'Tea', price: 'x', assigneeIds: ['u-a'] }])).toBeNull()
+  })
+})
+
+describe('bill adjustments', () => {
+  const adj = (patch: Partial<DraftAdjustment>): DraftAdjustment => ({ id: 'a1', kind: 'discount', label: 'Voucher', amount: '5.00', sign: -1, ...patch })
+  const receipt = (adjustments: DraftAdjustment[], splitMethod: ExpenseDraft['splitMethod'] = 'host_assignment'): ExpenseDraft => ({
+    ...base,
+    splitMethod,
+    amount: '',
+    items: [
+      { id: 'i1', description: 'Rice', price: '11.11', assigneeIds: ['u-a'] },
+      { id: 'i2', description: 'Pork', price: '17.46', assigneeIds: ['u-b'] },
+    ],
+    adjustments,
+  })
+
+  it('sends signed cents and a paid total of items + adjustments', () => {
+    const payload = ok(receipt([
+      adj({}),
+      adj({ id: 'a2', kind: 'tax', label: 'SST (6%)', amount: '1.41', sign: 1 }),
+      adj({ id: 'a3', kind: 'rounding', label: 'Bill rounding', amount: '0.02', sign: 1 }),
+    ]))
+    expect(payload.totalCents).toBe(2500)
+    expect(payload.adjustments).toEqual([
+      { id: 'a1', kind: 'discount', label: 'Voucher', amountCents: -500, sortOrder: 0 },
+      { id: 'a2', kind: 'tax', label: 'SST (6%)', amountCents: 141, sortOrder: 1 },
+      { id: 'a3', kind: 'rounding', label: 'Bill rounding', amountCents: 2, sortOrder: 2 },
+    ])
+  })
+
+  it('trims the label and keeps a negative rounding', () => {
+    const payload = ok(receipt([adj({ kind: 'rounding', label: '  Rounding ', amount: '0.02', sign: -1 })], 'items'))
+    expect(payload.adjustments).toEqual([{ id: 'a1', kind: 'rounding', label: 'Rounding', amountCents: -2, sortOrder: 0 }])
+    expect(payload.totalCents).toBe(2855)
+  })
+
+  it.each([
+    ['an empty label', { label: '  ' }],
+    ['a label over 60 characters', { label: 'x'.repeat(61) }],
+    ['a zero amount', { amount: '0.00' }],
+    ['an empty amount', { amount: '' }],
+    ['three decimals', { amount: '1.005' }],
+  ])('rejects %s as invalid_adjustment', (_name, patch) => {
+    expect(validateDraft(receipt([adj(patch)]))).toMatchObject({ ok: false, errors: { adjustments: 'invalid_adjustment' } })
+  })
+
+  it('accepts a 60-character label', () => {
+    expect(validateDraft(receipt([adj({ label: 'x'.repeat(60) })])).ok).toBe(true)
+  })
+
+  it('rejects adjustments that bring the amount paid below 0.01', () => {
+    expect(validateDraft(receipt([adj({ amount: '28.57' })]))).toMatchObject({ ok: false, errors: { adjustments: 'adjustments_total' } })
+  })
+
+  it('ignores adjustments for equal and custom splits', () => {
+    const payload = ok({ ...base, adjustments: [adj({})] })
+    expect(payload.adjustments).toBeUndefined()
+    expect(payload.totalCents).toBe(1000)
+  })
+
+  it('adjustmentsCents sums only the valid rows', () => {
+    expect(adjustmentsCents([adj({}), adj({ id: 'a2', kind: 'tax', amount: '1.41', sign: 1 }), adj({ id: 'a3', amount: 'x' })])).toBe(-359)
+    expect(adjustmentsCents(undefined)).toBe(0)
+  })
+
+  it('signForKind: discount is always minus, tax and service plus, rounding and other keep the chosen sign', () => {
+    expect(signForKind('discount', 1)).toBe(-1)
+    expect(signForKind('tax', -1)).toBe(1)
+    expect(signForKind('service', -1)).toBe(1)
+    expect(signForKind('rounding', -1)).toBe(-1)
+    expect(signForKind('other', 1)).toBe(1)
   })
 })
