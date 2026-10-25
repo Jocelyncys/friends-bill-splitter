@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { AlertIcon } from '../../components/icons'
 import { compareIds } from '../../domain/allocation'
 import { formatMoney } from '../../domain/money'
 import type { Transfer } from '../../domain/settlement'
@@ -86,11 +87,11 @@ export function SettlementPreview({
   return (
     <main className="settlement">
       <h1>{t('settlement.previewTitle')}</h1>
-      <p>{t('settlement.previewHint')}</p>
+      <p className="lede">{t('settlement.previewHint')}</p>
 
       {unresolved.length > 0 && (
         <section className="attention" aria-labelledby="unresolved-title">
-          <h2 id="unresolved-title">{t('settlement.unresolvedTitle')}</h2>
+          <h2 id="unresolved-title"><AlertIcon />{t('settlement.unresolvedTitle')}</h2>
           <p>{t('settlement.unresolvedHint')}</p>
           <ul>
             {unresolved.map(item => (
@@ -133,28 +134,40 @@ export function SettlementPreview({
                     </select>
                   </label>
                 )}
-                <p>{t('settlement.totalPaid', { amount: money(preview.totalPaidCents) })}</p>
-                <p>{t('settlement.totalOwed', { amount: money(preview.totalOwedCents) })}</p>
-                <ul className="plain-list">
+                <div className="plan-card__totals">
+                  <p>{t('settlement.totalPaid', { amount: money(preview.totalPaidCents) })}</p>
+                  <p>{t('settlement.totalOwed', { amount: money(preview.totalOwedCents) })}</p>
+                </div>
+                <ul className="plain-list plan-card__balances">
                   {preview.members.map(m => (
                     <li key={m.id}>{balanceText(m.id)}</li>
                   ))}
                 </ul>
-                <h3>{t('settlement.transfersTitle')}</h3>
-                <p>{t('settlement.transferCount', { count: transfers.length })}</p>
-                <ul className="plain-list">
-                  {transfers.map((x, index) => (
-                    <li key={index}>{t('settlement.transferLine', { payer: nameOf(x.payerId), receiver: nameOf(x.receiverId), amount: money(x.amountCents) })}</li>
-                  ))}
-                </ul>
+                <div className="receipt">
+                  <div className="receipt__paper">
+                    <h3 className="receipt__title">{t('settlement.transfersTitle')}</h3>
+                    <ul className="plain-list">
+                      {transfers.map((x, index) => (
+                        <li key={index} className="receipt__row">
+                          <span>{t('settlement.transferRow', { payer: nameOf(x.payerId), receiver: nameOf(x.receiverId) })}</span>
+                          <span className="amount">{money(x.amountCents)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <hr className="receipt__rule" />
+                    <p className="receipt__total">
+                      <span>{t('settlement.transferCount', { count: transfers.length })}</span>
+                    </p>
+                  </div>
+                </div>
               </article>
             )
           })}
         </div>
       )}
 
-      <div aria-live="assertive">{(errorMessage || staleNotice) && <p>{errorMessage ?? t('settlementError.stale_revision')}</p>}</div>
-      {settleBlockedMessage && <p role="status">{settleBlockedMessage}</p>}
+      <div aria-live="assertive" className="settlement__notice">{(errorMessage || staleNotice) && <p className="form-error">{errorMessage ?? t('settlementError.stale_revision')}</p>}</div>
+      {settleBlockedMessage && <p role="status" className="muted">{settleBlockedMessage}</p>}
 
       <footer className="settlement__footer">
         <button type="button" className="primary" disabled={blocked} onClick={() => {
@@ -162,7 +175,7 @@ export function SettlementPreview({
           setConfirming({ revision })
         }}>{t('settlement.settleNow')}</button>
         <button type="button" onClick={onLater}>{t('settlement.later')}</button>
-        <button type="button" onClick={onCancel}>{t('settlement.cancel')}</button>
+        <button type="button" className="quiet" onClick={onCancel}>{t('settlement.cancel')}</button>
       </footer>
 
       {confirming && (

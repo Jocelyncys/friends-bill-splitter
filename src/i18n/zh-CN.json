@@ -15,7 +15,8 @@
   "home": {
     "chooseMode": "你想怎样分账？",
     "singleBill": "单次账单",
-    "tripEvent": "旅行或活动"
+    "tripEvent": "旅行或活动",
+    "intro": "一顿饭或一整趟旅行都能分。谁欠谁，一目了然。"
   },
   "nav": {
     "label": "主导航",
@@ -68,7 +69,19 @@
     "settleNow": "立即结算",
     "viewPayments": "查看付款",
     "settledNote": "此活动已结算，开销现在为只读。",
-    "inviteNotSaved": "此邀请链接无法保存在此设备上。请立即复制：之后将不会再显示。"
+    "inviteNotSaved": "此邀请链接无法保存在此设备上。请立即复制：之后将不会再显示。",
+    "groupTotal": "总计",
+    "position": {
+      "label": "你的结余",
+      "owe": "你欠",
+      "receive": "你应收",
+      "to": "给 {{name}}",
+      "from": "来自 {{name}}",
+      "square": "你们两清了",
+      "estimate": "结算前为估算金额。",
+      "settled": "按结算时确定的金额。",
+      "waiting": "所有项目都有人认领后，会显示你的结余。"
+    }
   },
   "expenses": {
     "title": "开销",
@@ -237,7 +250,8 @@
     "notAllowed": "只有所有者或共同主持人可以结算此活动。",
     "noExpenses": "还没有可结算的开销。",
     "previewFailed": "无法生成预览。",
-    "formerMember": "已退出的成员"
+    "formerMember": "已退出的成员",
+    "transferRow": "{{payer}} 付给 {{receiver}}"
   },
   "settlementError": {
     "stale_revision": "内容已有变化，请查看更新后的预览。",

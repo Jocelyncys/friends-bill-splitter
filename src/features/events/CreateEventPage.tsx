@@ -49,14 +49,16 @@ export function CreateEventPage() {
     <main>
       <h1>{t('create.title')}</h1>
       <form className="form" onSubmit={e => void submit(e)}>
-        <label>
-          {t('create.eventName')}
-          <input value={name} onChange={e => setName(e.target.value)} autoComplete="off" />
-        </label>
-        <label>
-          {t('common.yourName')}
-          <input value={displayName} onChange={e => setDisplayName(e.target.value)} autoComplete="name" />
-        </label>
+        <div className="group">
+          <label className="field">
+            <span className="field__label">{t('create.eventName')}</span>
+            <input value={name} onChange={e => setName(e.target.value)} autoComplete="off" />
+          </label>
+          <label className="field">
+            <span className="field__label">{t('common.yourName')}</span>
+            <input value={displayName} onChange={e => setDisplayName(e.target.value)} autoComplete="name" />
+          </label>
+        </div>
         {error && <p role="alert" className="form-error">{error}</p>}
         <button type="submit" className="primary" disabled={busy}>{busy ? t('create.submitting') : t('create.submit')}</button>
       </form>

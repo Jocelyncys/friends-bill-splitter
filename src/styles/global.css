@@ -1,13 +1,333 @@
-body {
-  margin: 0;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-family: system-ui, sans-serif;
+/* ---------- Base ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  margin: 0;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  margin: 8px 0 16px;
+}
+
+h2 {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 28px 0 12px;
+}
+
+h3 {
+  font-size: var(--text-base);
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 16px 0 8px;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+a {
+  color: var(--plum);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--plum-strong);
+}
+
+img {
+  max-width: 100%;
+}
+
+fieldset {
+  min-width: 0; /* default min-width: min-content lets wide content push it off a 360px screen */
+}
+
+/* Money is always Bricolage with fixed-width digits so columns line up. */
+.amount {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.muted,
+.note,
+.event-name {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--plum);
+  outline-offset: 2px;
+}
+
+/* ---------- Buttons ---------- */
+/* Default button = secondary (outline). Modifiers: .primary, .quiet, .danger, .chip, .icon-button. */
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1.5px solid var(--plum);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--plum);
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+button:hover:not(:disabled),
+.button:hover {
+  background: var(--petal);
+  color: var(--plum-strong);
+}
+
+button:active:not(:disabled),
+.button:active {
+  background: var(--petal-press);
+}
+
+button:disabled {
+  border-color: var(--rose);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.icon {
+  flex: none;
+}
+
+.primary,
+.button.primary {
+  background: var(--plum);
+  border-color: var(--plum);
+  color: var(--paper);
+}
+
+.primary:hover:not(:disabled),
+.button.primary:hover {
+  background: var(--plum-strong);
+  border-color: var(--plum-strong);
+  color: var(--paper);
+}
+
+.primary:active:not(:disabled),
+.button.primary:active {
+  background: var(--plum-press);
+  border-color: var(--plum-press);
+}
+
+.primary:disabled {
+  background: var(--petal);
+  border-color: var(--petal);
+  color: var(--ink-muted);
+}
+
+/* Tertiary: text with an underline so it still reads as an action. */
+.quiet {
+  border-color: transparent;
+  padding: 0 12px;
+  text-decoration: underline;
+  text-decoration-color: var(--rose-deep);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 5px;
+}
+
+.quiet:hover:not(:disabled) {
+  text-decoration-color: currentColor;
+}
+
+/* Small outline pill for actions inside a list row. */
+.pill,
+.button.pill {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--rose-deep);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: var(--text-sm);
+}
+
+.pill:hover:not(:disabled),
+.button.pill:hover {
+  border-color: var(--plum);
+  background: var(--paper);
+}
+
+.pill:active:not(:disabled),
+.button.pill:active {
+  background: var(--petal-press);
+}
+
+.quiet:disabled {
+  border-color: transparent;
+}
+
+.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.danger:active:not(:disabled) {
+  background: #f2d3de;
+}
+
+.danger.quiet {
+  border-color: transparent;
+}
+
+/* Square, icon-only; the name is in a .sr-only span. */
+.icon-button {
+  width: 48px;
+  padding: 0;
+  flex: none;
+}
+
+/* Pill buttons for claiming and assigning items. */
+.chip {
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border-width: 1.5px;
+  font-size: var(--text-sm);
+}
+
+.chip.primary {
+  border-color: var(--plum);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* Dashed "add another" row. */
+.add-row {
+  width: 100%;
+  border-style: dashed;
+  border-color: var(--rose-deep);
+  color: var(--plum);
+  background: transparent;
+}
+
+/* File picker: the real input is visually hidden inside a button-styled label (still reachable by
+   label, keyboard and setInputFiles). */
+.file-pick {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1.5px solid var(--plum);
+  border-radius: var(--radius-control);
+  color: var(--plum);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.file-pick:hover {
+  background: var(--petal);
+}
+
+.file-pick:active {
+  background: var(--petal-press);
+}
+
+.file-pick:focus-within {
+  outline: 3px solid var(--plum);
+  outline-offset: 2px;
+}
+
+.file-pick input[type='file'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.payment-form .file-pick {
+  justify-content: flex-start;
+  padding: 10px 16px;
+  text-align: left;
+  font-size: var(--text-sm);
+}
+
+/* ---------- Shell ---------- */
 .app-shell {
   min-height: 100vh;
-  max-width: 40rem;
+  min-height: 100dvh;
+  max-width: 34rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -17,242 +337,1104 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  background: var(--color-surface-muted);
+  gap: 12px;
+  padding: 12px var(--gutter);
+  border-bottom: 1px solid var(--rose);
+}
+
+.app-header__title {
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+/* Segmented control: the active language is the filled segment. */
+.language-switch {
+  flex: none;
+  display: inline-flex;
+  padding: 2px;
+  border: 1.5px solid var(--rose-deep);
+  border-radius: 999px;
+  background: var(--paper);
 }
 
 .language-switch button {
-  min-height: 44px;
-  padding: 0 0.75rem;
-  border: 1px solid var(--color-accent);
+  min-height: 40px;
+  min-width: 48px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--color-text);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.language-switch button:hover:not([aria-pressed='true']) {
+  background: var(--petal);
+}
+
+.language-switch button:active:not([aria-pressed='true']) {
+  background: var(--petal-press);
 }
 
 .language-switch button[aria-pressed='true'] {
-  background: var(--color-primary);
-  color: var(--color-surface);
+  background: var(--plum);
+  color: var(--paper);
 }
 
 .app-content {
   flex: 1;
-  padding: 1rem;
-  padding-bottom: 5rem;
+  padding: 8px var(--gutter) 32px;
 }
 
-button,
-.button,
-input,
-select {
-  font: inherit;
-  min-height: 44px;
-  box-sizing: border-box;
+/* Event pages: keep the last control clear of the fixed tab bar. */
+.app-shell--event .app-content {
+  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 32px);
 }
 
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible {
-  outline: 3px solid var(--color-primary);
-  outline-offset: 2px;
+.stale-banner {
+  margin: 0;
+  padding: 8px var(--gutter);
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--amber);
 }
 
-.primary {
-  background: var(--color-primary);
-  color: var(--color-surface);
-  border: 0;
-  border-radius: var(--radius-card);
-  padding: 0 1.25rem;
+.bottom-nav {
+  position: fixed;
+  z-index: 10;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 34rem;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 4px 8px env(safe-area-inset-bottom);
+  background: var(--paper);
+  border-top: 1px solid var(--rose);
 }
 
-/* Destructive action: outlined, never the filled primary look. */
-.danger {
-  background: transparent;
-  color: var(--color-primary-strong);
-  border: 2px solid var(--color-primary-strong);
-  border-radius: var(--radius-card);
-  padding: 0 1.25rem;
-}
-
-.button {
-  display: inline-flex;
+.bottom-nav a {
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  border-radius: var(--radius-control);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
   text-decoration: none;
 }
 
-.guided-actions {
-  display: grid;
-  gap: 0.75rem;
-  margin: 1rem 0;
+.bottom-nav a:hover {
+  color: var(--ink);
 }
 
-.guided-actions button {
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-card);
-  background: var(--color-surface-muted);
-  color: var(--color-text);
+.bottom-nav a .icon {
+  padding: 2px 14px;
+  width: 52px;
+  height: 28px;
+  border-radius: 999px;
 }
 
-.guided-actions--large button {
-  min-height: 72px;
-  font-size: 1.15rem;
+.bottom-nav a.active {
+  color: var(--plum);
 }
 
-.attention {
-  background: var(--color-warning-bg);
-  border-radius: var(--radius-card);
-  padding: 0.75rem 1rem;
+.bottom-nav a.active .icon {
+  background: var(--petal);
 }
 
-.expense-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--color-surface-muted);
-}
-
-.expense-row small {
-  display: block;
-  color: var(--color-text-muted);
-}
-
-.event-name,
-.note {
-  color: var(--color-text-muted);
-}
-
-.form,
-.form label,
-.form .field-stack,
-.item-row,
-fieldset {
+/* ---------- Forms: settings-style groups ---------- */
+.form {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 16px;
 }
 
-.form {
-  gap: 0.9rem;
-}
-
-.form input,
-.form select {
-  padding: 0 0.75rem;
-  border: 1px solid var(--color-accent);
-  border-radius: 0.5rem;
-  background: #fff;
-  color: var(--color-text);
-}
-
-fieldset {
-  /* Default min-width: min-content lets a file input push the fieldset past a 360px screen. */
-  min-width: 0;
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-card);
-}
-
-.form input,
-.form select,
-.form textarea {
+.form > button,
+.form > .actions {
   width: 100%;
+}
+
+.group,
+fieldset.group {
+  margin: 0;
+  padding: 0 16px;
+  min-width: 0; /* fieldset default min-width: min-content can push it past a 360px screen */
+  border: 0;
+  border-radius: var(--radius-group);
+  background: var(--petal);
+}
+
+.group__legend {
+  float: left; /* puts the legend inside the group instead of on its border */
+  width: 100%;
+  padding: 14px 0 6px;
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.group__legend + * {
+  clear: both;
+}
+
+.field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
+  min-width: 0;
+}
+
+.group > .field--check + .field--check {
+  border-top: 1px solid var(--rose);
+}
+
+.field__label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--ink);
   max-width: 100%;
 }
 
-.form label.check {
+.field input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.field select,
+.field textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1.5px solid var(--rose-deep);
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--text-base);
+  appearance: none;
+}
+
+.field input[readonly] {
+  border-bottom-style: dashed;
+}
+
+.field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.field input::placeholder {
+  color: var(--ink-muted);
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: none;
+  border-bottom-color: var(--plum);
+  box-shadow: 0 1.5px 0 var(--plum);
+}
+
+/* The whole row shows focus, so the ring is never clipped by the group. */
+.field:focus-within:not(.field--check) .field__label {
+  color: var(--plum);
+}
+
+.field:has(> select)::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 24px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--plum);
+  border-bottom: 2px solid var(--plum);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.field select {
+  padding-right: 24px;
+  cursor: pointer;
+}
+
+/* Checkbox / radio rows. */
+.field--check {
   flex-direction: row;
   align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 4px 0;
+  color: var(--ink);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--plum);
+  cursor: pointer;
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 3px solid var(--plum);
+  outline-offset: 2px;
+}
+
+/* Read-only value row (e.g. a participant cannot pick the payer). */
+.field--static {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.group__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 12px 0;
+  border-top: 1px solid var(--rose);
+  margin: 0;
+}
+
+.group__actions {
+  display: grid;
+  gap: 8px;
+  padding: 4px 0 16px;
+}
+
+.group__status:empty {
+  display: none;
+}
+
+.group__status {
+  margin: 0;
+  padding: 0 0 8px;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
 }
 
 .form-error,
 .field-error {
   margin: 0;
-  color: var(--color-primary-strong);
-  background: var(--color-warning-bg);
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
 
-.bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  max-width: 40rem;
-  margin: 0 auto;
+.group .field-error {
+  margin: 0 0 10px;
+}
+
+/* ---------- Itemized editor ---------- */
+.item-row + .item-row {
+  margin-top: 8px;
+}
+
+.item-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  background: var(--color-surface-muted);
-  border-top: 1px solid var(--color-accent);
+  grid-template-columns: minmax(0, 1fr) 6.5rem 48px;
+  column-gap: 12px;
+  align-items: end;
+  padding: 4px 0;
 }
 
-.bottom-nav a {
+.item-row > .field {
+  padding: 8px 0;
+}
+
+.item-row > .field--wide,
+.item-row > .note {
+  grid-column: 1 / -1;
+}
+
+.item-row > .note {
+  margin: 0 0 8px;
+}
+
+.item-row > .icon-button {
+  align-self: center;
+  margin-top: 18px;
+}
+
+.item-row:not(:first-of-type) {
+  animation: rise 180ms ease-out;
+}
+
+.receipt-preview {
+  display: block;
+  max-height: 14rem;
+  margin: 8px 0 4px;
+  border-radius: var(--radius-control);
+  object-fit: contain;
+}
+
+/* ---------- The receipt strip ---------- */
+/* Thermal-receipt paper: zigzag torn top and bottom edges via a mask, soft shadow on the wrapper so
+   it follows the torn edge. The one decorative element in the app. */
+.receipt {
+  margin: 0 0 24px;
+  filter: drop-shadow(0 1px 1px rgb(118 62 97 / 0.12)) drop-shadow(0 6px 14px rgb(118 62 97 / 0.1));
+}
+
+.receipt__paper {
+  --tooth: 14px;
+  padding: 22px 18px 24px;
+  background: var(--receipt);
+  -webkit-mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--tooth) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) 51% repeat-x;
+  mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--tooth) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) 51% repeat-x;
+}
+
+.receipt__title {
+  margin: 0 0 6px;
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--ink-muted);
+}
+
+.receipt__row,
+.receipt .expense-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 8px 0;
+  border: 0;
+}
+
+.receipt__row > :first-child,
+.receipt .expense-row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.receipt__rule {
+  height: 0;
+  margin: 8px 0 4px;
+  border: 0;
+  border-top: 1.5px dashed var(--rose-deep);
+}
+
+.receipt__total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding-top: 8px;
+  font-weight: 650;
+}
+
+.receipt__leader {
+  flex: 1;
+  min-width: 16px;
+  border-bottom: 2px dotted var(--rose-deep);
+  transform: translateY(-4px);
+}
+
+.receipt__total .amount {
+  font-size: var(--text-lg);
+}
+
+.receipt__more {
+  margin: 8px 0 -4px;
+}
+
+.receipt__empty {
+  margin: 4px 0;
+  color: var(--ink-muted);
+}
+
+/* ---------- Event home ---------- */
+.position {
+  margin: 8px 0 20px;
+}
+
+.position__label {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.position__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  margin: 0 0 4px;
+}
+
+.position__amount {
+  font-size: var(--text-hero);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--plum);
+}
+
+.position__who {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.position__square {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  color: var(--plum);
+}
+
+.position__split {
+  margin: 4px 0 0;
+}
+
+.position__split li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 20rem;
+  padding: 2px 0;
+}
+
+.position__note {
+  margin: 6px 0 0;
+}
+
+.guided-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.guided-actions > button {
+  grid-column: 1 / -1;
+}
+
+/* Compact (active event): the two "add" actions stay full width, the rest pair up. */
+.guided-actions:not(.guided-actions--large) > .guided-actions__minor {
+  grid-column: auto;
+}
+
+.guided-actions:not(.guided-actions--large) > .guided-actions__minor:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 24rem) {
+  .guided-actions__minor {
+    padding: 0 12px;
+  }
+
+  .guided-actions__minor .icon {
+    display: none;
+  }
+}
+
+.guided-actions--large {
+  gap: 12px;
+}
+
+.guided-actions--large > button {
+  min-height: 72px;
+  font-size: var(--text-lg);
+  border-radius: var(--radius-group);
+  justify-content: flex-start;
+  padding: 0 20px;
+  gap: 14px;
+}
+
+.guided-actions--large > button .icon {
+  width: 26px;
+  height: 26px;
+}
+
+.guided-hint {
+  margin: -4px 0 16px;
+}
+
+.attention {
+  margin: 0 0 24px;
+  padding: 4px 16px 8px;
+  border: 1.5px solid var(--amber);
+  border-radius: var(--radius-group);
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+}
+
+.attention h2 {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 56px;
-  color: var(--color-text);
-  text-decoration: none;
+  gap: 8px;
+  margin: 12px 0 4px;
+  font-size: var(--text-base);
+  color: var(--amber-ink);
 }
 
-.bottom-nav a.active {
-  color: var(--color-primary);
-  font-weight: 700;
-  border-top: 3px solid var(--color-primary);
-}
-
-.stale-banner {
-  margin: 0;
-  padding: 0.5rem 1rem;
-  text-align: center;
-  background: var(--color-warning-bg);
-  color: var(--color-primary-strong);
-}
-
-.plain-list {
+.attention ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.role-badge {
-  padding: 0.1rem 0.6rem;
+.attention li + li {
+  border-top: 1px solid #f1d9b5;
+}
+
+.attention button,
+.attention a {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 48px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 500;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--amber);
+  text-underline-offset: 4px;
+}
+
+.attention a {
+  display: flex;
+  align-items: center;
+}
+
+.attention button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--amber-ink);
+}
+
+.attention p {
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.invite-panel {
+  margin: 0 0 24px;
+}
+
+.invite-panel .group {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.invite-panel .field {
+  flex: 1;
+}
+
+.invite-panel .group > button {
+  margin-bottom: 8px;
+}
+
+/* ---------- Lists (expenses, people, drafts) ---------- */
+.row-list {
+  margin: 0 0 24px;
+  padding: 0 16px;
+  border-radius: var(--radius-group);
+  background: var(--petal);
+}
+
+.row-list:empty {
+  display: none;
+}
+
+.expense-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 12px 0;
+}
+
+.row-list > .expense-row + .expense-row {
+  border-top: 1px solid var(--rose);
+}
+
+.expense-row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.expense-row small {
+  display: block;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.expense-row strong {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+
+
+.list-cta {
+  margin: 0 0 20px;
+}
+
+.role-badge,
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
   border-radius: 999px;
-  background: var(--color-surface-muted);
-  color: var(--color-primary-strong);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A label, not a control: flat, no outline, so it never reads as a button. */
+.role-badge {
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--petal-press);
+  color: var(--plum-strong);
+  font-size: 13px;
+}
+
+.person-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.person-row > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin: 8px 0 0;
+}
+
+/* ---------- Claim items ---------- */
+.claim-toolbar {
+  margin: 0 0 16px;
 }
 
 .claim-item {
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--color-surface-muted);
+  padding: 12px 0 16px;
+}
+
+.row-list > .claim-item + .claim-item {
+  border-top: 1px solid var(--rose);
+}
+
+.claim-item .expense-row {
+  padding: 0;
+}
+
+.claim-item > .note {
+  margin: 2px 0 10px;
+}
+
+.claim-item--mine {
+  box-shadow: inset 3px 0 0 var(--plum);
+  margin-left: -16px;
+  padding-left: 16px;
 }
 
 .claim-assign {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 8px;
+  margin-top: 10px;
 }
 
-.muted { color: var(--color-text-muted); font-size: 0.9rem; }
+/* Assigning is the host's secondary tool: lighter pills than "Claim for me". */
+.claim-assign .chip {
+  border-width: 1px;
+  border-color: var(--rose-deep);
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 500;
+}
 
-.plan-cards { display: grid; gap: 0.75rem; margin: 1rem 0; }
-.plan-card { border: 2px solid var(--color-accent); border-radius: 12px; padding: 0.75rem 1rem; }
-.plan-card--selected { border-color: var(--color-primary); }
-.plan-card__title { display: flex; align-items: center; gap: 0.5rem; }
-.plan-card h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
+.claim-assign .chip:hover:not(:disabled) {
+  border-color: var(--plum);
+  background: var(--paper);
+  color: var(--plum);
+}
 
-.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem; background: var(--color-warning-bg); color: var(--color-primary-strong); }
-.badge--confirmed { background: var(--color-primary); color: #fff; }
+/* ---------- Settlement ---------- */
+.lede {
+  color: var(--ink-muted);
+  margin-bottom: 20px;
+}
 
-.settlement__footer { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
-.transfer { border: 1px solid var(--color-accent); border-radius: 12px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
-.payment-details__qr { max-width: 100%; width: 14rem; height: auto; }
-.payment-form .field, .override .field { display: grid; gap: 0.25rem; margin: 0.5rem 0; }
+.plan-cards {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 20px;
+}
 
-.dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 0.5); }
-.dialog { width: min(28rem, 100%); max-height: 90vh; overflow: auto; padding: 1rem 1.25rem; border-radius: 12px; background: var(--color-surface); color: var(--color-text); }
-.dialog__actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+/* Each method is a selectable option: hairline when idle, plum outline + petal when chosen. */
+.plan-card {
+  padding: 4px 16px 16px;
+  border: 1.5px solid var(--rose);
+  border-radius: var(--radius-group);
+  background: var(--paper);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.plan-card--selected {
+  border: 2px solid var(--plum);
+  background: var(--petal);
+}
+
+.plan-card__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+}
+
+.plan-card__title strong {
+  font-weight: 650;
+}
+
+.plan-card > .muted {
+  margin: -4px 0 12px;
+}
+
+.plan-card .field {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: var(--paper);
+}
+
+.plan-card .field > span {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.badge {
+  background: var(--plum);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.plan-card__totals {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 16px;
+  margin: 0 0 4px;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.plan-card__totals p {
+  margin: 0;
+}
+
+.plan-card__balances {
+  margin: 0 0 12px;
+  font-size: var(--text-sm);
+}
+
+.plan-card .receipt {
+  margin: 8px 0 0;
+}
+
+.plan-card h3 {
+  margin: 12px 0 4px;
+}
+
+.settlement__notice {
+  margin: 0 0 12px;
+}
+
+.settlement__notice:empty {
+  display: none;
+}
+
+.settlement__footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.settlement__footer > .primary {
+  grid-column: 1 / -1;
+}
+
+/* ---------- Payments ---------- */
+.payments__intro {
+  margin-bottom: 16px;
+}
+
+.transfer-list {
+  margin: 0;
+}
+
+.transfer {
+  padding: 12px 0;
+}
+
+.transfer + .transfer {
+  border-top: 1.5px dashed var(--rose);
+}
+
+.transfer__line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.transfer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.transfer__actions > * {
+  flex: 1 1 auto;
+}
+
+.transfer .note,
+.transfer [role='alert'] {
+  margin: 8px 0;
+}
+
+.badge--pending {
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+  border: 1px solid var(--amber);
+}
+
+.badge--sent {
+  background: var(--petal);
+  color: var(--plum);
+  border: 1px solid var(--rose-deep);
+}
+
+.badge--confirmed {
+  background: var(--plum);
+  color: var(--paper);
+}
+
+.payment-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: var(--radius-control);
+  background: var(--petal);
+}
+
+.payment-details img {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+
+.payment-details dt {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.payment-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.payment-details__qr {
+  max-width: 100%;
+  width: 14rem;
+  height: auto;
+  border-radius: 8px;
+}
+
+.override {
+  margin-top: 8px;
+}
+
+.override .group {
+  margin-bottom: 8px;
+}
+
+.details-toggle {
+  margin-bottom: 16px;
+}
+
+.payment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 24px;
+}
+
+.payment-form h2 {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+/* ---------- Dialog: bottom sheet on phones, centred on wider screens ---------- */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(45 32 40 / 0.45);
+  animation: fade 160ms ease-out;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  background: var(--paper);
+  color: var(--ink);
+  animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dialog::before {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: var(--rose);
+}
+
+.dialog h2 {
+  margin: 4px 0 12px;
+}
+
+.dialog__actions {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+@media (min-width: 40rem) {
+  .dialog-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .dialog {
+    width: min(28rem, 100%);
+    padding: 20px 24px 24px;
+    border-radius: 20px;
+    animation-name: pop-in;
+  }
+
+  .dialog::before {
+    display: none;
+  }
+
+  .position__amount {
+    font-size: 52px;
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+  }
+}
+
+/* ---------- Motion: only in response to an action ---------- */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Tab bar links sit at the screen edge: draw their focus ring inside. */
+.bottom-nav a:focus-visible {
+  outline-offset: -3px;
+}

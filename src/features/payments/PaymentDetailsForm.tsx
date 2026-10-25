@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { CameraIcon } from '../../components/icons'
 import { SettlementError } from '../settlement/settlementRepository'
 import { paymentDetailsSchema, QR_TYPES, type PaymentDetailsValues } from './paymentDetailsSchema'
 import { paymentPrefs } from './paymentPrefs'
@@ -110,48 +111,55 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
       <h2>{t('paymentForm.title')}</h2>
       <p className="muted">{t('paymentForm.intro')}</p>
 
-      <label className="field">
-        <span>{t('paymentForm.qr')}</span>
-        <input type="file" accept={QR_TYPES.join(',')} onChange={event => setQrFile(event.target.files?.[0] ?? null)} />
-      </label>
-      {!qrFile && rememberedQr && <p className="muted">{t('paymentForm.qrKept')}</p>}
-
-      <label className="field">
-        <span>{t('paymentForm.bankName')}</span>
-        <input value={bankName} onChange={event => setBankName(event.target.value)} autoComplete="off" />
-      </label>
-      <label className="field">
-        <span>{t('paymentForm.accountHolder')}</span>
-        <input value={accountHolderName} onChange={event => setAccountHolderName(event.target.value)} autoComplete="off" />
-      </label>
-      <label className="field">
-        <span>{t('paymentForm.accountNumber')}</span>
-        <input value={accountNumber} onChange={event => setAccountNumber(event.target.value)} inputMode="numeric" autoComplete="off" />
-      </label>
-      <label className="field">
-        <span>{t('paymentForm.reference')}</span>
-        <input value={paymentReference} maxLength={100} onChange={event => setPaymentReference(event.target.value)} autoComplete="off" />
-      </label>
+      <div className="group">
+        <div className="group__actions">
+          <label className="file-pick">
+            <CameraIcon />
+            {t('paymentForm.qr')}
+            <input type="file" accept={QR_TYPES.join(',')} onChange={event => setQrFile(event.target.files?.[0] ?? null)} />
+          </label>
+        </div>
+        {qrFile && <p className="group__status">{qrFile.name}</p>}
+        {!qrFile && rememberedQr && <p className="group__status">{t('paymentForm.qrKept')}</p>}
+        <label className="field">
+          <span className="field__label">{t('paymentForm.bankName')}</span>
+          <input value={bankName} onChange={event => setBankName(event.target.value)} autoComplete="off" />
+        </label>
+        <label className="field">
+          <span className="field__label">{t('paymentForm.accountHolder')}</span>
+          <input value={accountHolderName} onChange={event => setAccountHolderName(event.target.value)} autoComplete="off" />
+        </label>
+        <label className="field">
+          <span className="field__label">{t('paymentForm.accountNumber')}</span>
+          <input value={accountNumber} onChange={event => setAccountNumber(event.target.value)} inputMode="numeric" autoComplete="off" />
+        </label>
+        <label className="field">
+          <span className="field__label">{t('paymentForm.reference')}</span>
+          <input value={paymentReference} maxLength={100} onChange={event => setPaymentReference(event.target.value)} autoComplete="off" />
+        </label>
+      </div>
 
       {bothGiven && (
-        <fieldset>
-          <legend>{t('paymentForm.preferred')}</legend>
-          <label>
+        <fieldset className="group">
+          <legend className="group__legend">{t('paymentForm.preferred')}</legend>
+          <label className="field field--check">
             <input type="radio" name="preferred" checked={preferredMethod === 'qr'} onChange={() => setPreferredMethod('qr')} /> {t('paymentForm.preferredQr')}
           </label>
-          <label>
+          <label className="field field--check">
             <input type="radio" name="preferred" checked={preferredMethod === 'bank'} onChange={() => setPreferredMethod('bank')} /> {t('paymentForm.preferredBank')}
           </label>
         </fieldset>
       )}
 
-      <label>
-        <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /> {t('paymentForm.remember')}
-      </label>
+      <div className="group">
+        <label className="field field--check">
+          <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /> {t('paymentForm.remember')}
+        </label>
+      </div>
       <p className="muted">{t('paymentForm.rememberWarning')}</p>
-      {hasRemembered && <button type="button" onClick={() => void forget()}>{t('paymentForm.forget')}</button>}
+      {hasRemembered && <button type="button" className="danger quiet" onClick={() => void forget()}>{t('paymentForm.forget')}</button>}
 
-      <div aria-live="assertive">{error && <p role="alert">{error}</p>}</div>
+      <div aria-live="assertive">{error && <p role="alert" className="form-error">{error}</p>}</div>
       <div aria-live="polite">{status && <p>{status}</p>}</div>
 
       <button type="submit" className="primary" disabled={saving}>{saving ? t('paymentForm.saving') : t('paymentForm.save')}</button>

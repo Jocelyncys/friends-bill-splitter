@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { CheckIcon, CloseIcon, PlusIcon } from '../../components/icons'
 import { formatMoney } from '../../domain/money'
 import type { EventRole } from '../../domain/types'
 import type { ReceiverDetails } from '../payments/paymentRepository'
@@ -60,17 +61,21 @@ export function PaymentPhase({
   return (
     <main className="settlement">
       <h1>{t('payments.title')}</h1>
-      {!isManager && <p className="muted">{t('payments.onlyYours')}</p>}
-      <div aria-live="assertive">{errorMessage && <p>{errorMessage}</p>}</div>
+      {!isManager && <p className="muted payments__intro">{t('payments.onlyYours')}</p>}
+      <div aria-live="assertive" className="settlement__notice">{errorMessage && <p className="form-error">{errorMessage}</p>}</div>
 
       {isReceiver && (
         <section>
-          <button type="button" aria-expanded={formOpen} onClick={() => setFormOpen(open => !open)}>{t('payments.addDetails')}</button>
+          <button type="button" className="btn-block details-toggle" aria-expanded={formOpen} onClick={() => setFormOpen(open => !open)}>
+            {formOpen ? <CloseIcon /> : <PlusIcon />}
+            {t('payments.addDetails')}
+          </button>
           {formOpen && detailsForm}
         </section>
       )}
 
-      <ul className="plain-list transfer-list">
+      <div className="receipt">
+      <ul className="plain-list transfer-list receipt__paper">
         {transfers.map((transfer, index) => (
           <TransferRow
             key={transfer.id ?? index}
@@ -89,6 +94,7 @@ export function PaymentPhase({
           />
         ))}
       </ul>
+      </div>
     </main>
   )
 }
@@ -154,36 +160,41 @@ function TransferRow({ transfer, me, isManager, nameOf, currency, busy, missingK
 
   return (
     <li className="transfer">
-      <p>
+      <p className="transfer__line">
         <span>{sentence}</span> <span className={`badge badge--${state}`}>{t(`payments.state.${state}`)}</span>
       </p>
 
-      {isPayer && state !== 'confirmed' && onShowDetails && (
-        <button type="button" onClick={() => void showDetails()} disabled={busy || !id}>{t('payments.showDetails')}</button>
-      )}
-      {detailsFailed && <p role="alert">{t('payments.detailsFailed')}</p>}
-      {(missing && state !== 'confirmed') && <p>{t('payments.waitingForDetails', { name: nameOf(receiverId) })}</p>}
+      {detailsFailed && <p role="alert" className="form-error">{t('payments.detailsFailed')}</p>}
+      {(missing && state !== 'confirmed') && <p className="note">{t('payments.waitingForDetails', { name: nameOf(receiverId) })}</p>}
       {visibleDetails && visibleDetails !== 'missing' && <DetailsView details={visibleDetails} />}
 
-      {isPayer && state === 'pending' && onMarkSent && id && (
-        <button type="button" className="primary" onClick={() => (missing ? setWarnSent(true) : onMarkSent(id))} disabled={busy}>{t('payments.markSent')}</button>
-      )}
-      {isReceiver && state === 'sent' && onConfirmReceived && id && (
-        <button type="button" className="primary" onClick={() => onConfirmReceived(id)} disabled={busy}>{t('payments.confirmReceived')}</button>
-      )}
-
-      {isManager && state !== 'confirmed' && onOverride && id && !overriding && (
-        <button type="button" onClick={() => setOverriding(true)} disabled={busy}>{t('payments.override')}</button>
-      )}
+      <div className="transfer__actions">
+        {isPayer && state === 'pending' && onMarkSent && id && (
+          <button type="button" className="primary" onClick={() => (missing ? setWarnSent(true) : onMarkSent(id))} disabled={busy}><CheckIcon />{t('payments.markSent')}</button>
+        )}
+        {isReceiver && state === 'sent' && onConfirmReceived && id && (
+          <button type="button" className="primary" onClick={() => onConfirmReceived(id)} disabled={busy}><CheckIcon />{t('payments.confirmReceived')}</button>
+        )}
+        {isPayer && state !== 'confirmed' && onShowDetails && (
+          <button type="button" onClick={() => void showDetails()} disabled={busy || !id}>{t('payments.showDetails')}</button>
+        )}
+        {isManager && state !== 'confirmed' && onOverride && id && !overriding && (
+          <button type="button" className="quiet" onClick={() => setOverriding(true)} disabled={busy}>{t('payments.override')}</button>
+        )}
+      </div>
       {overriding && (
         <div className="override">
-          <label className="field">
-            <span>{t('payments.reason')}</span>
-            <textarea value={reason} maxLength={MAX_REASON} onChange={event => setReason(event.target.value)} />
-          </label>
-          {reasonError && <p role="alert">{t('payments.reasonRequired')}</p>}
-          <button type="button" className="primary" onClick={() => void submitOverride()} disabled={busy}>{t('payments.overrideConfirm')}</button>
-          <button type="button" onClick={() => setOverriding(false)}>{t('common.back')}</button>
+          <div className="group">
+            <label className="field">
+              <span className="field__label">{t('payments.reason')}</span>
+              <textarea value={reason} maxLength={MAX_REASON} onChange={event => setReason(event.target.value)} />
+            </label>
+          </div>
+          {reasonError && <p role="alert" className="form-error">{t('payments.reasonRequired')}</p>}
+          <div className="transfer__actions">
+            <button type="button" className="quiet" onClick={() => setOverriding(false)}>{t('common.back')}</button>
+            <button type="button" className="primary" onClick={() => void submitOverride()} disabled={busy}>{t('payments.overrideConfirm')}</button>
+          </div>
         </div>
       )}
       {warnSent && id && (

@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { CheckIcon, CloseIcon } from '../../components/icons'
 import { formatMoney } from '../../domain/money'
 import type { EventRole, SplitMethod } from '../../domain/types'
 
@@ -76,16 +77,19 @@ export function ClaimItemsPage({
       {offline && !settled && <p className="note" role="status">{t('claim.offline')}</p>}
       {claimingClosed && <p className="note">{t('claim.closedNote')}</p>}
       {manage && (
-        <button type="button" disabled={locked} onClick={() => onToggleClosed?.(!claimingClosed)}>
-          {claimingClosed ? t('claim.reopen') : t('claim.close')}
-        </button>
+        <div className="claim-toolbar">
+          <button type="button" disabled={locked} onClick={() => onToggleClosed?.(!claimingClosed)}>
+            {claimingClosed ? t('claim.reopen') : t('claim.close')}
+          </button>
+        </div>
       )}
-      {items.length === 0 && <p>{t('claim.noItems')}</p>}
+      {items.length === 0 && <p className="muted">{t('claim.noItems')}</p>}
+      <div className="row-list">
       {items.map(item => {
         const mine = item.claims.some(c => c.userId === currentUserId)
         const names = item.claims.map(c => nameOf(c.userId)).join(', ')
         return (
-          <article key={item.id} className="claim-item">
+          <article key={item.id} className={mine ? 'claim-item claim-item--mine' : 'claim-item'}>
             <div className="expense-row">
               <span>{item.quantity > 1 ? `${item.description} ×${item.quantity}` : item.description}</span>
               <strong>{money(item.totalCents)}</strong>
@@ -100,16 +104,18 @@ export function ClaimItemsPage({
             {splitMethod === 'item_claim' && !item.assigned && !settled && (
               <button
                 type="button"
+                className={mine ? 'chip' : 'chip primary'}
                 disabled={locked || claimingClosed}
                 onClick={() => (mine ? onUnclaim?.(item.id) : onClaim?.(item.id))}
               >
+                {mine ? <CloseIcon /> : <CheckIcon />}
                 {mine ? t('claim.unclaim') : t('claim.claimForMe')}
               </button>
             )}
             {manage && (
               <div className="claim-assign" role="group" aria-label={t('claim.assignGroup', { item: item.description })}>
                 {participants.map(p => (
-                  <button key={p.id} type="button" disabled={locked} onClick={() => onAssign?.(item.id, p.id)}>
+                  <button key={p.id} type="button" className="chip" disabled={locked} onClick={() => onAssign?.(item.id, p.id)}>
                     {t('claim.assignTo', { name: p.name })}
                   </button>
                 ))}
@@ -118,17 +124,25 @@ export function ClaimItemsPage({
           </article>
         )
       })}
-      <section>
-        <h2>{t('claim.sharesTitle')}</h2>
-        <ul className="plain-list" aria-label={t('claim.sharesTitle')}>
-          {participants.filter(p => (shares.get(p.id) ?? 0) > 0).map(p => (
-            <li key={p.id} className="expense-row">
-              <span>{p.name}</span>
-              <strong>{money(shares.get(p.id) ?? 0)}</strong>
-            </li>
-          ))}
-        </ul>
-        {unallocated > 0 && <p className="note">{t('claim.unclaimedTotal', { amount: money(unallocated) })}</p>}
+      </div>
+      <section className="receipt" aria-labelledby="claim-shares-title">
+        <div className="receipt__paper">
+          <h2 id="claim-shares-title" className="receipt__title">{t('claim.sharesTitle')}</h2>
+          <ul className="plain-list" aria-label={t('claim.sharesTitle')}>
+            {participants.filter(p => (shares.get(p.id) ?? 0) > 0).map(p => (
+              <li key={p.id} className="expense-row">
+                <span>{p.name}</span>
+                <strong>{money(shares.get(p.id) ?? 0)}</strong>
+              </li>
+            ))}
+          </ul>
+          {unallocated > 0 && (
+            <>
+              <hr className="receipt__rule" />
+              <p className="note">{t('claim.unclaimedTotal', { amount: money(unallocated) })}</p>
+            </>
+          )}
+        </div>
       </section>
     </main>
   )

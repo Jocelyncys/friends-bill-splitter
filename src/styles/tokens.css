@@ -1,11 +1,38 @@
+/* Plum & Blush. Text pairs checked for WCAG AA:
+   ink/paper 14.6, ink-muted/paper 5.3, ink-muted/petal 4.6, plum/paper 7.6, plum/petal 6.6,
+   paper/plum 7.6, danger/paper 7.0, amber-ink/amber-bg 5.9. rose-deep borders are >= 3:1 on paper and petal. */
 :root {
-  --color-primary: #763e61;
-  --color-primary-strong: #60314f;
-  --color-surface: #fff8fc;
-  --color-surface-muted: #f3e6ee;
-  --color-accent: #d6a9c1;
-  --color-text: #2d2028;
-  --color-text-muted: #78636f;
-  --color-warning-bg: #fff6e8;
-  --radius-card: 1rem;
+  --plum: #763e61;
+  --plum-strong: #60314f;
+  --plum-press: #4e2740;
+  --ink: #2d2028;
+  --ink-muted: #78636f;
+  --paper: #fff8fc; /* blush paper: page background */
+  --petal: #f3e6ee; /* grouped sections, fills */
+  --petal-press: #ead3e1;
+  --rose: #d6a9c1; /* hairlines */
+  --rose-deep: #9c7088; /* control outlines */
+  --receipt: #ffffff;
+  --amber: #b26b00; /* warning icon and border only */
+  --amber-ink: #8a5300; /* warning text */
+  --amber-bg: #fff6e8;
+  --danger: #9e2a47;
+  --danger-bg: #f9e7ed;
+
+  --cjk: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', var(--cjk);
+  --font-body: 'Figtree Variable', 'Figtree', var(--cjk);
+
+  /* Type scale (px, explicit so it never depends on the root size). */
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 26px;
+  --text-2xl: 34px;
+  --text-hero: 44px;
+
+  --radius-control: 12px;
+  --radius-group: 16px;
+  --gutter: 16px;
+  --nav-height: 64px;
 }

@@ -15,7 +15,8 @@
   "home": {
     "chooseMode": "What would you like to split?",
     "singleBill": "Single Bill",
-    "tripEvent": "Trip or Event"
+    "tripEvent": "Trip or Event",
+    "intro": "Split a meal or a whole trip. Everyone sees who owes whom."
   },
   "nav": {
     "label": "Main",
@@ -68,7 +69,19 @@
     "settleNow": "Settle now",
     "viewPayments": "View payments",
     "settledNote": "This event is settled. Expenses are now read-only.",
-    "inviteNotSaved": "This invite link could not be saved on this device. Copy it now: it will not be shown again."
+    "inviteNotSaved": "This invite link could not be saved on this device. Copy it now: it will not be shown again.",
+    "groupTotal": "Group total",
+    "position": {
+      "label": "Your balance",
+      "owe": "You owe",
+      "receive": "You get back",
+      "to": "to {{name}}",
+      "from": "from {{name}}",
+      "square": "You’re all square",
+      "estimate": "An estimate until the event is settled.",
+      "settled": "Fixed when the event was settled.",
+      "waiting": "Your balance shows once every item has an owner."
+    }
   },
   "expenses": {
     "title": "Expenses",
@@ -237,7 +250,8 @@
     "notAllowed": "Only the owner or a co-host can settle this event.",
     "noExpenses": "There are no expenses to settle yet.",
     "previewFailed": "Could not build the preview.",
-    "formerMember": "Former member"
+    "formerMember": "Former member",
+    "transferRow": "{{payer}} pays {{receiver}}"
   },
   "settlementError": {
     "stale_revision": "Something changed. Review the updated preview.",

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CheckIcon } from '../../components/icons'
 
 function readToken(eventId: string): string | null {
   try {
@@ -27,11 +28,16 @@ export function InvitePanel({ eventId, token: unsavedToken }: { eventId: string;
   return (
     <section className="invite-panel">
       {unsavedToken && <p role="alert" className="form-error">{t('event.inviteNotSaved')}</p>}
-      <label>
-        {t('event.inviteLinkLabel')}
-        <input readOnly value={url} onFocus={e => e.currentTarget.select()} />
-      </label>
-      <button type="button" onClick={() => void copy()}>{copied ? t('common.copied') : t('common.copy')}</button>
+      <div className="group">
+        <label className="field">
+          <span className="field__label">{t('event.inviteLinkLabel')}</span>
+          <input readOnly value={url} onFocus={e => e.currentTarget.select()} />
+        </label>
+        <button type="button" className={copied ? 'primary' : undefined} onClick={() => void copy()}>
+          {copied && <CheckIcon />}
+          {copied ? t('common.copied') : t('common.copy')}
+        </button>
+      </div>
     </section>
   )
 }

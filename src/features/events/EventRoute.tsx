@@ -7,6 +7,8 @@ import { useDrafts } from '../offline/useDrafts'
 import { EventHomePage } from './EventHomePage'
 import { EventStatus } from './EventStatus'
 import { InvitePanel } from './InvitePanel'
+import { displayNames } from './memberNames'
+import { useMyPosition } from './useMyPosition'
 import { useEventHome } from './useEventHome'
 
 export function EventRoute() {
@@ -18,6 +20,7 @@ export function EventRoute() {
   const [showInvite, setShowInvite] = useState(!!unsavedInviteToken)
   const state = useEventHome(eventId)
   const { drafts, loaded: draftsLoaded } = useDrafts(eventId)
+  const position = useMyPosition(state.status === 'ready' ? state.home : undefined)
   if (state.status !== 'ready') return <EventStatus state={state} />
   const { home } = state
   const attention = home.attention.map(item => ({
@@ -26,6 +29,8 @@ export function EventRoute() {
     onSelect: () => navigate(`/event/${eventId}/expenses/${item.expenseId}/claim`),
   }))
   const settled = home.event.state === 'settled'
+  const labels = displayNames(home.members)
+  const names = Object.fromEntries(home.members.map(m => [m.userId, labels.get(m.userId) ?? m.displayName]))
   const canSettle = !settled && home.me.role !== 'participant' && home.expenses.length > 0
   return (
     <EventHomePage
@@ -33,6 +38,10 @@ export function EventRoute() {
       currency={home.event.currency}
       expenses={home.expenses}
       attention={attention}
+      groupTotalCents={home.groupTotalCents}
+      position={position}
+      names={names}
+      onViewAll={() => navigate(`/event/${eventId}/expenses`)}
       onScanReceipt={() => navigate(`/event/${eventId}/expenses/new?scan=1`)}
       onAddExpense={() => navigate(`/event/${eventId}/expenses/new`)}
       onInvite={() => setShowInvite(shown => !shown)}

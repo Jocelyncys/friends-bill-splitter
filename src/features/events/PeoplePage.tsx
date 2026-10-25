@@ -44,17 +44,18 @@ export function PeoplePage() {
       {settled && <p className="muted">{t('event.settledNote')}</p>}
       {!online && isOwner && <p role="status" className="muted">{t('people.offline')}</p>}
       {errorCode && <p className="form-error" role="alert">{t(`actionError.${errorCode}`, { defaultValue: t('actionError.action_failed') })}</p>}
-      <ul className="plain-list" aria-label={t('people.listLabel')}>
+      <ul className="plain-list row-list" aria-label={t('people.listLabel')}>
         {home.members.map(member => {
           const label = labels.get(member.userId) ?? member.displayName
           const you = member.userId === home.me.userId
           return (
-            <li key={member.userId} className="expense-row">
+            <li key={member.userId} className="expense-row person-row">
               <span>{you ? t('people.you', { name: label }) : label}</span>
               <span className="role-badge">{t(`people.role.${member.role}`)}</span>
               {isOwner && member.role !== 'owner' && (
                 <button
                   type="button"
+                  className="pill"
                   disabled={busy || !online}
                   onClick={() => void changeRole(member.userId, member.role === 'cohost' ? 'participant' : 'cohost')}
                 >

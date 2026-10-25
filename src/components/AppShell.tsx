@@ -4,11 +4,14 @@ import { NavLink, Outlet, useParams } from 'react-router-dom'
 import { useEventRealtime } from '../features/events/useEventRealtime'
 import { useUnsyncedWarning } from '../features/offline/useDrafts'
 import { useDraftSync } from '../features/offline/useDraftSync'
+import { HomeIcon, ListIcon, PeopleIcon } from './icons'
 import type { ShellContext } from './shellContext'
 
+// `short` is what the segmented control shows; `label` is the full name. The visible text is part of
+// the accessible name ("中文" in "简体中文"), so voice control still works.
 const LANGUAGES = [
-  { code: 'en', label: 'English' },
-  { code: 'zh-CN', label: '简体中文' },
+  { code: 'en', label: 'English', short: 'English' },
+  { code: 'zh-CN', label: '简体中文', short: '中文' },
 ] as const
 
 export function AppShell() {
@@ -27,19 +30,20 @@ export function AppShell() {
   }, [i18n.language])
 
   return (
-    <div className="app-shell">
+    <div className={eventId ? 'app-shell app-shell--event' : 'app-shell'}>
       <header className="app-header">
         <strong className="app-header__title">{eventId && eventName ? eventName : t('app.name')}</strong>
         <div className="language-switch" role="group" aria-label={t('language.label')}>
-          {LANGUAGES.map(({ code, label }) => (
+          {LANGUAGES.map(({ code, label, short }) => (
             <button
               key={code}
               type="button"
               lang={code}
+              aria-label={label === short ? undefined : label}
               aria-pressed={i18n.language === code}
               onClick={() => void i18n.changeLanguage(code)}
             >
-              {label}
+              {short}
             </button>
           ))}
         </div>
@@ -52,9 +56,9 @@ export function AppShell() {
       </div>
       {eventId && (
         <nav className="bottom-nav" aria-label={t('nav.label')}>
-          <NavLink to={`/event/${eventId}`} end>{t('nav.home')}</NavLink>
-          <NavLink to={`/event/${eventId}/expenses`}>{t('nav.expenses')}</NavLink>
-          <NavLink to={`/event/${eventId}/people`}>{t('nav.people')}</NavLink>
+          <NavLink to={`/event/${eventId}`} end><HomeIcon />{t('nav.home')}</NavLink>
+          <NavLink to={`/event/${eventId}/expenses`}><ListIcon />{t('nav.expenses')}</NavLink>
+          <NavLink to={`/event/${eventId}/people`}><PeopleIcon />{t('nav.people')}</NavLink>
         </nav>
       )}
     </div>

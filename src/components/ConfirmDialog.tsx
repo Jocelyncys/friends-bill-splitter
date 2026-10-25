@@ -50,7 +50,7 @@ export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCanc
         <h2 id={titleId}>{title}</h2>
         {children}
         <div className="dialog__actions">
-          <button type="button" onClick={onCancel} disabled={busy}>{t('common.back')}</button>
+          <button type="button" className="quiet" onClick={onCancel} disabled={busy}>{t('common.back')}</button>
           <button type="button" className="primary" onClick={onConfirm} disabled={busy}>{confirmLabel}</button>
         </div>
       </div>

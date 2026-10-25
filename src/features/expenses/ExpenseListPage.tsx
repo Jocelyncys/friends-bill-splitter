@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useOutletContext, useParams } from 'react-router-dom'
+import { PenIcon, PlusIcon } from '../../components/icons'
 import type { ShellContext } from '../../components/shellContext'
 import { formatMoney } from '../../domain/money'
 import { displayNames } from '../events/memberNames'
@@ -44,11 +45,12 @@ export function ExpenseListPage() {
     <main>
       <h1>{t('expenses.title')}</h1>
       {settled && <p className="muted">{t('event.settledNote')}</p>}
-      {!settled && <Link className="button primary" to={`/event/${eventId}/expenses/new`}>{t('expenses.add')}</Link>}
+      {!settled && <Link className="button primary btn-block list-cta" to={`/event/${eventId}/expenses/new`}><PlusIcon />{t('expenses.add')}</Link>}
       <DraftList eventId={eventId} currency={home.event.currency} />
       {!current && <p role="status">{t('common.loading')}</p>}
       {current && 'failed' in current && <p role="alert">{t('event.loadFailed')}</p>}
-      {current && 'expenses' in current && expenses.length === 0 && <p>{t('expenses.empty')}</p>}
+      {current && 'expenses' in current && expenses.length === 0 && <p className="muted">{t('expenses.empty')}</p>}
+      <div className="row-list">
       {expenses.map(expense => (
         <article key={expense.id} className="expense-row">
           <div>
@@ -56,18 +58,23 @@ export function ExpenseListPage() {
             <small>{t('expenses.paidBy', { name: names.get(expense.payerUserId) ?? '?' })}</small>
           </div>
           <strong>{formatMoney(expense.totalCents, home.event.currency, i18n.language)}</strong>
-          {(expense.splitMethod === 'item_claim' || expense.splitMethod === 'host_assignment') && (
-            <Link to={`/event/${eventId}/expenses/${expense.id}/claim`}>
-              {expense.splitMethod === 'item_claim' ? t('expenses.claimItems') : t('expenses.viewItems')}
-            </Link>
-          )}
-          {canEdit(expense) && (
-            <Link to={`/event/${eventId}/expenses/${expense.id}/edit`} aria-label={t('expenses.editNamed', { description: expense.description })}>
-              {t('expenses.edit')}
-            </Link>
+          {(expense.splitMethod === 'item_claim' || expense.splitMethod === 'host_assignment' || canEdit(expense)) && (
+            <div className="row-actions">
+              {(expense.splitMethod === 'item_claim' || expense.splitMethod === 'host_assignment') && (
+                <Link className="button pill" to={`/event/${eventId}/expenses/${expense.id}/claim`}>
+                  {expense.splitMethod === 'item_claim' ? t('expenses.claimItems') : t('expenses.viewItems')}
+                </Link>
+              )}
+              {canEdit(expense) && (
+                <Link className="button pill" to={`/event/${eventId}/expenses/${expense.id}/edit`} aria-label={t('expenses.editNamed', { description: expense.description })}>
+                  <PenIcon />{t('expenses.edit')}
+                </Link>
+              )}
+            </div>
           )}
         </article>
       ))}
+      </div>
     </main>
   )
 }

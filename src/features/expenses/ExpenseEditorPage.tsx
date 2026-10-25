@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } 
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { CameraIcon, CheckIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import type { ShellContext } from '../../components/shellContext'
 import { useOnline } from '../../lib/useOnline'
 import { deleteDraft, getDraft, saveDraft } from '../offline/draftDb'
@@ -257,56 +258,58 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       <h1>{t(editing ? 'editor.editTitle' : 'editor.title')}</h1>
       {!online && <p role="status" className="muted">{t('editor.offlineHint')}</p>}
       <form className="form" onSubmit={e => void submit(e)} noValidate>
-        <label>
-          {t('editor.description')}
-          <input value={draft.description} onChange={e => set('description', e.target.value)} autoComplete="off" />
-        </label>
-        {fieldError('description')}
+        <div className="group">
+          <label className="field">
+            <span className="field__label">{t('editor.description')}</span>
+            <input value={draft.description} onChange={e => set('description', e.target.value)} autoComplete="off" />
+          </label>
+          {fieldError('description')}
 
-        {!itemized && (
-          <>
-            <label>
-              {t('editor.amount')}
-              <input inputMode="decimal" value={draft.amount} onChange={e => set('amount', e.target.value)} autoComplete="off" />
-            </label>
-            {fieldError('amount')}
-          </>
-        )}
+          {!itemized && (
+            <>
+              <label className="field">
+                <span className="field__label">{t('editor.amount')}</span>
+                <input inputMode="decimal" value={draft.amount} onChange={e => set('amount', e.target.value)} autoComplete="off" />
+              </label>
+              {fieldError('amount')}
+            </>
+          )}
 
-        {canPickPayer ? (
-          <div className="field-stack">
-            <label htmlFor={`${formId}-payer`}>{t('editor.payer')}</label>
-            <select id={`${formId}-payer`} value={draft.payerUserId} onChange={e => set('payerUserId', e.target.value)}>
-              {home.members.map(m => (
-                <option key={m.userId} value={m.userId}>{nameOf(m.userId, m.displayName)}</option>
+          {canPickPayer ? (
+            <div className="field">
+              <label className="field__label" htmlFor={`${formId}-payer`}>{t('editor.payer')}</label>
+              <select id={`${formId}-payer`} value={draft.payerUserId} onChange={e => set('payerUserId', e.target.value)}>
+                {home.members.map(m => (
+                  <option key={m.userId} value={m.userId}>{nameOf(m.userId, m.displayName)}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <p className="field field--static"><span className="field__label">{t('editor.payer')}</span> <strong>{nameOf(draft.payerUserId, home.me.displayName)}</strong></p>
+          )}
+          {fieldError('payer')}
+
+          <label className="field">
+            <span className="field__label">{t('editor.date')}</span>
+            <input type="date" value={draft.expenseDate} onChange={e => set('expenseDate', e.target.value)} />
+          </label>
+          {fieldError('date')}
+
+          <div className="field">
+            <label className="field__label" htmlFor={`${formId}-split`}>{t('editor.splitMethod')}</label>
+            <select id={`${formId}-split`} value={draft.splitMethod} onChange={e => changeMethod(e.target.value as DraftSplitMethod)}>
+              {METHODS.map(m => (
+                <option key={m} value={m}>{t(`editor.method.${m}`)}</option>
               ))}
             </select>
           </div>
-        ) : (
-          <p>{t('editor.payer')}: <strong>{nameOf(draft.payerUserId, home.me.displayName)}</strong></p>
-        )}
-        {fieldError('payer')}
-
-        <label>
-          {t('editor.date')}
-          <input type="date" value={draft.expenseDate} onChange={e => set('expenseDate', e.target.value)} />
-        </label>
-        {fieldError('date')}
-
-        <div className="field-stack">
-          <label htmlFor={`${formId}-split`}>{t('editor.splitMethod')}</label>
-          <select id={`${formId}-split`} value={draft.splitMethod} onChange={e => changeMethod(e.target.value as DraftSplitMethod)}>
-            {METHODS.map(m => (
-              <option key={m} value={m}>{t(`editor.method.${m}`)}</option>
-            ))}
-          </select>
         </div>
 
         {draft.splitMethod === 'equal' && (
-          <fieldset>
-            <legend>{t('editor.participants')}</legend>
+          <fieldset className="group">
+            <legend className="group__legend">{t('editor.participants')}</legend>
             {home.members.map(m => (
-              <label key={m.userId} className="check">
+              <label key={m.userId} className="field field--check">
                 <input
                   type="checkbox"
                   checked={draft.participantIds.includes(m.userId)}
@@ -322,11 +325,11 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
         )}
 
         {draft.splitMethod === 'custom' && (
-          <fieldset>
-            <legend>{t('editor.participants')}</legend>
+          <fieldset className="group">
+            <legend className="group__legend">{t('editor.participants')}</legend>
             {home.members.map(m => (
-              <label key={m.userId}>
-                {t('editor.shareFor', { name: nameOf(m.userId, m.displayName) })}
+              <label key={m.userId} className="field">
+                <span className="field__label">{t('editor.shareFor', { name: nameOf(m.userId, m.displayName) })}</span>
                 <input
                   inputMode="decimal"
                   value={draft.shares[m.userId] ?? ''}
@@ -335,33 +338,42 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
                 />
               </label>
             ))}
-            <p aria-live="polite">{t('editor.remaining', { amount: money(difference) })}</p>
+            <p className="group__total" aria-live="polite">{t('editor.remaining', { amount: money(difference) })}</p>
             {fieldError('shares')}
           </fieldset>
         )}
 
         {itemized && (
-          <fieldset>
-            <legend>{t('editor.items')}</legend>
-            <label className="file-pick">
-              {receiptUrl ? t('editor.scan.choose') : t('editor.scan.scan')}
-              <input type="file" accept="image/*" onChange={e => void scanReceipt(e)} />
-            </label>
+          <fieldset className="group">
+            <legend className="group__legend">{t('editor.items')}</legend>
+            <div className="group__actions">
+              <label className="file-pick">
+                <CameraIcon />
+                {receiptUrl ? t('editor.scan.choose') : t('editor.scan.scan')}
+                <input type="file" accept="image/*" onChange={e => void scanReceipt(e)} />
+              </label>
+            </div>
             {receiptUrl && <img className="receipt-preview" src={receiptUrl} alt={t('editor.scan.previewAlt')} />}
-            <p aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
+            <p className="group__status" aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
             {draft.items.map((item, index) => (
               <div key={item.id} className="item-row">
-                <label>
-                  {t('editor.itemDescription', { n: index + 1 })}
+                <label className="field">
+                  <span className="field__label">{t('editor.itemDescription', { n: index + 1 })}</span>
                   <input value={item.description} onChange={e => setItem(index, { description: e.target.value })} autoComplete="off" />
                 </label>
-                <label>
-                  {t('editor.itemPrice', { n: index + 1 })}
+                <label className="field">
+                  <span className="field__label">{t('editor.itemPrice', { n: index + 1 })}</span>
                   <input inputMode="decimal" value={item.price} onChange={e => setItem(index, { price: e.target.value })} autoComplete="off" />
                 </label>
+                {draft.items.length > 1 ? (
+                  <button type="button" className="quiet danger icon-button" onClick={() => set('items', draft.items.filter((_, i) => i !== index))}>
+                    <TrashIcon />
+                    <span className="sr-only">{t('editor.removeItem', { n: index + 1 })}</span>
+                  </button>
+                ) : <span aria-hidden="true" />}
                 {draft.splitMethod === 'host_assignment' && (
-                  <label>
-                    {t('editor.itemAssignee', { n: index + 1 })}
+                  <label className="field field--wide">
+                    <span className="field__label">{t('editor.itemAssignee', { n: index + 1 })}</span>
                     <select value={item.assigneeId} onChange={e => setItem(index, { assigneeId: e.target.value })}>
                       <option value="">{t('editor.chooseMember')}</option>
                       {home.members.map(m => (
@@ -376,20 +388,19 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
                 {draft.splitMethod === 'items' && item.assigneeId && (
                   <p className="note">{t('claim.assignedTo', { names: nameOf(item.assigneeId, '?') })}</p>
                 )}
-                {draft.items.length > 1 && (
-                  <button type="button" onClick={() => set('items', draft.items.filter((_, i) => i !== index))}>
-                    {t('editor.removeItem', { n: index + 1 })}
-                  </button>
-                )}
               </div>
             ))}
-            <button type="button" onClick={() => set('items', [...draft.items, blankItem()])}>{t('editor.addItem')}</button>
-            <p>{t('editor.total')}: <strong>{money(itemsTotal)}</strong></p>
+            <div className="group__actions">
+              <button type="button" className="add-row" onClick={() => set('items', [...draft.items, blankItem()])}><PlusIcon />{t('editor.addItem')}</button>
+            </div>
+            <p className="group__total">{t('editor.total')} <strong className="amount">{money(itemsTotal)}</strong></p>
             {fieldError('items')}
             {reviewing && (
-              <button type="button" className="primary" onClick={() => { setOcrState('idle'); setOcrMessage('') }}>
-                {t('editor.scan.confirm')}
-              </button>
+              <div className="group__actions">
+                <button type="button" className="primary" onClick={() => { setOcrState('idle'); setOcrMessage('') }}>
+                  <CheckIcon />{t('editor.scan.confirm')}
+                </button>
+              </div>
             )}
           </fieldset>
         )}
@@ -400,7 +411,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
         )}
         {editing && (
           <button type="button" className="danger" disabled={busy || !online} onClick={() => setConfirmingDelete(true)}>
-            {t('editor.delete')}
+            <TrashIcon />{t('editor.delete')}
           </button>
         )}
       </form>

@@ -45,7 +45,8 @@ export default defineConfig(({ mode }) => ({
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/\/ocr-models\//],
         // App shell only. Supabase is cross-origin and matched by no route, so API responses are never cached.
-        globPatterns: ['**/*.{js,css,html}'],
+        // The two self-hosted fonts (latin subset, ~60 KB together) are precached so the app looks the same offline.
+        globPatterns: ['**/*.{js,css,html,woff2}'],
         globIgnores: ['**/ocr-models/**', '**/assets/ocr-*', '**/assets/worker-entry-*', '**/assets/ort-wasm-*'],
         runtimeCaching: [
           {

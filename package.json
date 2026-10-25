@@ -17,6 +17,8 @@
     "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "5.3.0",
+    "@fontsource-variable/figtree": "5.3.0",
     "@paddleocr/paddleocr-js": "^0.4.2",
     "@supabase/supabase-js": "^2.118.0",
     "decimal.js": "^10.6.0",

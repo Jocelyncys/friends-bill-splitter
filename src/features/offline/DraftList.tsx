@@ -16,6 +16,7 @@ export function DraftList({ eventId, currency }: { eventId: string; currency: st
     <section aria-label={t('drafts.title')}>
       <h2>{t('drafts.title')}</h2>
       <p role="status" className="muted">{t('drafts.note')}</p>
+      <div className="row-list">
       {drafts.map(draft => (
         <article key={draft.id} className="expense-row">
           <div>
@@ -26,10 +27,15 @@ export function DraftList({ eventId, currency }: { eventId: string; currency: st
             )}
           </div>
           <strong>{formatMoney(draft.payload.totalCents, currency, i18n.language)}</strong>
-          {draft.status === 'failed' && <Link to={`/event/${eventId}/expenses/new?draft=${draft.id}`}>{t('drafts.review')}</Link>}
-          {draft.status !== 'syncing' && <button type="button" onClick={() => setDiscarding(draft.id)}>{t('drafts.discard')}</button>}
+          {draft.status !== 'syncing' && (
+            <div className="row-actions">
+              {draft.status === 'failed' && <Link className="button pill" to={`/event/${eventId}/expenses/new?draft=${draft.id}`}>{t('drafts.review')}</Link>}
+              <button type="button" className="pill danger" onClick={() => setDiscarding(draft.id)}>{t('drafts.discard')}</button>
+            </div>
+          )}
         </article>
       ))}
+      </div>
       {discarding && (
         <ConfirmDialog
           title={t('drafts.discardTitle')}
