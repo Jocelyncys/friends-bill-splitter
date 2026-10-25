@@ -24,6 +24,16 @@ describe('owedShares', () => {
     expect(owedShares(1501, { a: 1001, b: 500 })).toEqual({ a: 1001, b: 500 })
   })
 
+  it('falls back to the equal rule when every item subtotal is zero', () => {
+    expect(owedShares(101, { [B]: 0, [A]: 0 })).toEqual({ [A]: 51, [B]: 50 })
+  })
+
+  it('matches the server near the safe-integer bound', () => {
+    expect(owedShares(9_007_199_254_740_991, { [A]: 4_503_599_627_370_494, [B]: 4_503_599_627_370_494, [C]: 1 })).toEqual({
+      [A]: 4_503_599_627_370_495, [B]: 4_503_599_627_370_495, [C]: 1,
+    })
+  })
+
   it('always sums to the paid total', () => {
     const shares = owedShares(9999, { a: 1, b: 2, c: 3, d: 4 })
     expect(Object.values(shares).reduce((s, v) => s + v, 0)).toBe(9999)

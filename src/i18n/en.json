@@ -165,6 +165,7 @@
     "allocation_exceeds_item": "An item is assigned for more than its price.",
     "invalid_adjustment": "One of the adjustments is not valid.",
     "adjustments_not_allowed": "This split method does not use adjustments.",
+    "adjustments_need_items": "Add items with a price before adding adjustments.",
     "adjustment_mismatch": "The items plus adjustments do not add up to the amount paid.",
     "invalid_payload": "The expense could not be read. Please try again.",
     "not_event_member": "You are not a member of this event.",

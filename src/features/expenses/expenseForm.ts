@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { allocateEqual, validateCustomAllocation } from '../../domain/allocation'
-import type { SaveExpensePayload } from './expenseRepository'
+import type { SaveExpenseAdjustment, SaveExpensePayload } from './expenseRepository'
 
 // ---- money text <-> integer cents (string parsing only, never float math) ----
 
@@ -35,6 +35,8 @@ export type ExpenseDraft = {
   participantIds: string[]
   shares: Record<string, string>
   items: DraftItem[]
+  // Bill-level adjustments of an itemized expense, carried through unchanged (no editing UI yet).
+  adjustments?: SaveExpenseAdjustment[]
 }
 
 export type FormErrors = Partial<Record<'description' | 'amount' | 'payer' | 'date' | 'participants' | 'shares' | 'items', string>>
@@ -53,9 +55,17 @@ const common = {
 const rowItem = z.object({ id, description: z.string().trim().min(1), priceCents: cents })
 // Itemized (claim) items may carry an existing whole-item assignment from the saved expense.
 const claimItem = rowItem.extend({ assigneeId: z.string().optional() })
+const adjustment = z.object({
+  id,
+  kind: z.enum(['discount', 'tax', 'service', 'rounding', 'other']),
+  label: z.string(),
+  amountCents: z.number().int(),
+  sortOrder: z.number().int(),
+})
+const adjustments = z.array(adjustment).default([])
 
 export const expenseFormSchema = z.discriminatedUnion('splitMethod', [
-  z.object({ ...common, splitMethod: z.literal('items'), items: z.array(claimItem).min(1) }),
+  z.object({ ...common, splitMethod: z.literal('items'), items: z.array(claimItem).min(1), adjustments }),
   z.object({ ...common, splitMethod: z.literal('equal'), totalCents: cents, participantIds: z.array(id).min(1) }),
   z
     .object({
@@ -71,6 +81,7 @@ export const expenseFormSchema = z.discriminatedUnion('splitMethod', [
     ...common,
     splitMethod: z.literal('host_assignment'),
     items: z.array(rowItem.extend({ assigneeId: id })).min(1),
+    adjustments,
   }),
 ])
 
@@ -167,7 +178,10 @@ export function buildPayload(ctx: { id: string; eventId: string; category?: stri
         totalCents: item.priceCents,
         sortOrder,
       }))
-      const totalCents = items.reduce((sum, item) => sum + item.totalCents, 0)
+      // Paid total = items + bill-level adjustments (save_expense checks the same rule).
+      const adjustments = values.adjustments
+      const totalCents =
+        items.reduce((sum, item) => sum + item.totalCents, 0) + adjustments.reduce((sum, a) => sum + a.amountCents, 0)
       if (values.splitMethod === 'items') {
         // Items with self-claims never carry an assignee here (the server keeps their claims).
         const assigned = values.items.filter(item => item.assigneeId)
@@ -177,6 +191,7 @@ export function buildPayload(ctx: { id: string; eventId: string; category?: stri
           splitMethod: 'item_claim',
           items,
           allocations: assigned.map(item => ({ itemId: item.id, participantUserId: item.assigneeId as string, amountCents: item.priceCents })),
+          adjustments,
         }
       }
       return {
@@ -185,6 +200,7 @@ export function buildPayload(ctx: { id: string; eventId: string; category?: stri
         splitMethod: 'host_assignment',
         items,
         allocations: values.items.map(item => ({ itemId: item.id, participantUserId: item.assigneeId, amountCents: item.priceCents })),
+        adjustments,
       }
     }
   }
@@ -207,6 +223,7 @@ export function draftFromPayload(payload: SaveExpensePayload): ExpenseDraft {
         price: centsToText(item.totalCents),
         assigneeId: payload.allocations.find(a => a.itemId === item.id)?.participantUserId ?? '',
       })),
+      adjustments: payload.adjustments ?? [],
     }
   }
   return {

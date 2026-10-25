@@ -165,6 +165,7 @@
     "allocation_exceeds_item": "某个项目的分配金额超过了它的价格。",
     "invalid_adjustment": "某项调整无效。",
     "adjustments_not_allowed": "此分摊方式不使用调整项。",
+    "adjustments_need_items": "请先添加有价格的项目，再添加调整项。",
     "adjustment_mismatch": "项目加上调整项与实付金额不符。",
     "invalid_payload": "无法读取此开销，请重试。",
     "not_event_member": "你不是此活动的成员。",

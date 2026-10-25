@@ -60,7 +60,7 @@ describe('expenseRepository', () => {
     ])
   })
 
-  it.each(['invalid_adjustment', 'adjustments_not_allowed', 'adjustment_mismatch'])('maps %s to a form error on adjustments', async code => {
+  it.each(['invalid_adjustment', 'adjustments_not_allowed', 'adjustments_need_items', 'adjustment_mismatch'])('maps %s to a form error on adjustments', async code => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: '22023', message: code } })
     await expect(createExpenseRepository({ rpc } as never).saveExpense(payload)).rejects.toMatchObject({
       formError: { field: 'adjustments', code },

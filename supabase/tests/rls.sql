@@ -1,5 +1,5 @@
 begin;
-select plan(357);
+select plan(367);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -1378,6 +1378,17 @@ select is((select metadata from public.activity_log where event_id = 'b2ae0000-0
 select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b2000000-0000-0000-0000-000000000011') order by participant_user_id::text collate "C"$$,
   $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 972::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 1528::bigint)$$,
   'owed shares split the paid total proportionally: Ali 1111 -> 972, Ben 1746 -> 1528');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.receipt('2500', pg_temp.receipt_adj()))$$,
+  're-saving the receipt with the same adjustment ids is accepted');
+reset role;
+select results_eq($$select id::text, kind, label, amount_cents, sort_order from public.expense_adjustments
+    where expense_id = 'b2000000-0000-0000-0000-000000000011' order by sort_order$$,
+  $$values ('b2200000-0000-0000-0000-000000000011', 'discount', 'Voucher', -500::bigint, 0),
+           ('b2200000-0000-0000-0000-000000000012', 'tax', 'SST 6%', 141::bigint, 1),
+           ('b2200000-0000-0000-0000-000000000013', 'rounding', 'Rounding', 2::bigint, 2)$$,
+  'a re-save with the same adjustment ids is idempotent');
 
 -- Another member's expense cannot reuse the adjustment ids.
 set local role authenticated;
@@ -1506,6 +1517,106 @@ select results_eq($$select participant_user_id::text, owed_cents from public.get
 select throws_ok($$select public.confirm_settlement('b2ae0000-0000-0000-0000-000000000003', 'optimized_direct', null,
     (select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000003'))$$,
   '22023', 'unresolved_expenses', 'allocations equal to the paid total do not resolve an expense with unallocated items');
+reset role;
+
+
+-- Fix round 1: exact integer division, zero-subtotal guard, zero-weight fallback --------
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('b2ae0000-0000-0000-0000-000000000004', 'Bounds', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b2a4');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('b2ae0000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner'),
+  ('b2ae0000-0000-0000-0000-000000000004', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'B', 'participant'),
+  ('b2ae0000-0000-0000-0000-000000000004', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant');
+-- Near the JS safe-integer bound: weights 4503599627370494 / 4503599627370494 / 1 (9007199254740989),
+-- rounding +2, paid 9007199254740991. allocateProportionally -> 4503599627370495 / 4503599627370495 / 1.
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+values ('b2000000-0000-0000-0000-000000000041', 'b2ae0000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Big', current_date, 9007199254740991, 'host_assignment');
+insert into public.expense_items (id, expense_id, description, total_cents) values
+  ('b2100000-0000-0000-0000-000000000051', 'b2000000-0000-0000-0000-000000000041', 'x', 4503599627370494),
+  ('b2100000-0000-0000-0000-000000000052', 'b2000000-0000-0000-0000-000000000041', 'y', 4503599627370494),
+  ('b2100000-0000-0000-0000-000000000053', 'b2000000-0000-0000-0000-000000000041', 'z', 1);
+insert into public.allocations (expense_id, item_id, participant_user_id, amount_cents, source) values
+  ('b2000000-0000-0000-0000-000000000041', 'b2100000-0000-0000-0000-000000000051', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 4503599627370494, 'owner'),
+  ('b2000000-0000-0000-0000-000000000041', 'b2100000-0000-0000-0000-000000000052', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 4503599627370494, 'owner'),
+  ('b2000000-0000-0000-0000-000000000041', 'b2100000-0000-0000-0000-000000000053', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 1, 'owner');
+insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
+values ('b2200000-0000-0000-0000-000000000041', 'b2000000-0000-0000-0000-000000000041', 'rounding', 'Rounding', 2);
+select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b2000000-0000-0000-0000-000000000041')$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 4503599627370495::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 4503599627370495::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc', 1::bigint)$$,
+  'proportional owed shares near 9e15 match allocateProportionally exactly');
+select is((select sum(owed_cents) from public.expense_owed_shares('b2000000-0000-0000-0000-000000000041')), 9007199254740991::numeric,
+  'owed shares near the bound sum to the paid total');
+
+-- Equal split near the bound: 9007199254740991 over three -> allocateEqual 3002399751580331 / ...330 / ...330.
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+values ('b2000000-0000-0000-0000-000000000042', 'b2ae0000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Big2', current_date, 9007199254740991, 'host_assignment');
+insert into public.expense_items (id, expense_id, description, total_cents)
+values ('b2100000-0000-0000-0000-000000000054', 'b2000000-0000-0000-0000-000000000042', 'w', 9007199254740991);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000054',
+    array['cccccccc-cccc-cccc-cccc-cccccccccccc', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa']::uuid[])$$,
+  'the owner assigns a near-bound item to three members');
+select lives_ok($$select public.save_expense(pg_temp.exp('b2000000-0000-0000-0000-000000000043', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '9007199254740991', 'host_assignment',
+    jsonb_build_array(jsonb_build_object('id', 'b2100000-0000-0000-0000-000000000055', 'description', 'v', 'quantity', 1, 'total_cents', 9007199254740991, 'sort_order', 0)),
+    jsonb_build_array(
+      jsonb_build_object('item_id', 'b2100000-0000-0000-0000-000000000055', 'participant_user_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'amount_cents', 3002399751580331),
+      jsonb_build_object('item_id', 'b2100000-0000-0000-0000-000000000055', 'participant_user_id', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'amount_cents', 3002399751580330),
+      jsonb_build_object('item_id', 'b2100000-0000-0000-0000-000000000055', 'participant_user_id', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'amount_cents', 3002399751580330)),
+    'b2ae0000-0000-0000-0000-000000000004'))$$,
+  'save_expense accepts the allocateEqual split of a near-bound item');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents from public.allocations
+    where item_id = 'b2100000-0000-0000-0000-000000000054' order by participant_user_id::text collate "C"$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 3002399751580331::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 3002399751580330::bigint),
+           ('cccccccc-cccc-cccc-cccc-cccccccccccc', 3002399751580330::bigint)$$,
+  'assign_item near 9e15 matches allocateEqual exactly');
+
+-- All-zero item weights fall back to the equal rule: items cost 0, service +101, two sharers -> 51 / 50.
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+values ('b2000000-0000-0000-0000-000000000044', 'b2ae0000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Free', current_date, 101, 'item_claim');
+insert into public.expense_items (id, expense_id, description, total_cents)
+values ('b2100000-0000-0000-0000-000000000056', 'b2000000-0000-0000-0000-000000000044', 'free', 0);
+insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
+values ('b2200000-0000-0000-0000-000000000044', 'b2000000-0000-0000-0000-000000000044', 'service', 'Service', 101);
+insert into public.allocations (expense_id, item_id, participant_user_id, amount_cents, source) values
+  ('b2000000-0000-0000-0000-000000000044', 'b2100000-0000-0000-0000-000000000056', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 0, 'owner'),
+  ('b2000000-0000-0000-0000-000000000044', 'b2100000-0000-0000-0000-000000000056', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 0, 'owner');
+select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b2000000-0000-0000-0000-000000000044')$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 51::bigint), ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 50::bigint)$$,
+  'all-zero item weights fall back to allocateEqual');
+
+-- Zero-subtotal guard: adjustments need a positive items subtotal.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.with_adj(pg_temp.exp('b2000000-0000-0000-0000-000000000045', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '100', 'item_claim',
+    jsonb_build_array(pg_temp.it('b2100000-0000-0000-0000-000000000057', 0, 0)), '[]', 'b2ae0000-0000-0000-0000-000000000004'),
+    jsonb_build_array(pg_temp.adj('b2200000-0000-0000-0000-000000000045', 'service', 'Service', 100, 0))))$$,
+  '22023', 'adjustments_need_items', 'adjustments on items that cost nothing are rejected');
+reset role;
+
+-- Defence in depth: an item expense with a positive total and no allocation rows is unresolved,
+-- even when its items subtotal is 0 (rows written outside save_expense).
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('b2ae0000-0000-0000-0000-000000000005', 'ZeroItems', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b2a5');
+insert into public.event_members (event_id, user_id, display_name, role)
+values ('b2ae0000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner');
+insert into public.expenses (id, event_id, creator_user_id, payer_user_id, description, expense_date, total_cents, split_method)
+values ('b2000000-0000-0000-0000-000000000051', 'b2ae0000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Zero', current_date, 100, 'item_claim');
+insert into public.expense_items (id, expense_id, description, total_cents)
+values ('b2100000-0000-0000-0000-000000000061', 'b2000000-0000-0000-0000-000000000051', 'free', 0);
+insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
+values ('b2200000-0000-0000-0000-000000000051', 'b2000000-0000-0000-0000-000000000051', 'service', 'Service', 100);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.confirm_settlement('b2ae0000-0000-0000-0000-000000000005', 'optimized_direct', null,
+    (select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000005'))$$,
+  '22023', 'unresolved_expenses', 'an expense with a positive total and no allocations is unresolved');
 reset role;
 
 select * from finish();

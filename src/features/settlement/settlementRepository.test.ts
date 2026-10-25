@@ -131,6 +131,20 @@ describe('settlementRepository.getSettlementInputs', () => {
     ]))
   })
 
+  it('treats a positive total with no allocations as unresolved even when the items subtotal is 0', async () => {
+    const from = fromTables({
+      events: { data: { revision: 1 }, error: null },
+      event_members: { data: [], error: null },
+      expenses: {
+        data: [{ id: 'e1', description: 'Free', payer_user_id: 'a', total_cents: 100,
+          allocations: [], expense_adjustments: [{ amount_cents: 100 }] }],
+        error: null,
+      },
+    })
+    const { unresolved } = await createSettlementRepository({ from, rpc: owedRpc([]) } as never).getSettlementInputs('event-1')
+    expect(unresolved).toEqual([{ expenseId: 'e1', description: 'Free', unallocatedCents: 100 }])
+  })
+
   it('maps a failed read to action_failed', async () => {
     const from = fromTables({
       events: { data: null, error: { code: '500', message: 'boom' } },

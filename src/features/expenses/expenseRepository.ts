@@ -96,6 +96,7 @@ const FIELD_BY_CODE: Record<string, keyof SaveExpensePayload | undefined> = {
   allocation_exceeds_item: 'allocations',
   invalid_adjustment: 'adjustments',
   adjustments_not_allowed: 'adjustments',
+  adjustments_need_items: 'adjustments',
   adjustment_mismatch: 'adjustments',
   // form-level: invalid_payload, not_event_member, event_not_open, event_mismatch, not_allowed
 }

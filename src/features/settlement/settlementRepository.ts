@@ -160,8 +160,10 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
         // Allocations cover the items subtotal (paid total minus adjustments); same rule as confirm_settlement.
         const allocated = x.allocations.reduce((sum, a) => sum + a.amount_cents, 0)
         const subtotal = x.total_cents - x.expense_adjustments.reduce((sum, a) => sum + a.amount_cents, 0)
-        if (allocated !== subtotal) {
-          unresolved.push({ expenseId: x.id, description: x.description, unallocatedCents: subtotal - allocated })
+        // A positive total that nobody shares in is never resolved (confirm_settlement agrees).
+        if (allocated !== subtotal || (x.total_cents > 0 && x.allocations.length === 0)) {
+          const unallocatedCents = allocated !== subtotal ? subtotal - allocated : x.total_cents
+          unresolved.push({ expenseId: x.id, description: x.description, unallocatedCents })
         }
       }
       for (const o of (owed.data ?? []) as OwedShareRow[]) {

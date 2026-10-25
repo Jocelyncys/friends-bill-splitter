@@ -14,7 +14,7 @@
 --   transfers, client preview via get_event_owed_shares) uses those owed shares.
 --
 -- New save_expense keys (SQLSTATE 22023): invalid_adjustment, adjustments_not_allowed,
--- adjustment_mismatch. get_event_owed_shares: not_allowed; 28000 not_authenticated.
+-- adjustments_need_items, adjustment_mismatch. get_event_owed_shares: not_allowed; 28000 not_authenticated.
 
 -- expense_adjustments ---------------------------------------------------------------
 create table public.expense_adjustments (
@@ -73,7 +73,8 @@ as $$
     from x
   ), p as (
     select w.uid,
-      case when m.wsum = 0 then floor(m.total / m.n) else floor(m.total * w.weight / m.wsum) end as base,
+      -- div() is exact integer division; numeric "/" rounds and can land on the next integer.
+      case when m.wsum = 0 then div(m.total, m.n) else div(m.total * w.weight, m.wsum) end as base,
       case when m.wsum = 0 then 0 else mod(m.total * w.weight, m.wsum) end as rem
     from w cross join m
     where m.proportional
@@ -266,11 +267,13 @@ begin
   end if;
   -- Spec 18: settlement cannot begin while any expense has unallocated (or over-allocated)
   -- cents. Allocations cover the items subtotal, i.e. the paid total minus adjustments.
+  -- A positive total with no allocation rows at all is never resolved (nobody would owe it).
   if exists(
     select 1 from public.expenses x
     where x.event_id = v_event
-      and x.total_cents - coalesce((select sum(j.amount_cents) from public.expense_adjustments j where j.expense_id = x.id), 0)
-        <> coalesce((select sum(a.amount_cents) from public.allocations a where a.expense_id = x.id), 0)) then
+      and (x.total_cents - coalesce((select sum(j.amount_cents) from public.expense_adjustments j where j.expense_id = x.id), 0)
+          <> coalesce((select sum(a.amount_cents) from public.allocations a where a.expense_id = x.id), 0)
+        or (x.total_cents > 0 and not exists(select 1 from public.allocations a where a.expense_id = x.id)))) then
     raise exception 'unresolved_expenses' using errcode = '22023';
   end if;
 
@@ -589,6 +592,10 @@ begin
     if v_adj_count = 0 and v_sum <> v_total then
       raise exception 'item_total_mismatch' using errcode = '22023';
     end if;
+    -- Adjustments are spread over item subtotals, so they need items that cost something.
+    if v_adj_count > 0 and v_sum = 0 then
+      raise exception 'adjustments_need_items' using errcode = '22023';
+    end if;
     if v_adj_count > 0 and v_sum + v_adj_sum <> v_total then
       raise exception 'adjustment_mismatch' using errcode = '22023';
     end if;
@@ -664,7 +671,7 @@ begin
         from jsonb_to_recordset(v_allocs) as a(item_id uuid, participant_user_id uuid, amount_cents numeric)
         join jsonb_to_recordset(v_items) as t(id uuid, total_cents numeric) on t.id = a.item_id
       ) s
-      where s.amount_cents <> trunc(s.total_cents / s.n) + case when s.rn <= mod(s.total_cents, s.n) then 1 else 0 end) then
+      where s.amount_cents <> div(s.total_cents, s.n) + case when s.rn <= mod(s.total_cents, s.n) then 1 else 0 end) then
       raise exception 'invalid_allocation' using errcode = '22023';
     end if;
   end if;

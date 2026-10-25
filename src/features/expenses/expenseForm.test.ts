@@ -137,6 +137,43 @@ describe('draftFromPayload', () => {
     roundTrip({ ...head, splitMethod: 'items', items })
     roundTrip({ ...head, splitMethod: 'host_assignment', items })
   })
+
+  it('carries saved adjustments through an edit so a re-save keeps them and the paid total', () => {
+    const adjustments = [
+      { id: 'a1', kind: 'discount' as const, label: 'Voucher', amountCents: -500, sortOrder: 0 },
+      { id: 'a2', kind: 'tax' as const, label: 'SST', amountCents: 141, sortOrder: 1 },
+      { id: 'a3', kind: 'rounding' as const, label: 'Rounding', amountCents: 2, sortOrder: 2 },
+    ]
+    for (const splitMethod of ['item_claim', 'host_assignment'] as const) {
+      const saved = {
+        id: 'e1', eventId: 'ev', payerUserId: 'u-a', description: 'Dinner', expenseDate: '2026-10-25',
+        totalCents: 2500, splitMethod,
+        items: [
+          { id: 'i1', description: 'Noodles', quantity: 1, totalCents: 1111, sortOrder: 0 },
+          { id: 'i2', description: 'Tea', quantity: 1, totalCents: 1746, sortOrder: 1 },
+        ],
+        allocations: [
+          { itemId: 'i1', participantUserId: 'u-a', amountCents: 1111 },
+          { itemId: 'i2', participantUserId: 'u-b', amountCents: 1746 },
+        ],
+        adjustments,
+      }
+      const draft = draftFromPayload(saved)
+      expect(draft.adjustments).toEqual(adjustments)
+      const again = validateDraft(draft)
+      if (!again.ok) throw new Error('refilled form invalid')
+      expect(buildPayload({ id: 'e1', eventId: 'ev' }, again.values)).toEqual(saved)
+    }
+  })
+
+  it('treats a saved itemized payload without adjustments as having none', () => {
+    const draft = draftFromPayload({
+      id: 'e1', eventId: 'ev', payerUserId: 'u-a', description: 'Dinner', expenseDate: '2026-10-25', totalCents: 810,
+      splitMethod: 'host_assignment', items: [{ id: 'i1', description: 'Noodles', quantity: 1, totalCents: 810, sortOrder: 0 }],
+      allocations: [{ itemId: 'i1', participantUserId: 'u-b', amountCents: 810 }],
+    })
+    expect(draft.adjustments).toEqual([])
+  })
 })
 
 describe('final-review fixes', () => {
