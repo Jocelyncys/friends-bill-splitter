@@ -32,9 +32,9 @@ describe('paymentDetailsSchema', () => {
     expect(paymentDetailsSchema.safeParse({ qrFile: gif }).success).toBe(false)
   })
 
-  it('prefers the only available method unless both are given', () => {
+  it('derives the method: the QR when there is one, else bank', () => {
     expect(paymentDetailsSchema.parse({ qrFile: png() }).preferredMethod).toBe('qr')
     expect(paymentDetailsSchema.parse(bank).preferredMethod).toBe('bank')
-    expect(paymentDetailsSchema.parse({ ...bank, qrFile: png(), preferredMethod: 'bank' }).preferredMethod).toBe('bank')
+    expect(paymentDetailsSchema.parse({ ...bank, qrFile: png() }).preferredMethod).toBe('qr')
   })
 })

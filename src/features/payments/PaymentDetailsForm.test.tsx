@@ -14,7 +14,15 @@ vi.mock('./paymentPrefs', () => ({ paymentPrefs: { load: mocks.load, save: mocks
 
 import { PaymentDetailsForm } from './PaymentDetailsForm'
 
+async function openBank() {
+  const toggle = screen.getByRole('button', { name: 'Or add bank details' })
+  if (toggle.getAttribute('aria-expanded') !== 'true') await userEvent.click(toggle)
+}
+
+const png = () => new File([new Uint8Array([1, 2, 3])], 'qr.png', { type: 'image/png' })
+
 async function fillBank() {
+  await openBank()
   await userEvent.type(screen.getByLabelText('Bank name'), 'Maybank')
   await userEvent.type(screen.getByLabelText('Account holder name'), 'Ben Tan')
   await userEvent.type(screen.getByLabelText('Account number'), '1234567890')
@@ -34,6 +42,50 @@ describe('PaymentDetailsForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save details' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Add a QR image, or the bank name')
     expect(mocks.saveMyPaymentDetails).not.toHaveBeenCalled()
+    // The bank fields open so both ways to fix it are in view.
+    expect(screen.getByRole('button', { name: 'Or add bank details' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Bank name')).toBeInTheDocument()
+  })
+
+  it('leads with the DuitNow QR and keeps the bank fields collapsed', () => {
+    render(<PaymentDetailsForm eventId="e1" userId="ben" />)
+    expect(screen.getByLabelText('Upload your DuitNow QR')).toHaveAttribute('type', 'file')
+    expect(screen.getByRole('button', { name: 'Or add bank details' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Bank name')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+  })
+
+  it('saves with only a QR image, as the QR method', async () => {
+    render(<PaymentDetailsForm eventId="e1" userId="ben" />)
+    const file = png()
+    await userEvent.upload(screen.getByLabelText('Upload your DuitNow QR'), file)
+    await userEvent.click(screen.getByRole('button', { name: 'Save details' }))
+    expect(mocks.saveMyPaymentDetails).toHaveBeenCalledWith(
+      'e1',
+      { preferredMethod: 'qr', bankName: null, accountHolderName: null, accountNumber: null, paymentReference: null },
+      file,
+    )
+  })
+
+  it('prefers the QR when both a QR and bank details are given, without asking', async () => {
+    render(<PaymentDetailsForm eventId="e1" userId="ben" />)
+    await userEvent.upload(screen.getByLabelText('Upload your DuitNow QR'), png())
+    await fillBank()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Save details' }))
+    expect(mocks.saveMyPaymentDetails.mock.calls[0][1]).toMatchObject({ preferredMethod: 'qr', bankName: 'Maybank' })
+  })
+
+  it('opens the bank fields to show a bank field error', async () => {
+    render(<PaymentDetailsForm eventId="e1" userId="ben" />)
+    await openBank()
+    await userEvent.type(screen.getByLabelText('Bank name'), 'Maybank')
+    await userEvent.type(screen.getByLabelText('Account holder name'), 'Ben Tan')
+    await userEvent.type(screen.getByLabelText('Account number'), '12')
+    await userEvent.click(screen.getByRole('button', { name: 'Or add bank details' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save details' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('4 to 34 characters')
+    expect(screen.getByLabelText('Account number')).toHaveValue('12')
   })
 
   it('saves bank details to the event and does not remember them by default', async () => {
@@ -61,6 +113,7 @@ describe('PaymentDetailsForm', () => {
     mocks.load.mockResolvedValue({ userId: 'ben', preferredMethod: 'bank', bankName: 'CIMB', accountHolderName: 'Ben', accountNumber: '99998888', paymentReference: null, qr: null })
     render(<PaymentDetailsForm eventId="e1" userId="ben" />)
     expect(await screen.findByDisplayValue('CIMB')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Or add bank details' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('checkbox', { name: 'Remember these payment details on this device' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Forget my payment details' }))
     expect(mocks.forget).toHaveBeenCalledWith('ben')
@@ -75,7 +128,7 @@ describe('PaymentDetailsForm', () => {
   it('rejects an oversized QR image', async () => {
     render(<PaymentDetailsForm eventId="e1" userId="ben" />)
     const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'qr.png', { type: 'image/png' })
-    await userEvent.upload(screen.getByLabelText(/Payment QR image/), big)
+    await userEvent.upload(screen.getByLabelText('Upload your DuitNow QR'), big)
     await userEvent.click(screen.getByRole('button', { name: 'Save details' }))
     expect(screen.getByRole('alert')).toHaveTextContent('5 MB')
     expect(mocks.saveMyPaymentDetails).not.toHaveBeenCalled()

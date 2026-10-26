@@ -92,6 +92,7 @@ test('two friends split a trip, settle with the optimized plan, and complete the
 
   // The receiver adds bank details before Ben pays.
   await owner.getByRole('button', { name: 'Add receiving details' }).click()
+  await owner.getByRole('button', { name: 'Or add bank details' }).click()
   await owner.getByLabel('Bank name').fill('Maybank')
   await owner.getByLabel('Account holder name').fill('Ana Lim')
   await owner.getByLabel('Account number').fill('1234567890')

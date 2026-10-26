@@ -21,7 +21,6 @@ export const paymentDetailsSchema = z
       .optional()
       .refine(v => !v || (v.length >= 4 && v.length <= 34), { message: 'account_number' }),
     paymentReference: z.string().trim().max(100).optional(),
-    preferredMethod: z.enum(['qr', 'bank']).optional(),
   })
   .refine(v => Boolean(v.qrFile) || Boolean(v.bankName && v.accountHolderName && v.accountNumber), {
     message: 'method_required',
@@ -30,7 +29,8 @@ export const paymentDetailsSchema = z
   .transform(v => {
     const hasBank = Boolean(v.bankName && v.accountHolderName && v.accountNumber)
     const hasQr = Boolean(v.qrFile)
-    const preferredMethod: 'qr' | 'bank' = hasQr && hasBank ? (v.preferredMethod ?? 'qr') : hasQr ? 'qr' : 'bank'
+    // No choice in the UI: the QR is preferred whenever there is one.
+    const preferredMethod: 'qr' | 'bank' = hasQr ? 'qr' : 'bank'
     return {
       preferredMethod,
       qrFile: v.qrFile ?? null,

@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { CameraIcon } from '../../components/icons'
+import { CameraIcon, ChevronDownIcon } from '../../components/icons'
 import { SettlementError } from '../settlement/settlementRepository'
 import { paymentDetailsSchema, QR_TYPES, type PaymentDetailsValues } from './paymentDetailsSchema'
 import { paymentPrefs } from './paymentPrefs'
@@ -22,7 +22,9 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
   const [accountHolderName, setAccountHolderName] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
   const [paymentReference, setPaymentReference] = useState('')
-  const [preferredMethod, setPreferredMethod] = useState<'qr' | 'bank'>('qr')
+  // Bank details are the fallback: collapsed unless they already hold something or have an error.
+  const [bankOpen, setBankOpen] = useState(false)
+  const bankId = useId()
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [rememberedQr, setRememberedQr] = useState<Blob | null>(null)
   const [remember, setRemember] = useState(false)
@@ -41,7 +43,7 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
         setAccountHolderName(saved.accountHolderName ?? '')
         setAccountNumber(saved.accountNumber ?? '')
         setPaymentReference(saved.paymentReference ?? '')
-        setPreferredMethod(saved.preferredMethod)
+        if (saved.bankName || saved.accountHolderName || saved.accountNumber || saved.paymentReference) setBankOpen(true)
         setRememberedQr(saved.qr)
         setRemember(true)
         setHasRemembered(true)
@@ -81,10 +83,13 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const file = qrFile ?? (rememberedQr ? new File([rememberedQr], 'qr', { type: rememberedQr.type }) : null)
-    const parsed = paymentDetailsSchema.safeParse({ qrFile: file, bankName, accountHolderName, accountNumber, paymentReference, preferredMethod })
+    const parsed = paymentDetailsSchema.safeParse({ qrFile: file, bankName, accountHolderName, accountNumber, paymentReference })
     if (!parsed.success) {
       setStatus(null)
-      const key = `paymentForm.errors.${parsed.error.issues[0].message}`
+      const code = parsed.error.issues[0].message
+      // A bank error, or nothing given at all: show the bank fields so the fix is in view.
+      if (code === 'account_number' || code === 'method_required') setBankOpen(true)
+      const key = `paymentForm.errors.${code}`
       setError(t(i18n.exists(key) ? key : 'paymentForm.errors.generic'))
       return
     }
@@ -104,8 +109,6 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
     setStatus(t('paymentForm.forgotten'))
   }
 
-  const bothGiven = Boolean(qrFile ?? rememberedQr) && Boolean(bankName && accountHolderName && accountNumber)
-
   return (
     <form onSubmit={submit} className="payment-form" noValidate>
       <h2>{t('paymentForm.title')}</h2>
@@ -121,35 +124,41 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
         </div>
         {qrFile && <p className="group__status">{qrFile.name}</p>}
         {!qrFile && rememberedQr && <p className="group__status">{t('paymentForm.qrKept')}</p>}
-        <label className="field">
-          <span className="field__label">{t('paymentForm.bankName')}</span>
-          <input value={bankName} onChange={event => setBankName(event.target.value)} autoComplete="off" />
-        </label>
-        <label className="field">
-          <span className="field__label">{t('paymentForm.accountHolder')}</span>
-          <input value={accountHolderName} onChange={event => setAccountHolderName(event.target.value)} autoComplete="off" />
-        </label>
-        <label className="field">
-          <span className="field__label">{t('paymentForm.accountNumber')}</span>
-          <input value={accountNumber} onChange={event => setAccountNumber(event.target.value)} inputMode="numeric" autoComplete="off" />
-        </label>
-        <label className="field">
-          <span className="field__label">{t('paymentForm.reference')}</span>
-          <input value={paymentReference} maxLength={100} onChange={event => setPaymentReference(event.target.value)} autoComplete="off" />
-        </label>
+        <p className="group__hint">{t('paymentForm.qrHint')}</p>
       </div>
 
-      {bothGiven && (
-        <fieldset className="group">
-          <legend className="group__legend">{t('paymentForm.preferred')}</legend>
-          <label className="field field--check">
-            <input type="radio" name="preferred" checked={preferredMethod === 'qr'} onChange={() => setPreferredMethod('qr')} /> {t('paymentForm.preferredQr')}
-          </label>
-          <label className="field field--check">
-            <input type="radio" name="preferred" checked={preferredMethod === 'bank'} onChange={() => setPreferredMethod('bank')} /> {t('paymentForm.preferredBank')}
-          </label>
-        </fieldset>
-      )}
+      <div className="group">
+        <button
+          type="button"
+          className="more-options__toggle"
+          aria-expanded={bankOpen}
+          aria-controls={bankOpen ? bankId : undefined}
+          onClick={() => setBankOpen(open => !open)}
+        >
+          <span className="more-options__title">{t('paymentForm.bankToggle')}</span>
+          <ChevronDownIcon />
+        </button>
+        {bankOpen && (
+          <div id={bankId}>
+            <label className="field">
+              <span className="field__label">{t('paymentForm.bankName')}</span>
+              <input value={bankName} onChange={event => setBankName(event.target.value)} autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field__label">{t('paymentForm.accountHolder')}</span>
+              <input value={accountHolderName} onChange={event => setAccountHolderName(event.target.value)} autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field__label">{t('paymentForm.accountNumber')}</span>
+              <input value={accountNumber} onChange={event => setAccountNumber(event.target.value)} inputMode="numeric" autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field__label">{t('paymentForm.reference')}</span>
+              <input value={paymentReference} maxLength={100} onChange={event => setPaymentReference(event.target.value)} autoComplete="off" />
+            </label>
+          </div>
+        )}
+      </div>
 
       <div className="group">
         <label className="field field--check">
