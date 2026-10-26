@@ -708,6 +708,7 @@ input[type='radio']:focus-visible {
 }
 
 .item-row {
+  clear: both; /* the floated legend may sit right before it when the photo pickers are shown above the form */
   display: grid;
   grid-template-columns: minmax(0, 1fr) 6.5rem 48px;
   column-gap: 12px;
@@ -740,6 +741,20 @@ input[type='radio']:focus-visible {
 /* Two ways in: the rear camera ("Take photo") and the gallery ("Choose photo"). */
 .photo-picks {
   grid-template-columns: 1fr 1fr;
+}
+
+.photo-picks--first {
+  margin: 0;
+}
+
+.file-pick--primary {
+  background: var(--plum);
+  color: var(--paper);
+}
+
+.file-pick--primary:hover,
+.file-pick--primary:active {
+  background: var(--plum-strong);
 }
 
 .photo-picks .file-pick {

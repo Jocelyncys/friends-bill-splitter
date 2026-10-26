@@ -6,13 +6,25 @@ export async function newUser(browser: Browser): Promise<Page> {
   return context.newPage()
 }
 
-/** Home → mode → create form → event home. Returns the event id from the URL. */
+/**
+ * Home → mode → create form → event home. Returns the event id from the URL.
+ * A single bill opens at the receipt scan (Take photo focused); Back returns to the event home.
+ * A trip opens at the event home with the invite panel first.
+ */
 export async function createEvent(page: Page, mode: 'Single Bill' | 'Trip or Event', eventName: string, myName: string): Promise<string> {
   await page.goto('/')
   await page.getByRole('button', { name: mode }).click()
   await page.getByLabel('Event name').fill(eventName)
   await page.getByLabel('Your name').fill(myName)
   await page.getByRole('button', { name: 'Create event' }).click()
+  if (mode === 'Single Bill') {
+    await expect(page.getByRole('heading', { name: 'Add expense', level: 1 })).toBeVisible()
+    await expect(page).toHaveURL(/\/expenses\/new\?scan=1$/)
+    await expect(page.getByLabel('Take photo')).toBeFocused()
+    await page.goBack()
+  } else {
+    await expect(page.getByRole('button', { name: 'Share invite' })).toBeVisible()
+  }
   await expect(page.getByRole('heading', { name: 'Let’s add the first expense' })).toBeVisible()
   return eventIdOf(page)
 }
@@ -25,7 +37,8 @@ export function eventIdOf(page: Page): string {
 
 /** Opens the invite panel on the event home and reads the link. */
 export async function inviteLink(page: Page): Promise<string> {
-  await page.getByRole('button', { name: 'Invite friends' }).click()
+  const field = page.getByLabel('Invite link')
+  if (!(await field.isVisible())) await page.getByRole('button', { name: 'Invite friends' }).click()
   const link = await page.getByLabel('Invite link').inputValue()
   expect(link).toMatch(/#\/join\/.+/)
   return link

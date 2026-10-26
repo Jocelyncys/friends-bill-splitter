@@ -29,6 +29,10 @@ type Props = {
   settled?: boolean
   onViewPayments?: () => void
   onViewAll?: () => void
+  /** The invite panel, when open. */
+  invite?: ReactNode
+  /** Right after creating a trip: the invite goes above the actions and becomes the main action. */
+  inviteFirst?: boolean
   children?: ReactNode
 }
 
@@ -49,6 +53,8 @@ export function EventHomePage({
   settled = false,
   onViewPayments,
   onViewAll,
+  invite,
+  inviteFirst = false,
   children,
 }: Props) {
   const { t, i18n } = useTranslation()
@@ -85,8 +91,9 @@ export function EventHomePage({
       )}
 
       <h1>{empty ? t('event.emptyTitle') : t('event.activeTitle')}</h1>
+      {inviteFirst && invite}
       <section className={empty ? 'guided-actions guided-actions--large' : 'guided-actions'}>
-        {!settled && <button type="button" className="primary" onClick={onScanReceipt} disabled={!onScanReceipt}><CameraIcon /> {t('event.scanReceipt')}</button>}
+        {!settled && <button type="button" className={inviteFirst ? undefined : 'primary'} onClick={onScanReceipt} disabled={!onScanReceipt}><CameraIcon /> {t('event.scanReceipt')}</button>}
         {!settled && <button type="button" onClick={onAddExpense} disabled={!onAddExpense}><PenIcon /> {t('event.addSimple')}</button>}
         <button type="button" className={empty ? 'quiet' : showSettle ? 'guided-actions__minor' : undefined} onClick={onInvite} disabled={!onInvite}><LinkIcon /> {t('event.invite')}</button>
         {showSettle && <button type="button" className="guided-actions__minor" onClick={onSettle} disabled={!!settleBlockedReason}><ReceiptIcon /> {t('event.settleNow')}</button>}
@@ -94,6 +101,7 @@ export function EventHomePage({
       </section>
       {!settled && onSettle && settleBlockedReason && <p role="status" className="muted guided-hint">{settleBlockedReason}</p>}
       {settled && <p className="muted guided-hint">{t('event.settledNote')}</p>}
+      {!inviteFirst && invite}
       {children}
       {attention.length > 0 && (
         <section className="attention">

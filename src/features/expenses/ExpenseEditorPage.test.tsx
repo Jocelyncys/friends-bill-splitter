@@ -227,6 +227,24 @@ describe('ExpenseEditorPage', () => {
       expect(take).toHaveAttribute('capture', 'environment')
     })
 
+    it('puts Take photo first and focuses it when scan=1', async () => {
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      const take = await screen.findByLabelText('Take photo')
+      expect(take).toHaveFocus()
+      const description = screen.getByLabelText('Description')
+      expect(take.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('keeps the photo pickers inside the items without scan=1', async () => {
+      renderEditor()
+      await openMore()
+      await userEvent.selectOptions(screen.getByLabelText('Split method'), 'items')
+      const take = screen.getByLabelText('Take photo')
+      expect(take).not.toHaveFocus()
+      const description = screen.getByLabelText('Description')
+      expect(take.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    })
+
     it('reads a photo from the camera input through the same review flow', async () => {
       recognizeReceipt.mockResolvedValue(['TEH O 3.00'])
       renderEditor('/event/ev-1/expenses/new?scan=1')

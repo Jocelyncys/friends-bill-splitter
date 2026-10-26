@@ -16,8 +16,11 @@ export function EventRoute() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   // Set only when the new event's invite token could not be stored on this device: show it once.
-  const unsavedInviteToken = (useLocation().state as { unsavedInviteToken?: string } | null)?.unsavedInviteToken
-  const [showInvite, setShowInvite] = useState(!!unsavedInviteToken)
+  const locationState = useLocation().state as { unsavedInviteToken?: string; showInvite?: boolean } | null
+  const unsavedInviteToken = locationState?.unsavedInviteToken
+  // A new trip opens with the invite first; once the user toggles it, it goes back to its usual place.
+  const [inviteFirst, setInviteFirst] = useState(!!locationState?.showInvite)
+  const [showInvite, setShowInvite] = useState(!!unsavedInviteToken || inviteFirst)
   const state = useEventHome(eventId)
   const { drafts, loaded: draftsLoaded } = useDrafts(eventId)
   const position = useMyPosition(state.status === 'ready' ? state.home : undefined)
@@ -44,14 +47,18 @@ export function EventRoute() {
       onViewAll={() => navigate(`/event/${eventId}/expenses`)}
       onScanReceipt={() => navigate(`/event/${eventId}/expenses/new?scan=1`)}
       onAddExpense={() => navigate(`/event/${eventId}/expenses/new`)}
-      onInvite={() => setShowInvite(shown => !shown)}
+      onInvite={() => {
+        setInviteFirst(false)
+        setShowInvite(shown => !shown)
+      }}
       settled={settled}
       onSettle={canSettle ? () => navigate(`/event/${eventId}/settle`) : undefined}
+      invite={showInvite ? <InvitePanel eventId={eventId} eventName={home.event.name} token={unsavedInviteToken} /> : undefined}
+      inviteFirst={inviteFirst && showInvite && home.expenses.length === 0}
       settleBlockedReason={!draftsLoaded ? t('drafts.checking') : drafts.length > 0 ? t('drafts.settleBlocked') : undefined}
       onViewPayments={() => navigate(`/event/${eventId}/payments`)}
     >
       <DraftList eventId={eventId} currency={home.event.currency} />
-      {showInvite && <InvitePanel eventId={eventId} eventName={home.event.name} token={unsavedInviteToken} />}
     </EventHomePage>
   )
 }

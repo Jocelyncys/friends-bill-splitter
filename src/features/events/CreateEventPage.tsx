@@ -43,7 +43,16 @@ export function CreateEventPage() {
       } catch {
         stored = false // storage unavailable: hand the link to the event page once, with a warning
       }
-      navigate(`/event/${eventId}`, stored ? undefined : { state: { unsavedInviteToken: inviteToken } })
+      const home = `/event/${eventId}`
+      if (!stored) return void navigate(home, { state: { unsavedInviteToken: inviteToken } })
+      if (mode === 'single_bill') {
+        // A single bill starts at the receipt scan. The event home replaces this form, so Back lands there.
+        await navigate(home, { replace: true })
+        await navigate(`${home}/expenses/new?scan=1`)
+      } else {
+        // A trip starts by inviting friends, before anyone adds expenses.
+        await navigate(home, { state: { showInvite: true } })
+      }
     } catch {
       setError(t('create.failed'))
       setBusy(false)

@@ -126,6 +126,10 @@ test('critical path in Simplified Chinese', async ({ page }) => {
   await page.getByLabel('活动名称').fill('周五晚餐')
   await page.getByLabel('你的名字').fill('小美')
   await page.getByRole('button', { name: '创建活动' }).click()
+  // A single bill opens at the receipt scan; Back leads to the event home.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('添加开销')
+  await expect(page.getByLabel('拍照')).toBeFocused()
+  await page.goBack()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('来记第一笔开销吧')
 
   await page.getByRole('button', { name: '添加简单开销' }).click()

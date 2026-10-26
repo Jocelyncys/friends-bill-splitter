@@ -243,6 +243,25 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
 
   const canPickPayer = home.me.role !== 'participant'
   const itemized = isItemized(draft.splitMethod)
+  // Scan flow (?scan=1) for a new expense: the photo pickers come first and Take photo has focus. Browsers only
+  // open a file picker on a user gesture, so the user taps it; nothing is clicked for them.
+  const scanFirst = itemized && searchParams.get('scan') === '1' && !editing && !saved
+  // Both feed the same OCR flow. capture="environment" opens the rear camera on phones; desktop
+  // browsers ignore it and show the file picker.
+  const photoPicks = (
+    <div className={scanFirst ? 'group__actions photo-picks photo-picks--first' : 'group__actions photo-picks'}>
+      <label className={scanFirst ? 'file-pick file-pick--primary' : 'file-pick'}>
+        <CameraIcon />
+        {t('editor.scan.takePhoto')}
+        <input type="file" accept="image/*" capture="environment" autoFocus={scanFirst} onChange={e => void scanReceipt(e)} />
+      </label>
+      <label className="file-pick">
+        <ImageIcon />
+        {t('editor.scan.choosePhoto')}
+        <input type="file" accept="image/*" onChange={e => void scanReceipt(e)} />
+      </label>
+    </div>
+  )
   const reviewing = itemized && ocrState === 'review'
   const itemsTotal = draft.items.reduce((sum, item) => sum + (parseMoneyToCents(item.price) ?? 0), 0)
   // Amount paid, when typed, valid and different from the items: the difference is the discounts, tax and rounding.
@@ -325,6 +344,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       <h1>{t(editing ? 'editor.editTitle' : 'editor.title')}</h1>
       {!online && <p role="status" className="muted">{t('editor.offlineHint')}</p>}
       <form className="form" onSubmit={e => void submit(e)} noValidate>
+        {scanFirst && photoPicks}
         <div className="group">
           <label className="field">
             <span className="field__label">{t('editor.description')}</span>
@@ -346,20 +366,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
         {itemized && (
           <fieldset className="group">
             <legend className="group__legend">{t('editor.items')}</legend>
-            {/* Both feed the same OCR flow. capture="environment" opens the rear camera on phones; desktop
-                browsers ignore it and show the file picker. */}
-            <div className="group__actions photo-picks">
-              <label className="file-pick">
-                <CameraIcon />
-                {t('editor.scan.takePhoto')}
-                <input type="file" accept="image/*" capture="environment" onChange={e => void scanReceipt(e)} />
-              </label>
-              <label className="file-pick">
-                <ImageIcon />
-                {t('editor.scan.choosePhoto')}
-                <input type="file" accept="image/*" onChange={e => void scanReceipt(e)} />
-              </label>
-            </div>
+            {!scanFirst && photoPicks}
             {receiptUrl && <img className="receipt-preview" src={receiptUrl} alt={t('editor.scan.previewAlt')} />}
             <p className="group__status" aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
             {draft.items.map((item, index) => (

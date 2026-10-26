@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CreateEventPage } from './CreateEventPage'
 import { InvitePanel } from './InvitePanel'
@@ -69,6 +69,7 @@ describe('CreateEventPage', () => {
         <Routes>
           <Route path="/new/:mode" element={<CreateEventPage />} />
           <Route path="/event/:eventId" element={<p>event home</p>} />
+          <Route path="/event/:eventId/expenses/new" element={<p>receipt scan</p>} />
         </Routes>
       </MemoryRouter>,
     )
@@ -81,7 +82,7 @@ describe('CreateEventPage', () => {
     renderCreate('single_bill')
     expect(screen.getByLabelText('Event name')).toHaveAttribute('placeholder', 'Bill 26 Oct')
     await userEvent.click(screen.getByRole('button', { name: 'Create event' }))
-    expect(await screen.findByText('event home')).toBeInTheDocument()
+    expect(await screen.findByText('receipt scan')).toBeInTheDocument()
     expect(createEvent).toHaveBeenCalledWith({ name: 'Bill 26 Oct', mode: 'single_bill', currency: 'MYR', displayName: 'Joc' })
   })
 
@@ -99,6 +100,45 @@ describe('CreateEventPage', () => {
     } finally {
       await i18n.changeLanguage('en')
     }
+  })
+
+  function Where({ label }: { label: string }) {
+    const location = useLocation()
+    const navigate = useNavigate()
+    const state = location.state as { showInvite?: boolean } | null
+    return (
+      <>
+        <p>{`${label} ${location.pathname}${location.search}${state?.showInvite ? ' invite open' : ''}`}</p>
+        <button type="button" onClick={() => void navigate(-1)}>go back</button>
+      </>
+    )
+  }
+  function renderFlow(mode: string) {
+    localStorage.setItem('preferredName', 'Joc')
+    render(
+      <MemoryRouter initialEntries={['/', `/new/${mode}`]} initialIndex={1}>
+        <Routes>
+          <Route path="/" element={<p>start</p>} />
+          <Route path="/new/:mode" element={<CreateEventPage />} />
+          <Route path="/event/:eventId" element={<Where label="home" />} />
+          <Route path="/event/:eventId/expenses/new" element={<Where label="editor" />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('starts a single bill at the receipt scan, with the event home one step back', async () => {
+    renderFlow('single_bill')
+    await userEvent.click(screen.getByRole('button', { name: 'Create event' }))
+    expect(await screen.findByText('editor /event/ev-9/expenses/new?scan=1')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'go back' }))
+    expect(await screen.findByText('home /event/ev-9')).toBeInTheDocument()
+  })
+
+  it('starts a trip at the event home with the invite open', async () => {
+    renderFlow('trip_event')
+    await userEvent.click(screen.getByRole('button', { name: 'Create event' }))
+    expect(await screen.findByText('home /event/ev-9 invite open')).toBeInTheDocument()
   })
 
   it('still requires your name', async () => {

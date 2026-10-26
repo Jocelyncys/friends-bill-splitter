@@ -10,6 +10,24 @@ describe('EventHomePage', () => {
     expect(screen.getByRole('button', { name: /add simple expense/i })).toBeInTheDocument()
   })
 
+  it('puts the invite first, above the actions, when asked', () => {
+    render(
+      <EventHomePage eventName="Penang Trip" expenses={[]} attention={[]} onScanReceipt={() => undefined} invite={<p>invite panel</p>} inviteFirst />,
+    )
+    const panel = screen.getByText('invite panel')
+    const scan = screen.getByRole('button', { name: /scan a receipt/i })
+    expect(panel.compareDocumentPosition(scan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(scan).not.toHaveClass('primary')
+  })
+
+  it('shows the invite after the actions otherwise', () => {
+    render(<EventHomePage eventName="Penang Trip" expenses={[]} attention={[]} onScanReceipt={() => undefined} invite={<p>invite panel</p>} />)
+    const panel = screen.getByText('invite panel')
+    const scan = screen.getByRole('button', { name: /scan a receipt/i })
+    expect(panel.compareDocumentPosition(scan) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    expect(scan).toHaveClass('primary')
+  })
+
   it('shows compact actions, attention, and recent expenses for an active event', () => {
     render(<EventHomePage eventName="Penang Trip" expenses={[{ id: '1', description: 'Petrol', totalCents: 9000 }]} attention={['Claim lunch items']} />)
     expect(screen.getByText('Claim lunch items')).toBeInTheDocument()
