@@ -1,4 +1,4 @@
--- Batch 2C: one "Amount paid" field.
+-- Batch 2C: one "Amount paid" field and auto-saved assignment chips.
 --
 -- * The editor now sends at most ONE adjustment for an item expense:
 --   { kind: 'other', label: null, amount_cents: paid - items }. expense_adjustments.label
@@ -6,11 +6,88 @@
 --   'other' only. Several labelled rows stay valid (older clients, existing expenses).
 --   All other rules are unchanged: adjustments only on item methods, adjustments_need_items,
 --   total_cents >= 1, total = items + adjustments.
+-- * assign_item(item, member_ids) with an EMPTY array clears the item back to "nobody":
+--   every allocation of the item is removed. An item holds either self-claims or an
+--   assignment (never both: assigning replaces claims, claim_item refuses assigned items),
+--   so this clears the assignment, or, for an item only friends claimed, those claims
+--   (the manager's chips show the claimers, and deselecting all of them means "nobody").
+--   Same permission / lock / revision rules as assigning; activity 'item_unassigned' is
+--   redacted to ids. Clearing an item that has nobody is a no-op (no revision bump).
+--   A null array or a null / duplicate member is still invalid_payload.
 
 alter table public.expense_adjustments alter column label drop not null;
 alter table public.expense_adjustments drop constraint expense_adjustments_label_check;
 alter table public.expense_adjustments add constraint expense_adjustments_label_check
   check (label is null or char_length(label) between 1 and 60);
+
+-- assign_item: empty array clears ------------------------------------------------------
+create or replace function public.assign_item(item_id uuid, member_ids uuid[])
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  v_uid uuid := auth.uid();
+  v_expense public.expenses;
+  v_role public.event_role;
+  v_members jsonb;
+begin
+  if v_uid is null then
+    raise exception 'not_authenticated' using errcode = '28000';
+  end if;
+  -- Locks the event (then the expense) and re-checks membership after the lock.
+  v_expense := public.lock_item_expense(assign_item.item_id, v_uid);
+  select m.role into v_role from public.event_members m where m.event_id = v_expense.event_id and m.user_id = v_uid;
+  if v_role not in ('owner', 'cohost') and v_expense.creator_user_id <> v_uid then
+    raise exception 'not_allowed' using errcode = '22023';
+  end if;
+  if assign_item.member_ids is null
+    or array_position(assign_item.member_ids, null) is not null
+    or (select count(distinct u) from unnest(assign_item.member_ids) as u) <> coalesce(cardinality(assign_item.member_ids), 0) then
+    raise exception 'invalid_payload' using errcode = '22023';
+  end if;
+
+  if cardinality(assign_item.member_ids) = 0 then
+    delete from public.allocations a where a.item_id = assign_item.item_id;
+    if not found then
+      return;
+    end if;
+    update public.events e set revision = e.revision + 1 where e.id = v_expense.event_id;
+    insert into public.activity_log (event_id, actor_user_id, action, metadata)
+    values (v_expense.event_id, v_uid, 'item_unassigned',
+      jsonb_build_object('expense_id', v_expense.id, 'item_id', assign_item.item_id));
+    return;
+  end if;
+
+  if exists(select 1 from unnest(assign_item.member_ids) as u
+      where not exists(select 1 from public.event_members m where m.event_id = v_expense.event_id and m.user_id = u)) then
+    raise exception 'not_member' using errcode = '22023';
+  end if;
+
+  delete from public.allocations a where a.item_id = assign_item.item_id;
+  insert into public.allocations (expense_id, item_id, participant_user_id, amount_cents, source)
+  select v_expense.id, i.id, s.uid,
+    i.total_cents / s.n + case when s.rn <= i.total_cents % s.n then 1 else 0 end,
+    case v_role when 'owner' then 'owner' when 'cohost' then 'cohost' else 'expense_creator' end
+  from public.expense_items i
+  cross join (
+    select u as uid, row_number() over (order by u::text collate "C") as rn, count(*) over () as n
+    from unnest(assign_item.member_ids) as u
+  ) s
+  where i.id = assign_item.item_id;
+
+  select jsonb_agg(u order by u::text collate "C") into v_members from unnest(assign_item.member_ids) as u;
+
+  update public.events e set revision = e.revision + 1 where e.id = v_expense.event_id;
+  insert into public.activity_log (event_id, actor_user_id, action, metadata)
+  values (v_expense.event_id, v_uid, 'item_assigned',
+    jsonb_build_object('expense_id', v_expense.id, 'item_id', assign_item.item_id, 'member_ids', v_members));
+end $$;
+
+revoke execute on function public.assign_item(uuid, uuid[]) from public, anon;
+grant execute on function public.assign_item(uuid, uuid[]) to authenticated;
 
 -- save_expense: identical to 0010 except that an adjustment of kind 'other' may have a
 -- null label (the single "Amount paid" difference). Other kinds still need a 1-60 char

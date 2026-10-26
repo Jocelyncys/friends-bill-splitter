@@ -1163,7 +1163,7 @@ input[type='radio']:focus-visible {
   padding-left: 16px;
 }
 
-/* The host's one assignment control: who had it (toggle chips, wrapping), then Assign. */
+/* The host's one assignment control: who had it (toggle chips, wrapping, saved on tap), then the save status. */
 .claim-assign {
   display: grid;
   justify-items: start;
@@ -1175,8 +1175,9 @@ input[type='radio']:focus-visible {
   margin-top: 0;
 }
 
-.claim-assign__go {
-  padding: 0 20px;
+.claim-assign__status {
+  min-height: 1.4em;
+  margin: 0;
 }
 
 .receipt__paid {

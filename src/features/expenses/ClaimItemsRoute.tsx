@@ -89,6 +89,26 @@ export function ClaimItemsRoute() {
     }
   }
   const repository = createClaimRepository()
+  // Chip taps save on their own (no global busy lock), and resolve only after the fresh claims are on screen, so
+  // the chips never flash back to the old state.
+  const assign = async (itemId: string, memberIds: string[]): Promise<boolean> => {
+    setErrorCode(null)
+    let ok = true
+    try {
+      await repository.assignItem(itemId, memberIds)
+    } catch (error) {
+      ok = false
+      setErrorCode(error instanceof ActionError ? error.code : 'action_failed')
+    }
+    try {
+      setLoaded({ expenseId, claims: await repository.getExpenseClaims(expenseId) })
+      setLoadFailedFor(null)
+    } catch {
+      setLoadFailedFor(expenseId)
+    }
+    shell?.refresh()
+    return ok
+  }
 
   return (
     <ClaimItemsPage
@@ -108,7 +128,7 @@ export function ClaimItemsRoute() {
       onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
       adjustmentCents={claims.adjustments.reduce((sum, adj) => sum + adj.amountCents, 0)}
       totalCents={claims.totalCents}
-      onAssign={(itemId, memberIds) => run(() => repository.assignItem(itemId, memberIds))}
+      onAssign={assign}
       onToggleClosed={closed => void run(() => repository.setClaimingClosed(expenseId, closed))}
     />
   )

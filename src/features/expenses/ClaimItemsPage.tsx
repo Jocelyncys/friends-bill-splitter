@@ -1,10 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckIcon, CloseIcon } from '../../components/icons'
 import { formatMoney } from '../../domain/money'
 import type { EventRole, SplitMethod } from '../../domain/types'
 import { PaysList } from './PaysList'
 import { paysRows, sharedEachText, signedMoney } from './shareText'
+
+// Quick taps on one item's chips within this time are saved as one call.
+const SAVE_DELAY_MS = 400
+
+const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id))
 
 export type ClaimItemView = {
   id: string
@@ -40,8 +45,9 @@ type Props = {
   onClaim?: (itemId: string) => void
   onUnclaim?: (itemId: string) => void
   /**
-   * One or more members; the server splits the item equally between them. Resolve false when it failed:
-   * the picked people then stay selected.
+   * Saves who had the item (empty = nobody); the server splits it equally between them. Called a moment after
+   * the last chip tap. Resolve once the page has the server's state: true when saved, false when it failed
+   * (the chips then go back to the saved people).
    */
   onAssign?: (itemId: string, memberIds: string[]) => Promise<boolean> | void
   onToggleClosed?: (closed: boolean) => void
@@ -68,8 +74,24 @@ export function ClaimItemsPage({
   onToggleClosed,
 }: Props) {
   const { t, i18n } = useTranslation()
-  // item id -> people picked but not yet assigned. Missing = the item's current assignees.
+  // item id -> people tapped but not saved yet (missing = the saved people), and each item's save status.
   const [picking, setPicking] = useState<Record<string, string[]>>({})
+  const [status, setStatus] = useState<Record<string, 'saving' | 'saved'>>({})
+  const pickingRef = useRef(picking)
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const itemsRef = useRef(items) // the saved state when a delayed save runs
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    const pending = timers.current
+    return () => {
+      mounted.current = false
+      for (const timer of Object.values(pending)) clearTimeout(timer)
+    }
+  }, [])
   const manage = !settled && (canManage ?? role !== 'participant')
   const locked = offline || busy
   const money = (cents: number) => formatMoney(cents, currency, i18n.language)
@@ -88,18 +110,41 @@ export function ClaimItemsPage({
   const paidCents = totalCents ?? itemsCents + adjustmentCents
   const pays = adjustmentCents !== 0 && unallocated === 0 ? paysRows(paidCents, Object.fromEntries(shares), participants) : []
 
-  const togglePick = (itemId: string, current: string[], userId: string) =>
-    setPicking(p => {
-      const ids = p[itemId] ?? current
-      return { ...p, [itemId]: ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId] }
-    })
-  const assign = async (itemId: string, memberIds: string[]) => {
-    if ((await onAssign?.(itemId, memberIds)) === false) return
-    setPicking(p => {
-      const next = { ...p }
-      delete next[itemId]
+  const setPick = (itemId: string, ids: string[] | null) => {
+    const next = { ...pickingRef.current }
+    if (ids) next[itemId] = ids
+    else delete next[itemId]
+    pickingRef.current = next
+    setPicking(next)
+  }
+  const setItemStatus = (itemId: string, value: 'saving' | 'saved' | null) =>
+    setStatus(previous => {
+      const next = { ...previous }
+      if (value) next[itemId] = value
+      else delete next[itemId]
       return next
     })
+
+  const save = async (itemId: string) => {
+    delete timers.current[itemId]
+    const picked = pickingRef.current[itemId]
+    const saved = itemsRef.current.find(item => item.id === itemId)?.claims.map(c => c.userId) ?? []
+    if (!picked || sameIds(picked, saved)) return setPick(itemId, null) // tapped back to where it was
+    setItemStatus(itemId, 'saving')
+    const ok = (await onAssign?.(itemId, picked)) !== false
+    if (!mounted.current) return
+    // Either way the page now shows the server's state.
+    setPick(itemId, null)
+    setItemStatus(itemId, ok ? 'saved' : null)
+  }
+
+  // Each tap saves; quick taps on the same item are sent as one call.
+  const togglePick = (itemId: string, current: string[], userId: string) => {
+    const ids = pickingRef.current[itemId] ?? current
+    setPick(itemId, ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId])
+    setItemStatus(itemId, null)
+    clearTimeout(timers.current[itemId])
+    timers.current[itemId] = setTimeout(() => void save(itemId), SAVE_DELAY_MS)
   }
 
   return (
@@ -123,7 +168,7 @@ export function ClaimItemsPage({
         const names = item.claims.map(c => nameOf(c.userId)).join(', ')
         const current = item.claims.map(c => c.userId)
         const picked = picking[item.id] ?? current
-        const changed = picked.length > 0 && (picked.length !== current.length || picked.some(id => !current.includes(id)))
+        const saving = status[item.id] === 'saving'
         return (
           <article key={item.id} className={mine ? 'claim-item claim-item--mine' : 'claim-item'}>
             <div className="expense-row">
@@ -161,7 +206,7 @@ export function ClaimItemsPage({
                         type="button"
                         className="chip toggle-chip"
                         aria-pressed={on}
-                        disabled={locked}
+                        disabled={locked || saving}
                         onClick={() => togglePick(item.id, current, p.id)}
                       >
                         {on && <CheckIcon />}
@@ -170,15 +215,9 @@ export function ClaimItemsPage({
                     )
                   })}
                 </div>
-                <button
-                  type="button"
-                  className="chip primary claim-assign__go"
-                  aria-label={t('claim.assignItem', { item: item.description })}
-                  disabled={locked || !changed}
-                  onClick={() => void assign(item.id, picked)}
-                >
-                  {t('claim.assign')}
-                </button>
+                <p className="note claim-assign__status" aria-live="polite">
+                  {status[item.id] ? t(status[item.id] === 'saving' ? 'claim.saving' : 'claim.saved') : ''}
+                </p>
               </div>
             )}
           </article>

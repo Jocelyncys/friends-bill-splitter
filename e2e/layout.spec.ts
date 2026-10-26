@@ -73,7 +73,6 @@ test('bilingual screens fit the viewport; guided, active and attention states re
   // Resolve it so the settlement screen below shows the three plan cards.
   await page.getByRole('button', { name: /Steamboat dinner: .* not yet assigned/ }).click()
   await page.getByRole('group', { name: 'Who had Seafood set' }).getByRole('button', { name: 'Ana' }).click()
-  await page.getByRole('button', { name: 'Assign Seafood set' }).click()
   await expect(page.getByText('Assigned to: Ana')).toBeVisible()
 
   const screens: Array<[string, string]> = [
@@ -154,7 +153,6 @@ test('claim page with nine people: the assignment chips wrap without overflow', 
   await who.getByRole('button', { name: 'Ismail bin Abdullah' }).click()
   await expectNoOverflow(owner)
   await owner.screenshot({ path: testInfo.outputPath('claim-nine-people.png'), fullPage: true })
-  await owner.getByRole('button', { name: 'Assign Steamed fish' }).click()
   await expect(owner.getByText('Assigned to: Ismail bin Abdullah')).toBeVisible()
   for (const page of [owner, ...guests]) await page.context().close()
 })

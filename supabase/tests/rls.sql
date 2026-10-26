@@ -1,5 +1,5 @@
 begin;
-select plan(375);
+select plan(388);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -1234,8 +1234,8 @@ select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-0000000000
 select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001',
     array['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa']::uuid[])$$,
   '22023', 'invalid_payload', 'duplicate assignees are rejected');
-select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001', array[]::uuid[])$$,
-  '22023', 'invalid_payload', 'an empty assignee list is rejected');
+select lives_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001', array[]::uuid[])$$,
+  'an empty assignee list on an item nobody has is a harmless no-op');
 select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001', null)$$,
   '22023', 'invalid_payload', 'a null assignee list is rejected');
 select throws_ok($$select public.assign_item('b2100000-0000-0000-0000-000000000001',
@@ -1639,7 +1639,7 @@ select throws_ok($$select public.confirm_settlement('b2ae0000-0000-0000-0000-000
   '22023', 'unresolved_expenses', 'an expense with a positive total and no allocations is unresolved');
 reset role;
 
--- Batch 2C (0011): one 'other' adjustment with a null label --
+-- Batch 2C (0011): one 'other' adjustment with a null label; assign_item([]) clears an item --
 select ok((select is_nullable = 'YES' from information_schema.columns
     where table_schema = 'public' and table_name = 'expense_adjustments' and column_name = 'label'),
   'expense_adjustments.label is nullable');
@@ -1671,6 +1671,50 @@ select results_eq($$select kind, label, amount_cents from public.expense_adjustm
 select throws_ok($$insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
     values ('b2c20000-0000-0000-0000-000000000009', 'b2c00000-0000-0000-0000-000000000001', 'other', '', 1)$$,
   '23514', null, 'the table still rejects an empty label');
+
+-- F self-claims item 1; the owner shares item 2 between C and F, then clears it.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select lives_ok($$select public.claim_item('b2c10000-0000-0000-0000-000000000001')$$, 'F claims item 1');
+select throws_ok($$select public.assign_item('b2c10000-0000-0000-0000-000000000001', array[]::uuid[])$$,
+  '22023', 'not_allowed', 'a participant who did not create the expense cannot clear an item');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item('b2c10000-0000-0000-0000-000000000002',
+    array['cccccccc-cccc-cccc-cccc-cccccccccccc', 'ffffffff-ffff-ffff-ffff-ffffffffffff']::uuid[])$$, 'the owner shares item 2 between C and F');
+reset role;
+update rev7 set n = (select revision from public.events where id = 'b2ce0000-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item('b2c10000-0000-0000-0000-000000000002', array[]::uuid[])$$,
+  'deselecting everyone clears an assigned item');
+reset role;
+select is((select count(*)::int from public.allocations where item_id = 'b2c10000-0000-0000-0000-000000000002'), 0,
+  'the cleared item has nobody');
+select is((select count(*)::int from public.allocations where item_id = 'b2c10000-0000-0000-0000-000000000001'), 1,
+  'clearing one item leaves the other item''s claim alone');
+select is((select revision from public.events where id = 'b2ce0000-0000-0000-0000-000000000001'), (select n + 1 from rev7),
+  'clearing an item bumps the revision once');
+select is((select metadata from public.activity_log where action = 'item_unassigned' order by id desc limit 1),
+  jsonb_build_object('expense_id', 'b2c00000-0000-0000-0000-000000000001', 'item_id', 'b2c10000-0000-0000-0000-000000000002'),
+  'item_unassigned activity is redacted to ids');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.assign_item('b2c10000-0000-0000-0000-000000000001', array[]::uuid[])$$,
+  'the expense creator clears an item a friend self-claimed');
+reset role;
+select is((select count(*)::int from public.allocations where item_id = 'b2c10000-0000-0000-0000-000000000001'), 0,
+  'a self-claimed item cleared by its manager goes back to nobody');
+update rev7 set n = (select revision from public.events where id = 'b2ce0000-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item('b2c10000-0000-0000-0000-000000000001', array[]::uuid[])$$, 'clearing an empty item again');
+select throws_ok($$select public.assign_item('b2c10000-0000-0000-0000-000000000001', null)$$,
+  '22023', 'invalid_payload', 'a null list is still rejected');
+reset role;
+select is((select revision from public.events where id = 'b2ce0000-0000-0000-0000-000000000001'), (select n from rev7),
+  'clearing an item that has nobody does not bump the revision');
 
 select * from finish();
 rollback;

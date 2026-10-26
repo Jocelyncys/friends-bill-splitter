@@ -68,28 +68,28 @@ describe('ClaimItemsRoute', () => {
     await vi.waitFor(() => expect(mocks.getExpenseClaims).toHaveBeenCalledTimes(2))
   })
 
-  it('assigns one item to several people in one call (expense creator)', async () => {
+  it('saves one item for several people as soon as their names are tapped (expense creator)', async () => {
     mocks.getExpenseClaims.mockResolvedValue({ ...claims, creatorUserId: 'me' })
     mocks.assignItem.mockResolvedValue(undefined)
     renderRoute()
     const who = await screen.findByRole('group', { name: 'Who had Satay' })
     await userEvent.click(within(who).getByRole('button', { name: 'Mia' }))
     await userEvent.click(within(who).getByRole('button', { name: 'Xan' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
-    expect(mocks.assignItem).toHaveBeenCalledWith('i1', ['me', 'x'])
+    expect(screen.queryByRole('button', { name: /^Assign/ })).not.toBeInTheDocument()
+    await vi.waitFor(() => expect(mocks.assignItem).toHaveBeenCalledWith('i1', ['me', 'x']))
+    expect(mocks.assignItem).toHaveBeenCalledTimes(1)
     await vi.waitFor(() => expect(mocks.getExpenseClaims).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Saved')).toBeInTheDocument()
   })
 
-  it('keeps the picked people when the assignment fails', async () => {
+  it('reverts the chips to the saved state and shows the error when the save fails', async () => {
     mocks.getExpenseClaims.mockResolvedValue({ ...claims, creatorUserId: 'me' })
     mocks.assignItem.mockRejectedValue(new ActionError('not_member'))
     renderRoute()
     const who = await screen.findByRole('group', { name: 'Who had Satay' })
     await userEvent.click(within(who).getByRole('button', { name: 'Xan' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    await vi.waitFor(() => expect(mocks.getExpenseClaims).toHaveBeenCalledTimes(2))
-    expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Xan' })).toHaveAttribute('aria-pressed', 'true')
+    await vi.waitFor(() => expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Xan' })).toHaveAttribute('aria-pressed', 'false'))
   })
 
   it('shows the net of an older expense with several adjustment rows as one line', async () => {

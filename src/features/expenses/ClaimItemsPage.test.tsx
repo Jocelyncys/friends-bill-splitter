@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { ClaimItemsPage, type ClaimItemView } from './ClaimItemsPage'
 import '../../i18n'
@@ -38,28 +39,20 @@ describe('ClaimItemsPage', () => {
     expect(within(shares).getByText('RM 5.00')).toBeInTheDocument()
   })
 
-  it('gives managers one people picker per item and a close/reopen toggle', async () => {
-    const onAssign = vi.fn().mockResolvedValue(true)
+  it('gives managers one people picker per item (no Assign button) and a close/reopen toggle', async () => {
     const onToggleClosed = vi.fn()
-    render(
-      <ClaimItemsPage role="cohost" currentUserId="alice" canManage participants={participants} items={[unclaimed]}
-        onAssign={onAssign} onToggleClosed={onToggleClosed} />,
-    )
+    render(<ClaimItemsPage role="cohost" currentUserId="alice" canManage participants={participants} items={[unclaimed]} onToggleClosed={onToggleClosed} />)
     const who = screen.getByRole('group', { name: 'Who had Satay' })
     expect(within(who).getAllByRole('button')).toHaveLength(2)
-    expect(screen.queryByRole('button', { name: /Assign to|Share between/ })).not.toBeInTheDocument()
-    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
-    expect(onAssign).toHaveBeenCalledWith('i1', ['ben'])
+    expect(screen.queryByRole('button', { name: /^Assign/ })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Close claiming' }))
     expect(onToggleClosed).toHaveBeenCalledWith(true)
   })
 
-  it('disables claiming when closed (managers can still assign) and offers reopen', async () => {
+  it('disables claiming when closed (managers can still assign) and offers reopen', () => {
     render(<ClaimItemsPage role="owner" currentUserId="alice" claimingClosed participants={participants} items={[unclaimed]} />)
     expect(screen.getByRole('button', { name: 'Claim for me' })).toBeDisabled()
-    await userEvent.click(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Ben' }))
-    expect(screen.getByRole('button', { name: 'Assign Satay' })).toBeEnabled()
+    expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Ben' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Reopen claiming' })).toBeEnabled()
   })
 
@@ -79,48 +72,69 @@ describe('ClaimItemsPage', () => {
     render(<ClaimItemsPage role="owner" currentUserId="alice" offline errorMessage="Claiming is closed." participants={participants} items={[unclaimed]} />)
     expect(screen.getByRole('button', { name: 'Claim for me' })).toBeDisabled()
     expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Ben' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Assign Satay' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Close claiming' })).toBeDisabled()
     expect(screen.getByRole('alert')).toHaveTextContent('Claiming is closed.')
   })
 
-  it('starts from the current assignees, assigns several people, and resets after success', async () => {
-    const onAssign = vi.fn().mockResolvedValue(true)
+  describe('saving as soon as a name is tapped', () => {
     const assignedToAlice: ClaimItemView = { ...unclaimed, assigned: true, claims: [{ userId: 'alice', amountCents: 1001 }] }
-    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assignedToAlice]} onAssign={onAssign} />)
-    const who = screen.getByRole('group', { name: 'Who had Satay' })
-    expect(within(who).getByRole('button', { name: 'Alice' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(who).getByRole('button', { name: 'Ben' })).toHaveAttribute('aria-pressed', 'false')
-    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
-    expect(onAssign).toHaveBeenCalledWith('i1', ['alice', 'ben'])
-    // Back to the (unchanged in this test) current assignment.
-    await vi.waitFor(() => expect(within(who).getByRole('button', { name: 'Ben' })).toHaveAttribute('aria-pressed', 'false'))
-  })
+    const chip = (name: string) => within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name })
 
-  it('keeps the selection when the assignment fails', async () => {
-    const onAssign = vi.fn().mockResolvedValue(false)
-    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} />)
-    const who = screen.getByRole('group', { name: 'Who had Satay' })
-    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Assign Satay' }))
-    expect(onAssign).toHaveBeenCalledTimes(1)
-    expect(within(who).getByRole('button', { name: 'Ben' })).toHaveAttribute('aria-pressed', 'true')
-  })
+    it('starts from the current assignees and sends one call for quick taps, after a short pause', async () => {
+      const onAssign = vi.fn().mockResolvedValue(true)
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assignedToAlice]} onAssign={onAssign} />)
+      expect(chip('Alice')).toHaveAttribute('aria-pressed', 'true')
+      expect(chip('Ben')).toHaveAttribute('aria-pressed', 'false')
+      await userEvent.click(chip('Ben'))
+      await userEvent.click(chip('Alice'))
+      expect(chip('Alice')).toHaveAttribute('aria-pressed', 'false')
+      expect(chip('Ben')).toHaveAttribute('aria-pressed', 'true')
+      expect(onAssign).not.toHaveBeenCalled()
+      await vi.waitFor(() => expect(onAssign).toHaveBeenCalledTimes(1))
+      expect(onAssign).toHaveBeenCalledWith('i1', ['ben'])
+      expect(await screen.findByText('Saved')).toHaveAttribute('aria-live', 'polite')
+      await new Promise(r => setTimeout(r, 500))
+      expect(onAssign).toHaveBeenCalledTimes(1)
+    })
 
-  it('disables Assign until the selection differs from the current assignment and is not empty', async () => {
-    const assigned: ClaimItemView = { ...unclaimed, assigned: true, claims: [{ userId: 'ben', amountCents: 1001 }] }
-    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assigned]} />)
-    const who = screen.getByRole('group', { name: 'Who had Satay' })
-    const assign = screen.getByRole('button', { name: 'Assign Satay' })
-    expect(assign).toBeDisabled()
-    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
-    expect(assign).toBeDisabled() // nobody picked
-    await userEvent.click(within(who).getByRole('button', { name: 'Alice' }))
-    expect(assign).toBeEnabled()
-    await userEvent.click(within(who).getByRole('button', { name: 'Alice' }))
-    await userEvent.click(within(who).getByRole('button', { name: 'Ben' }))
-    expect(assign).toBeDisabled() // same as now
+    it('shows Saving… and locks that item’s chips while the save is in flight', async () => {
+      let finish: (ok: boolean) => void = () => {}
+      const onAssign = vi.fn().mockReturnValue(new Promise<boolean>(r => { finish = r }))
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} />)
+      await userEvent.click(chip('Ben'))
+      expect(await screen.findByText('Saving…')).toBeInTheDocument()
+      expect(chip('Ben')).toBeDisabled()
+      await act(async () => finish(true))
+      expect(screen.getByText('Saved')).toBeInTheDocument()
+      expect(chip('Ben')).toBeEnabled()
+    })
+
+    it('goes back to the saved people when the save fails', async () => {
+      const onAssign = vi.fn().mockResolvedValue(false)
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assignedToAlice]} onAssign={onAssign} />)
+      await userEvent.click(chip('Ben'))
+      expect(chip('Ben')).toHaveAttribute('aria-pressed', 'true')
+      await vi.waitFor(() => expect(onAssign).toHaveBeenCalledWith('i1', ['alice', 'ben']))
+      await vi.waitFor(() => expect(chip('Ben')).toHaveAttribute('aria-pressed', 'false'))
+      expect(chip('Alice')).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument()
+    })
+
+    it('clears the item when the last person is taken off', async () => {
+      const onAssign = vi.fn().mockResolvedValue(true)
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assignedToAlice]} onAssign={onAssign} />)
+      await userEvent.click(chip('Alice'))
+      await vi.waitFor(() => expect(onAssign).toHaveBeenCalledWith('i1', []))
+    })
+
+    it('sends nothing when the taps end where they started', async () => {
+      const onAssign = vi.fn().mockResolvedValue(true)
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[assignedToAlice]} onAssign={onAssign} />)
+      await userEvent.click(chip('Ben'))
+      await userEvent.click(chip('Ben'))
+      await new Promise(r => setTimeout(r, 600))
+      expect(onAssign).not.toHaveBeenCalled()
+    })
   })
 
   it('shows a shared item as shared, with each person’s part', () => {

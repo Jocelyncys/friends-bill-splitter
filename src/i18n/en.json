@@ -207,11 +207,11 @@
     "sharedEach": "Shared by {{count}}, {{amount}} each",
     "amountRange": "{{min}} to {{max}}",
     "whoHad": "Who had {{item}}",
-    "assign": "Assign",
     "paysTitle": "What each person pays",
     "paysLine": "Items {{items}} → pays {{pays}}",
     "paysWaiting": "What each person pays, discounts and tax included, appears once every item has someone.",
-    "assignItem": "Assign {{item}}"
+    "saving": "Saving…",
+    "saved": "Saved"
   },
   "actionError": {
     "item_not_found": "This item could not be found.",

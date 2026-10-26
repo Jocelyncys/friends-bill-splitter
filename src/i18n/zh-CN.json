@@ -207,11 +207,11 @@
     "sharedEach": "{{count}} 人分摊，每人 {{amount}}",
     "amountRange": "{{min}} 至 {{max}}",
     "whoHad": "谁点了{{item}}",
-    "assign": "分配",
     "paysTitle": "每人实付",
     "paysLine": "项目 {{items}} → 实付 {{pays}}",
     "paysWaiting": "每个项目都有人后，会显示计入折扣和税费后的每人实付金额。",
-    "assignItem": "分配{{item}}"
+    "saving": "保存中…",
+    "saved": "已保存"
   },
   "actionError": {
     "item_not_found": "找不到这个项目。",
