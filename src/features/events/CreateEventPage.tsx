@@ -8,9 +8,15 @@ import { readPreferredName } from './preferredName'
 
 const MODES: EventMode[] = ['single_bill', 'trip_event']
 
+/** "26 Oct" in English (day first, as in Malaysia), "10月26日" in Chinese. */
+function shortDate(language: string): string {
+  const locale = language.startsWith('zh') ? 'zh-CN' : 'en-GB'
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date())
+}
+
 export function CreateEventPage() {
   const { mode } = useParams()
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState(readPreferredName)
@@ -19,15 +25,19 @@ export function CreateEventPage() {
 
   if (!MODES.includes(mode as EventMode)) return <Navigate to="/" replace />
 
+  const defaultName = t(mode === 'single_bill' ? 'create.defaultBill' : 'create.defaultTrip', {
+    date: shortDate(i18n.language),
+  })
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || !displayName.trim()) return setError(t('create.nameRequired'))
+    if (!displayName.trim()) return setError(t('create.nameRequired'))
     setBusy(true)
     setError(null)
     try {
       await ensureAnonymousSession()
       const { eventId, inviteToken } = await createEventRepository().createEvent({
-        name: name.trim(),
+        name: name.trim() || defaultName,
         mode: mode as EventMode,
         currency: 'MYR',
         displayName: displayName.trim(),
@@ -52,7 +62,12 @@ export function CreateEventPage() {
         <div className="group">
           <label className="field">
             <span className="field__label">{t('create.eventName')}</span>
-            <input value={name} onChange={e => setName(e.target.value)} autoComplete="off" />
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder={defaultName}
+              autoComplete="off"
+            />
           </label>
           <label className="field">
             <span className="field__label">{t('common.yourName')}</span>

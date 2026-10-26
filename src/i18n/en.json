@@ -42,7 +42,9 @@
     "submit": "Create event",
     "submitting": "Creating…",
     "failed": "Could not create the event. Please try again.",
-    "nameRequired": "Please enter both names."
+    "nameRequired": "Please enter your name.",
+    "defaultBill": "Bill {{date}}",
+    "defaultTrip": "Trip {{date}}"
   },
   "join": {
     "title": "Join an event",

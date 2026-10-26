@@ -42,7 +42,9 @@
     "submit": "创建活动",
     "submitting": "创建中…",
     "failed": "无法创建活动，请重试。",
-    "nameRequired": "请填写两个名称。"
+    "nameRequired": "请填写你的名字。",
+    "defaultBill": "账单 {{date}}",
+    "defaultTrip": "旅行 {{date}}"
   },
   "join": {
     "title": "加入活动",
