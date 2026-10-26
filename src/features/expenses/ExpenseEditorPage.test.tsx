@@ -224,6 +224,33 @@ describe('ExpenseEditorPage', () => {
       expect(screen.getByRole('button', { name: 'Confirm items' })).toBeInTheDocument()
     })
 
+    it('fills Amount paid from the receipt Total line when it differs from the items', async () => {
+      recognizeReceipt.mockResolvedValue(['NASI LEMAK 12.50', 'Voucher -2.00', 'SST 6% 0.63', 'Total (MYR) 11.13 11.13'])
+      saveExpense.mockResolvedValue({ id: 'x' })
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+      expect(await screen.findByDisplayValue('NASI LEMAK')).toBeInTheDocument()
+      expect(screen.queryByDisplayValue('Voucher')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Amount paid')).toHaveValue('11.13')
+      expect(screen.getByText('Discounts, tax and rounding: −RM 1.37')).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Confirm items' }))
+      await userEvent.type(screen.getByLabelText('Description'), 'Breakfast')
+      await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
+      await waitFor(() => expect(saveExpense).toHaveBeenCalledTimes(1))
+      expect(saveExpense.mock.calls[0][0]).toMatchObject({
+        totalCents: 1113,
+        adjustments: [{ kind: 'other', label: null, amountCents: -137, sortOrder: 0 }],
+      })
+    })
+
+    it('leaves Amount paid empty when the receipt total equals the items', async () => {
+      recognizeReceipt.mockResolvedValue(['NASI LEMAK 12.50', 'TEH O 3.00', 'TOTAL 15.50'])
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+      expect(await screen.findByDisplayValue('NASI LEMAK')).toBeInTheDocument()
+      expect(screen.getByLabelText('Amount paid')).toHaveValue('')
+    })
+
     it('disables save while recognizing', async () => {
       recognizeReceipt.mockReturnValue(new Promise(() => {}))
       renderEditor('/event/ev-1/expenses/new?scan=1')

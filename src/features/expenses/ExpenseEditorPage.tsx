@@ -189,7 +189,14 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       const parsed = parseReceipt(lines)
       if (parsed.items.length === 0) throw new Error('no items')
       const scanned = parsed.items.map(item => ({ id: crypto.randomUUID(), description: item.description, price: centsToText(item.totalCents), assigneeIds: [] }))
-      setDraft(d => ({ ...d, items: isUntouched(d.items) ? scanned : [...d.items, ...scanned] }))
+      // The receipt's Total line is the amount paid. It only describes the scanned items, so it fills Amount paid
+      // when they replace an empty form and differ from it.
+      const scannedCents = parsed.items.reduce((sum, item) => sum + item.totalCents, 0)
+      const total = parsed.totalCents
+      setDraft(d => {
+        if (!isUntouched(d.items)) return { ...d, items: [...d.items, ...scanned] }
+        return { ...d, items: scanned, amount: total !== undefined && total !== scannedCents ? centsToText(total) : d.amount }
+      })
       setOcrMessage(t('editor.scan.reviewHint'))
       setOcrState('review')
     } catch {

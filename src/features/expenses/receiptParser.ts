@@ -1,26 +1,32 @@
-import type { AdjustmentKind } from './expenseRepository'
 import { parseMoneyToCents } from './expenseForm'
 
 // Description, then a price at the end: "12.50", "12,50", "1,234.50", optionally "RM " prefixed.
 const PRICE = /^(.+?)[\s:]+(?:RM\s*)?(\d{1,3}(?:,\d{3})+|\d+)[.,](\d{2})$/i
-// Bill-level lines, matched at the first letter so OCR noise ("* ", "- ") or a clipped first
-// letter ("harges summary") does not let them through as items. Per-item member discounts are
-// already reflected in the item prices, so they are neither items nor adjustments.
+// Bill-level lines, matched at the first letter so OCR noise ("* ", "- ") or a clipped first letter
+// ("harges summary") does not let them through as items. Vouchers, discounts, tax, service charge and rounding
+// are not read line by line (OCR gets them wrong on real photos): the Total line gives the amount paid instead.
 const EXCLUDED =
-  /^[^\p{L}]*(c?harges?\s+summary|base\s*amt|amount|qty|sub\s*-?\s*total|grand\s*total|member(?:ship)?\s*disc\w*|bill\s*rounding|voucher|rounding|tax\w*|gst|sst|service|svc|total|cash|change)\b/iu
+  /^[^\p{L}]*(c?harges?\s+summary|base\s*amt|amount|qty|sub\s*-?\s*total|grand\s*total|member(?:ship)?\s*disc\w*|bill\s*rounding|voucher|disc\w*|rounding|tax\w*|gst|sst|service|svc|total|cash|change)\b/iu
 
-// Bill-level adjustments, by their first word(s). Longer names first so "discount" wins over "disc".
-const ADJUSTMENT = /^[^\p{L}]*(bill\s*rounding|rounding|voucher|discount|disc|sst|gst|tax|service|svc)\b/iu
-// The rightmost amount on the line, with its sign: "-5.00", "RM 10.00", "1,00"; "(0.02)" is negative.
-const AMOUNT_AT_END = /(-)?\s*(?:RM\s*)?(\()?\s*(?:RM\s*)?(\d{1,3}(?:,\d{3})+|\d+)[.,](\d{2})\s*\)?\s*$/i
-const SUBTOTAL = /^[^\p{L}]*sub\s*-?\s*total\b/iu
+// "Total (MYR) 25.00", "Grand Total 19.60"; not the subtotal or a total of discounts, quantity or items.
+const TOTAL = /\btotal\b/i
+const NOT_TOTAL = /sub\s*-?\s*total|total\s*(?:disc\w*|qty|quantity|items?|sav\w*)\b/i
+const CURRENCY = /\(?\s*MYR\s*\)?|\bRM\b/i
+const MONEY = /(\d{1,3}(?:,\d{3})+|\d+)[.,](\d{2})(?!\d)/g
 
-/** The keyword picks the kind, but "Service Tax" is a tax: tax words anywhere in the label win over service. */
-function kindOf(word: string, label: string): AdjustmentKind {
-  if (/rounding/i.test(word)) return 'rounding'
-  if (/voucher|disc/i.test(word)) return 'discount'
-  if (/\b(sst|gst|tax)\b/i.test(label)) return 'tax'
-  return 'service'
+/** The amount on the receipt's Total line: the rightmost amount (OCR often prints it twice). */
+function findTotal(lines: string[]): number | undefined {
+  let found: { cents: number; currency: boolean } | undefined
+  for (const line of lines) {
+    if (!TOTAL.test(line) || NOT_TOTAL.test(line)) continue
+    const last = [...line.matchAll(MONEY)].at(-1)
+    const cents = last ? parseMoneyToCents(`${last[1].replace(/,/g, '')}.${last[2]}`) : null
+    if (cents === null) continue
+    const currency = CURRENCY.test(line)
+    // A line with the currency wins; otherwise the lowest line (largest y) wins.
+    if (!found || currency || !found.currency) found = { cents, currency }
+  }
+  return found?.cents
 }
 
 // Malaysian POS noise around an item name.
@@ -33,50 +39,16 @@ function cleanDescription(raw: string): string {
   return raw.replace(REF_NOTE, '').replace(UNIT_PRICE, '').replace(DANGLING_EA, '').trim().replace(QUANTITY, '').trim()
 }
 
-/** "Voucher Discount: -5.0" -> "Voucher Discount": no leading noise, trailing colon or stray numbers. */
-function cleanLabel(raw: string): string {
-  let label = raw.replace(/^[^\p{L}]+/u, '')
-  for (let before = ''; before !== label; ) {
-    before = label
-    label = label.replace(/[\s:]+$/u, '').replace(/\s*-?\d+(?:[.,]\d+)?$/u, '')
-  }
-  return label.slice(0, 60).trimEnd()
-}
-
 export type ParsedReceiptItem = { description: string; totalCents: number }
-/** Signed integer cents: a voucher or discount is negative, rounding keeps the receipt's sign. */
-export type ParsedAdjustment = { kind: AdjustmentKind; label: string; amountCents: number }
-
-function parseAdjustment(text: string): ParsedAdjustment | null | undefined {
-  const word = ADJUSTMENT.exec(text)?.[1]
-  if (!word) return undefined // not an adjustment line
-  const amount = AMOUNT_AT_END.exec(text)
-  if (!amount) return null
-  const cents = parseMoneyToCents(`${amount[3].replace(/,/g, '')}.${amount[4]}`)
-  const label = cleanLabel(text.slice(0, amount.index))
-  if (cents === null || !label) return null
-  const kind = kindOf(word, label)
-  const sign = kind === 'discount' || (kind === 'rounding' && (amount[1] || amount[2])) ? -1 : 1
-  return { kind, label, amountCents: sign * cents }
-}
-
 /**
- * OCR lines -> likely items and bill-level adjustments (voucher, SST, service charge, rounding).
+ * OCR lines -> likely items, and the amount paid from the Total line (undefined when there is none).
  * Money is parsed from text to integer cents; no float maths.
  */
-export function parseReceipt(lines: string[]): { items: ParsedReceiptItem[]; adjustments: ParsedAdjustment[] } {
+export function parseReceipt(lines: string[]): { items: ParsedReceiptItem[]; totalCents?: number } {
   const items: ParsedReceiptItem[] = []
-  const adjustments: ParsedAdjustment[] = []
-  // Discount lines above the subtotal belong to an item (its price already reflects them); only those after it
-  // are bill-level. A receipt without a subtotal line keeps every discount line.
-  let beforeSubtotal = lines.some(line => SUBTOTAL.test(line.trim()))
   for (const line of lines) {
     const text = line.trim().replace(/\s+/g, ' ')
-    if (SUBTOTAL.test(text)) beforeSubtotal = false
-    const adjustment = parseAdjustment(text)
-    if (adjustment && adjustment.kind === 'discount' && beforeSubtotal) continue
-    if (adjustment) adjustments.push(adjustment)
-    if (adjustment !== undefined || EXCLUDED.test(text)) continue
+    if (EXCLUDED.test(text)) continue
     const match = text.match(PRICE)
     if (!match) continue
     const description = cleanDescription(match[1])
@@ -84,7 +56,8 @@ export function parseReceipt(lines: string[]): { items: ParsedReceiptItem[]; adj
     if (!description || EXCLUDED.test(description) || totalCents === null) continue
     items.push({ description, totalCents })
   }
-  return { items, adjustments }
+  const totalCents = findTotal(lines)
+  return totalCents === undefined ? { items } : { items, totalCents }
 }
 
 /** Items only (see parseReceipt). */

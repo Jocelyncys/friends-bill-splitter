@@ -28,6 +28,7 @@ test('@slow scans a receipt in the browser without contacting third-party origin
   await expect(page.getByLabel('Item 2 price')).toHaveValue('3.80')
   await expect(page.getByLabel('Item 3 price')).toHaveValue('4.20')
   await expect(page.getByLabel('Item 4 name')).toHaveCount(0) // TOTAL is not an item
+  await expect(page.getByLabel('Amount paid')).toHaveValue('') // the TOTAL matches the items
 
   await page.getByRole('button', { name: 'Confirm items' }).click()
   await page.getByRole('button', { name: 'Save expense' }).click()
