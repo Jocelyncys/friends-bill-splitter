@@ -1250,55 +1250,11 @@ input[type='radio']:focus-visible {
   margin-bottom: 20px;
 }
 
-.plan-cards {
-  display: grid;
-  gap: 12px;
+.plan {
   margin: 0 0 20px;
-}
-
-/* Each method is a selectable option: hairline when idle, plum outline + petal when chosen. */
-.plan-card {
-  padding: 4px 16px 16px;
-  border: 1.5px solid var(--rose);
+  padding: 12px 16px 16px;
   border-radius: var(--radius-group);
-  background: var(--paper);
-  transition: border-color 120ms ease, background-color 120ms ease;
-}
-
-.plan-card--selected {
-  border: 2px solid var(--plum);
   background: var(--petal);
-}
-
-.plan-card__title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  cursor: pointer;
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
-}
-
-.plan-card__title strong {
-  font-weight: 650;
-}
-
-.plan-card > .muted {
-  margin: -4px 0 12px;
-}
-
-.plan-card .field {
-  margin: 0 0 12px;
-  padding: 8px 12px;
-  border-radius: var(--radius-control);
-  background: var(--paper);
-}
-
-.plan-card .field > span {
-  font-size: var(--text-sm);
-  color: var(--ink-muted);
 }
 
 .badge {
@@ -1308,7 +1264,7 @@ input[type='radio']:focus-visible {
   font-size: 13px;
 }
 
-.plan-card__totals {
+.plan__totals {
   display: flex;
   flex-wrap: wrap;
   column-gap: 16px;
@@ -1317,21 +1273,17 @@ input[type='radio']:focus-visible {
   color: var(--ink-muted);
 }
 
-.plan-card__totals p {
+.plan__totals p {
   margin: 0;
 }
 
-.plan-card__balances {
+.plan__balances {
   margin: 0 0 12px;
   font-size: var(--text-sm);
 }
 
-.plan-card .receipt {
+.plan .receipt {
   margin: 8px 0 0;
-}
-
-.plan-card h3 {
-  margin: 12px 0 4px;
 }
 
 .settlement__notice {

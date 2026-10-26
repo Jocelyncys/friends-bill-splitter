@@ -245,20 +245,7 @@
   },
   "settlement": {
     "previewTitle": "结算",
-    "previewHint": "比较三种结算方式并选择一种。确认之前不会锁定任何内容。",
-    "methodGroup": "结算方式",
-    "method": {
-      "original": "付给原付款人",
-      "optimized": "优化直接结算",
-      "coordinator": "结算协调人"
-    },
-    "methodHint": {
-      "original": "每个人付给自己参与的每笔开销的付款人。",
-      "optimized": "朋友之间的付款笔数最少。",
-      "coordinator": "所有人付给一个人，再由他付给其他人。"
-    },
-    "recommended": "推荐",
-    "coordinator": "协调人",
+    "previewHint": "以下是让大家结清所需的最少付款。确认前不会锁定任何内容。",
     "totalPaid": "已付总额：{{amount}}",
     "totalOwed": "应付总额：{{amount}}",
     "balance": {
@@ -274,9 +261,8 @@
     "settleNow": "立即结算",
     "later": "稍后",
     "cancel": "取消",
-    "confirmTitle": "确定结算此活动？",
+    "confirmTitle": "锁定开销并创建这些付款？",
     "confirm": "确认并结算",
-    "confirmMethod": "方式：{{method}}",
     "confirmReadOnly": "此后开销将变为只读，下列付款也将固定。已结算的活动目前无法重新打开：如需之后更正，请创建新活动。",
     "offline": "你已离线。结算需要网络连接。",
     "notLive": "正在重新连接…请等连接恢复后再结算。",

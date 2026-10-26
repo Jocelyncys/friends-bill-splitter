@@ -10,7 +10,7 @@ test.describe('plan happy path', () => {
     })
   })
 
-  test('creates a trip, adds mixed expenses, and previews optimized settlement', async ({ page }) => {
+  test('creates a trip, adds mixed expenses, and previews the fewest payments', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('button', { name: 'Trip or Event' }).click()
     await page.getByLabel('Event name').fill('Penang Trip')
@@ -20,7 +20,7 @@ test.describe('plan happy path', () => {
     await page.getByLabel('Amount').fill('90.00')
     await page.getByRole('button', { name: 'Save expense' }).click()
     await page.getByRole('button', { name: 'Settle now' }).click()
-    await expect(page.getByText('Optimized direct settlement')).toBeVisible()
+    await expect(page.getByText(/These are the fewest payments/)).toBeVisible()
   })
 })
 
@@ -72,20 +72,16 @@ test('two friends split a trip, settle with the optimized plan, and complete the
   await expect(owner.locator('.expense-row', { hasText: 'Lunch' })).toBeVisible({ timeout: 15_000 })
   await owner.getByRole('button', { name: 'Settle now' }).click()
 
-  const cards = owner.getByRole('radiogroup', { name: 'Settlement method' }).getByRole('article')
-  await expect(cards).toHaveCount(3)
-  await expect(cards.nth(0)).toContainText('Pay original payers')
-  await expect(cards.nth(1)).toContainText('Optimized direct settlement')
-  await expect(cards.nth(1)).toContainText('Recommended')
-  await expect(cards.nth(2)).toContainText('Settlement coordinator')
-  await expect(cards.nth(0)).not.toContainText('Recommended')
-  await expect(cards.nth(2)).not.toContainText('Recommended')
-  await expect(owner.getByRole('radio', { name: /Optimized direct settlement/ })).toBeChecked()
-  await expect(cards.nth(1)).toContainText(rm('30.00'))
+  // No method to choose: the fewest direct payments are shown and settled.
+  await expect(owner.getByRole('radio')).toHaveCount(0)
+  const payments = owner.getByRole('list', { name: 'Payments' })
+  await expect(payments.getByRole('listitem')).toHaveCount(1)
+  await expect(payments).toContainText('Ben pays Ana')
+  await expect(payments).toContainText(rm('30.00'))
 
   await owner.locator('.settlement__footer').getByRole('button', { name: 'Settle now' }).click()
-  const dialog = owner.getByRole('dialog', { name: 'Settle this event?' })
-  await expect(dialog).toContainText('Method: Optimized direct settlement')
+  const dialog = owner.getByRole('dialog', { name: 'Lock expenses and create these payments?' })
+  await expect(dialog).toContainText('Transfers: 1')
   await expect(dialog).toContainText('create a new event')
   await dialog.getByRole('button', { name: 'Confirm and settle' }).click()
 

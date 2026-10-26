@@ -245,20 +245,7 @@
   },
   "settlement": {
     "previewTitle": "Settle up",
-    "previewHint": "Compare the three ways to settle, then choose one. Nothing is locked until you confirm.",
-    "methodGroup": "Settlement method",
-    "method": {
-      "original": "Pay original payers",
-      "optimized": "Optimized direct settlement",
-      "coordinator": "Settlement coordinator"
-    },
-    "methodHint": {
-      "original": "Everyone pays the person who paid for each expense they shared.",
-      "optimized": "The fewest direct payments between friends.",
-      "coordinator": "Everyone pays one person, who then pays the others."
-    },
-    "recommended": "Recommended",
-    "coordinator": "Coordinator",
+    "previewHint": "These are the fewest payments to settle everyone up. Nothing is locked until you confirm.",
     "totalPaid": "Total paid: {{amount}}",
     "totalOwed": "Total owed: {{amount}}",
     "balance": {
@@ -274,9 +261,8 @@
     "settleNow": "Settle now",
     "later": "Later",
     "cancel": "Cancel",
-    "confirmTitle": "Settle this event?",
+    "confirmTitle": "Lock expenses and create these payments?",
     "confirm": "Confirm and settle",
-    "confirmMethod": "Method: {{method}}",
     "confirmReadOnly": "After this, expenses become read-only and the payments below are fixed. A settled event cannot be reopened yet: to correct anything afterwards, create a new event.",
     "offline": "You are offline. Settling needs an internet connection.",
     "notLive": "Reconnecting… wait until the connection is back before settling.",

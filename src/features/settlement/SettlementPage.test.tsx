@@ -21,21 +21,13 @@ const totals = [
   { userId: 'ben', paidCents: 0, owedCents: 3500 },
   { userId: 'cara', paidCents: 0, owedCents: 3500 },
 ]
-const payerAllocations = [
-  { expenseId: 'x1', payerId: 'zed', participantId: 'ben', amountCents: 3000 },
-  { expenseId: 'x2', payerId: 'alice', participantId: 'cara', amountCents: 2000 },
-  { expenseId: 'x3', payerId: 'dan', participantId: 'cara', amountCents: 1500 },
-  { expenseId: 'x3', payerId: 'dan', participantId: 'ben', amountCents: 500 },
-]
-const preview = buildPreview(members, totals, payerAllocations)
+const preview = buildPreview(members, totals)
 
 function renderPreview(extra: Partial<React.ComponentProps<typeof SettlementPage>> = {}) {
   const handlers = { onCancel: vi.fn(), onLater: vi.fn(), onSettleNow: vi.fn() }
   render(<SettlementPage phase="preview" transfers={[]} preview={preview} {...handlers} {...extra} />)
   return handlers
 }
-
-const card = (name: RegExp) => screen.getByRole('radio', { name }).closest('article') as HTMLElement
 
 describe('SettlementPage', () => {
   it('does not lock an event when settlement preview is cancelled', async () => {
@@ -56,55 +48,38 @@ describe('SettlementPage', () => {
   })
 
   describe('preview', () => {
-    it('shows three cards in order with a Recommended badge on the optimized one', () => {
+    it('offers no method choice: only the fewest direct payments', () => {
       renderPreview()
-      const radios = screen.getAllByRole('radio')
-      expect(radios.map(r => r.closest('article')?.querySelector('strong')?.textContent)).toEqual([
-        'Pay original payers',
-        'Optimized direct settlement',
-        'Settlement coordinator',
-      ])
-      expect(within(radios[1].closest('article') as HTMLElement).getByText('Recommended')).toBeInTheDocument()
-      expect(screen.getAllByText('Recommended')).toHaveLength(1)
+      expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+      expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+      expect(preview.transfers).toHaveLength(4)
+      const payments = screen.getByRole('list', { name: 'Payments' })
+      expect(within(payments).getAllByRole('listitem')).toHaveLength(4)
+      expect(within(payments).getByText('Ben pays Zed')).toBeInTheDocument()
     })
 
     it('shows totals, net balances in words and the transfer count', () => {
       renderPreview()
-      const optimized = card(/Optimized direct settlement/)
-      expect(within(optimized).getByText(/Total paid/)).toHaveTextContent('RM 70.00')
-      expect(within(optimized).getByText(/Total owed/)).toHaveTextContent('RM 70.00')
-      expect(within(optimized).getByText('Zed receives RM 30.00')).toBeInTheDocument()
-      expect(within(optimized).getByText('Ben pays RM 35.00')).toBeInTheDocument()
-      expect(within(optimized).getByText(/^Transfers: \d+$/)).toHaveTextContent(`Transfers: ${preview.plans.optimized.length}`)
-      expect(within(optimized).getAllByRole('listitem').length).toBeGreaterThanOrEqual(preview.plans.optimized.length)
+      expect(screen.getByText(/Total paid/)).toHaveTextContent('RM 70.00')
+      expect(screen.getByText(/Total owed/)).toHaveTextContent('RM 70.00')
+      expect(screen.getByText('Zed receives RM 30.00')).toBeInTheDocument()
+      expect(screen.getByText('Ben pays RM 35.00')).toBeInTheDocument()
+      expect(screen.getByText(/^Transfers: \d+$/)).toHaveTextContent('Transfers: 4')
     })
 
-    it('offers only creditors as coordinators, sorted by credit then name, first preselected', () => {
-      renderPreview()
-      const select = screen.getByRole('combobox', { name: 'Coordinator' })
-      expect(within(select).getAllByRole('option').map(o => o.textContent)).toEqual(['Zed', 'Alice', 'Dan'])
-      expect(select).toHaveValue('zed')
-    })
-
-    it('opens a confirmation dialog and calls onSettleNow only on confirm', async () => {
+    it('opens a plain confirmation dialog and calls onSettleNow only on confirm', async () => {
       const { onSettleNow } = renderPreview()
       await userEvent.click(screen.getByRole('button', { name: 'Settle now' }))
       expect(onSettleNow).not.toHaveBeenCalled()
-      const dialog = screen.getByRole('dialog')
-      expect(dialog).toHaveTextContent('Optimized direct settlement')
+      const dialog = screen.getByRole('dialog', { name: 'Lock expenses and create these payments?' })
+      expect(dialog).not.toHaveTextContent('Method')
+      expect(dialog).toHaveTextContent('Transfers: 4')
       expect(dialog).toHaveTextContent('read-only')
       expect(dialog).toHaveTextContent('create a new event')
       await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm and settle' }))
-      expect(onSettleNow).toHaveBeenCalledWith('optimized_direct', null)
-    })
-
-    it('passes the chosen coordinator', async () => {
-      const { onSettleNow } = renderPreview()
-      await userEvent.click(screen.getByRole('radio', { name: /Settlement coordinator/ }))
-      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Coordinator' }), 'alice')
-      await userEvent.click(screen.getByRole('button', { name: 'Settle now' }))
-      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirm and settle' }))
-      expect(onSettleNow).toHaveBeenCalledWith('coordinator', 'alice')
+      expect(onSettleNow).toHaveBeenCalledOnce()
+      expect(onSettleNow).toHaveBeenCalledWith()
     })
 
     it('can back out of the dialog without calling anything', async () => {

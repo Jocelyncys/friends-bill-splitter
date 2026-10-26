@@ -11,7 +11,7 @@ import { PaymentDetailsForm } from '../payments/PaymentDetailsForm'
 import { createPaymentRepository } from '../payments/paymentRepository'
 import { buildPreview, type PreviewData } from './previewPlans'
 import { SettlementPage } from './SettlementPage'
-import { createSettlementRepository, SettlementError, type Settlement, type SettlementInputs, type SettlementMethod } from './settlementRepository'
+import { createSettlementRepository, SettlementError, type Settlement, type SettlementInputs } from './settlementRepository'
 
 type Loaded<T> = { eventId: string; value: T }
 
@@ -92,7 +92,7 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
     let previewFailed = false
     if (current.unresolved.length === 0 && current.totals.length > 0) {
       try {
-        preview = buildPreview(current.members, current.totals, current.payerAllocations)
+        preview = buildPreview(current.members, current.totals)
       } catch {
         preview = undefined
         previewFailed = true
@@ -110,11 +110,12 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
             ? t('settlement.noExpenses')
             : undefined
 
-    const settle = async (method: SettlementMethod, coordinatorId: string | null) => {
+    // Always the fewest direct payments; the other server methods are no longer offered.
+    const settle = async () => {
       setBusy(true)
       setErrorMessage(undefined)
       try {
-        await createSettlementRepository().confirmSettlement({ eventId, method, coordinatorId, expectedRevision: current.revision })
+        await createSettlementRepository().confirmSettlement({ eventId, method: 'optimized_direct', coordinatorId: null, expectedRevision: current.revision })
         shell?.refresh()
         navigate(`/event/${eventId}/payments`)
       } catch (error) {
@@ -139,7 +140,7 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
         errorMessage={errorMessage ?? (previewFailed ? t('settlement.previewFailed') : loadFailed ? t('event.loadFailed') : undefined)}
         onCancel={() => navigate(`/event/${eventId}`)}
         onLater={() => navigate(`/event/${eventId}`)}
-        onSettleNow={(method, coordinatorId) => void settle(method, coordinatorId)}
+        onSettleNow={() => void settle()}
       />
     )
   }

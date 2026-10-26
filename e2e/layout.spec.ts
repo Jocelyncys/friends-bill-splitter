@@ -29,9 +29,9 @@ async function expectNoOverflow(page: Page) {
 const READY: Record<string, (page: Page) => Promise<void>> = {
   start: page => expect(page.getByRole('main').getByRole('button')).toHaveCount(2),
   home: page => expect(page.getByRole('main').getByRole('article').first()).toBeVisible(),
-  editor: page => expect(page.getByRole('main').getByRole('checkbox')).toHaveCount(1),
+  editor: page => expect(page.locator('.more-options__toggle')).toHaveAttribute('aria-expanded', 'false'),
   people: page => expect(page.getByRole('main').getByRole('listitem')).toHaveCount(1),
-  settlement: page => expect(page.getByRole('radio')).toHaveCount(3),
+  settlement: page => expect(page.locator('.plan .receipt__row').first()).toBeVisible(),
 }
 
 async function check(page: Page, testInfo: TestInfo, screen: string, lang: string) {
@@ -71,7 +71,7 @@ test('bilingual screens fit the viewport; guided, active and attention states re
   await expect(page.getByRole('heading', { name: 'Latest expenses' })).toBeVisible()
   await expect(page.locator('.expense-row', { hasText: 'Strawberry farm tickets' })).toBeVisible()
   await expectNoOverflow(page)
-  // Resolve it so the settlement screen below shows the three plan cards.
+  // Resolve it so the settlement screen below shows the payments.
   await page.getByRole('button', { name: /Steamboat dinner: .* not yet assigned/ }).click()
   await page.getByRole('group', { name: 'Who had Seafood set' }).getByRole('button', { name: 'Ana' }).click()
   await expect(page.getByText('Assigned to: Ana')).toBeVisible()

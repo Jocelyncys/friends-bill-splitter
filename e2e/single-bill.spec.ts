@@ -49,10 +49,10 @@ test('single bill: itemized entry, a friend claims an item, the host assigns the
   await expect(owner.getByRole('article').filter({ hasText: 'Nasi lemak' })).toContainText('Claimed by: Ben')
   await expect(owner.getByText(/Not yet claimed/)).toHaveCount(0)
 
-  // Settle with the (default) optimized plan.
+  // Settle: always the fewest direct payments, no method to pick.
   await owner.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Home' }).click()
   await owner.getByRole('button', { name: 'Settle now' }).click()
-  await expect(owner.getByRole('radio', { name: /Optimized direct settlement/ })).toBeChecked()
+  await expect(owner.getByRole('radio')).toHaveCount(0)
   await owner.locator('.settlement__footer').getByRole('button', { name: 'Settle now' }).click()
   await owner.getByRole('dialog').getByRole('button', { name: 'Confirm and settle' }).click()
 
@@ -102,7 +102,7 @@ test('single bill: the host shares one item between two people, enters a lower a
   await expect(owner.locator('.expense-row', { hasText: 'Satay dinner' })).toContainText(rm('23.00'))
 
   await owner.getByRole('button', { name: 'Settle now' }).click()
-  await expect(owner.getByRole('radio', { name: /Optimized direct settlement/ })).toBeChecked()
+  await expect(owner.getByRole('radio')).toHaveCount(0)
   await owner.locator('.settlement__footer').getByRole('button', { name: 'Settle now' }).click()
   await owner.getByRole('dialog').getByRole('button', { name: 'Confirm and settle' }).click()
 
@@ -137,10 +137,10 @@ test('critical path in Simplified Chinese', async ({ page }) => {
 
   await page.getByRole('button', { name: '立即结算' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('结算')
-  await expect(page.getByRole('radio', { name: /优化直接结算/ })).toBeChecked()
-  await expect(page.getByText('推荐', { exact: true })).toBeVisible()
+  await expect(page.getByText(/以下是让大家结清所需的最少付款/)).toBeVisible()
+  await expect(page.getByRole('radio')).toHaveCount(0)
 
-  // The choice survives a reload.
+  // The language choice survives a reload.
   await page.reload()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('结算')
 })
