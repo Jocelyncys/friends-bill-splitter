@@ -243,9 +243,10 @@ describe('ExpenseEditorPage', () => {
       })
     })
 
-    it('leaves Amount paid empty when the receipt total equals the items', async () => {
+    it('leaves Amount paid empty when the receipt total equals the items, even if something was typed before', async () => {
       recognizeReceipt.mockResolvedValue(['NASI LEMAK 12.50', 'TEH O 3.00', 'TOTAL 15.50'])
       renderEditor('/event/ev-1/expenses/new?scan=1')
+      await userEvent.type(await screen.findByLabelText('Amount paid'), '99')
       await pick()
       expect(await screen.findByDisplayValue('NASI LEMAK')).toBeInTheDocument()
       expect(screen.getByLabelText('Amount paid')).toHaveValue('')
@@ -487,6 +488,13 @@ describe('ExpenseEditorPage (itemized, several people and amount paid)', () => {
     expect(screen.getByLabelText('Amount')).toHaveValue('8')
     await userEvent.selectOptions(screen.getByLabelText('Split method'), 'items')
     expect(screen.getByLabelText('Amount paid')).toHaveValue('8')
+  })
+
+  it('seeds the equal Amount with the items total when Amount paid is empty', async () => {
+    await startHostAssign()
+    await fillItem(1, 'Rice', '10', ['Alice'])
+    await userEvent.selectOptions(screen.getByLabelText('Split method'), 'custom')
+    expect(screen.getByLabelText('Amount')).toHaveValue('10.00')
   })
 
   it('keeps Amount paid when switching between the two itemized methods', async () => {

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -97,16 +97,53 @@ describe('ClaimItemsPage', () => {
       expect(onAssign).toHaveBeenCalledTimes(1)
     })
 
-    it('shows Saving… and locks that item’s chips while the save is in flight', async () => {
+    it('shows Saving… and ignores taps on that item (keeping focus) while the save is in flight', async () => {
       let finish: (ok: boolean) => void = () => {}
       const onAssign = vi.fn().mockReturnValue(new Promise<boolean>(r => { finish = r }))
       render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} />)
       await userEvent.click(chip('Ben'))
       expect(await screen.findByText('Saving…')).toBeInTheDocument()
-      expect(chip('Ben')).toBeDisabled()
+      expect(chip('Ben')).toBeEnabled()
+      expect(chip('Ben')).toHaveAttribute('aria-disabled', 'true')
+      expect(chip('Ben')).toHaveFocus()
+      await userEvent.click(chip('Alice'))
+      expect(chip('Alice')).toHaveAttribute('aria-pressed', 'false')
       await act(async () => finish(true))
       expect(screen.getByText('Saved')).toBeInTheDocument()
-      expect(chip('Ben')).toBeEnabled()
+      expect(chip('Ben')).not.toHaveAttribute('aria-disabled')
+    })
+
+    it('hides Saved again a few seconds later', async () => {
+      vi.useFakeTimers()
+      try {
+        const onAssign = vi.fn().mockResolvedValue(true)
+        render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} />)
+        fireEvent.click(chip('Ben'))
+        await act(async () => { vi.advanceTimersByTime(400) })
+        expect(screen.getByText('Saved')).toBeInTheDocument()
+        await act(async () => { vi.advanceTimersByTime(3000) })
+        expect(screen.queryByText('Saved')).not.toBeInTheDocument()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('still saves a tap made just before leaving the page', () => {
+      const onAssign = vi.fn().mockResolvedValue(true)
+      const { unmount } = render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} />)
+      fireEvent.click(chip('Ben'))
+      unmount()
+      expect(onAssign).toHaveBeenCalledTimes(1)
+      expect(onAssign).toHaveBeenCalledWith('i1', ['ben'])
+    })
+
+    it('does not save on leaving when the taps ended where they started', () => {
+      const onAssign = vi.fn().mockResolvedValue(true)
+      const { unmount } = render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} />)
+      fireEvent.click(chip('Ben'))
+      fireEvent.click(chip('Ben'))
+      unmount()
+      expect(onAssign).not.toHaveBeenCalled()
     })
 
     it('goes back to the saved people when the save fails', async () => {

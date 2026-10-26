@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useOutletContext, useParams } from 'react-router-dom'
 import type { ShellContext } from '../../components/shellContext'
@@ -31,20 +31,24 @@ export function ClaimItemsRoute() {
   const [loadFailedFor, setLoadFailedFor] = useState<string | null>(null)
   const [localTick, setLocalTick] = useState(0)
   const [busy, setBusy] = useState(false)
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  // itemId: the chip save that failed, so another item's save does not hide it.
+  const [error, setError] = useState<{ code: string; itemId?: string } | null>(null)
+  // Only the latest claims read is applied (an older, slower one must not overwrite it).
+  const reloadSeq = useRef(0)
 
   useEffect(() => {
     let cancelled = false
+    const seq = ++reloadSeq.current
     createClaimRepository()
       .getExpenseClaims(expenseId)
       .then(
         claims => {
-          if (cancelled) return
+          if (cancelled || seq !== reloadSeq.current) return
           setLoaded({ expenseId, claims })
           setLoadFailedFor(null)
         },
         // Keep showing the last good data; the page shows a banner instead.
-        () => !cancelled && setLoadFailedFor(expenseId),
+        () => !cancelled && seq === reloadSeq.current && setLoadFailedFor(expenseId),
       )
     return () => {
       cancelled = true
@@ -75,12 +79,12 @@ export function ClaimItemsRoute() {
   // Resolves true when the action succeeded.
   const run = async (action: () => Promise<void>): Promise<boolean> => {
     setBusy(true)
-    setErrorCode(null)
+    setError(null)
     try {
       await action()
       return true
     } catch (error) {
-      setErrorCode(error instanceof ActionError ? error.code : 'action_failed')
+      setError({ code: error instanceof ActionError ? error.code : 'action_failed' })
       return false
     } finally {
       setBusy(false)
@@ -92,19 +96,23 @@ export function ClaimItemsRoute() {
   // Chip taps save on their own (no global busy lock), and resolve only after the fresh claims are on screen, so
   // the chips never flash back to the old state.
   const assign = async (itemId: string, memberIds: string[]): Promise<boolean> => {
-    setErrorCode(null)
+    setError(previous => (previous?.itemId === itemId ? null : previous))
     let ok = true
     try {
       await repository.assignItem(itemId, memberIds)
-    } catch (error) {
+    } catch (failure) {
       ok = false
-      setErrorCode(error instanceof ActionError ? error.code : 'action_failed')
+      setError({ code: failure instanceof ActionError ? failure.code : 'action_failed', itemId })
     }
+    const seq = ++reloadSeq.current
     try {
-      setLoaded({ expenseId, claims: await repository.getExpenseClaims(expenseId) })
-      setLoadFailedFor(null)
+      const fresh = await repository.getExpenseClaims(expenseId)
+      if (seq === reloadSeq.current) {
+        setLoaded({ expenseId, claims: fresh })
+        setLoadFailedFor(null)
+      }
     } catch {
-      setLoadFailedFor(expenseId)
+      if (seq === reloadSeq.current) setLoadFailedFor(expenseId)
     }
     shell?.refresh()
     return ok
@@ -123,7 +131,7 @@ export function ClaimItemsRoute() {
       offline={!online}
       busy={busy}
       settled={home.event.state === 'settled'}
-      errorMessage={errorCode ? t(`actionError.${errorCode}`, { defaultValue: t('actionError.action_failed') }) : loadFailedFor === expenseId ? t('event.loadFailed') : undefined}
+      errorMessage={error ? t(`actionError.${error.code}`, { defaultValue: t('actionError.action_failed') }) : loadFailedFor === expenseId ? t('event.loadFailed') : undefined}
       onClaim={itemId => void run(() => repository.claimItem(itemId))}
       onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
       adjustmentCents={claims.adjustments.reduce((sum, adj) => sum + adj.amountCents, 0)}

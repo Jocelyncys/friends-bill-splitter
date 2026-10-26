@@ -92,6 +92,25 @@ describe('ClaimItemsRoute', () => {
     await vi.waitFor(() => expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Xan' })).toHaveAttribute('aria-pressed', 'false'))
   })
 
+  it('keeps one item’s save error visible when another item saves fine', async () => {
+    mocks.getExpenseClaims.mockResolvedValue({
+      ...claims,
+      creatorUserId: 'me',
+      totalCents: 1500,
+      items: [...claims.items, { id: 'i2', description: 'Teh', quantity: 1, totalCents: 500, sortOrder: 1 }],
+    })
+    mocks.assignItem.mockImplementation(async (itemId: string) => {
+      if (itemId === 'i1') throw new ActionError('not_member')
+    })
+    renderRoute()
+    await userEvent.click(within(await screen.findByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Xan' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await userEvent.click(within(screen.getByRole('group', { name: 'Who had Teh' })).getByRole('button', { name: 'Xan' }))
+    await vi.waitFor(() => expect(mocks.assignItem).toHaveBeenCalledWith('i2', ['x']))
+    expect(await screen.findByText('Saved')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
   it('shows the net of an older expense with several adjustment rows as one line', async () => {
     mocks.getExpenseClaims.mockResolvedValue({
       ...claims,

@@ -8,6 +8,8 @@ import { paysRows, sharedEachText, signedMoney } from './shareText'
 
 // Quick taps on one item's chips within this time are saved as one call.
 const SAVE_DELAY_MS = 400
+// "Saved" is announced, then fades out of the way.
+const SAVED_VISIBLE_MS = 3000
 
 const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id))
 
@@ -83,13 +85,26 @@ export function ClaimItemsPage({
   useEffect(() => {
     itemsRef.current = items
   }, [items])
+  const onAssignRef = useRef(onAssign)
+  useEffect(() => {
+    onAssignRef.current = onAssign
+  }, [onAssign])
+  const savedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
     const pending = timers.current
+    const saved = savedTimers.current
     return () => {
       mounted.current = false
-      for (const timer of Object.values(pending)) clearTimeout(timer)
+      for (const timer of Object.values(saved)) clearTimeout(timer)
+      // Leaving the page right after a tap still saves it (fire and forget).
+      for (const [itemId, timer] of Object.entries(pending)) {
+        clearTimeout(timer)
+        const picked = pickingRef.current[itemId]
+        const current = itemsRef.current.find(item => item.id === itemId)?.claims.map(c => c.userId) ?? []
+        if (picked && !sameIds(picked, current)) void onAssignRef.current?.(itemId, picked)
+      }
     }
   }, [])
   const manage = !settled && (canManage ?? role !== 'participant')
@@ -117,13 +132,16 @@ export function ClaimItemsPage({
     pickingRef.current = next
     setPicking(next)
   }
-  const setItemStatus = (itemId: string, value: 'saving' | 'saved' | null) =>
+  const setItemStatus = (itemId: string, value: 'saving' | 'saved' | null) => {
+    clearTimeout(savedTimers.current[itemId])
+    if (value === 'saved') savedTimers.current[itemId] = setTimeout(() => mounted.current && setItemStatus(itemId, null), SAVED_VISIBLE_MS)
     setStatus(previous => {
       const next = { ...previous }
       if (value) next[itemId] = value
       else delete next[itemId]
       return next
     })
+  }
 
   const save = async (itemId: string) => {
     delete timers.current[itemId]
@@ -140,6 +158,7 @@ export function ClaimItemsPage({
 
   // Each tap saves; quick taps on the same item are sent as one call.
   const togglePick = (itemId: string, current: string[], userId: string) => {
+    if (status[itemId] === 'saving') return // aria-disabled: keeps focus, ignores the tap
     const ids = pickingRef.current[itemId] ?? current
     setPick(itemId, ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId])
     setItemStatus(itemId, null)
@@ -206,7 +225,8 @@ export function ClaimItemsPage({
                         type="button"
                         className="chip toggle-chip"
                         aria-pressed={on}
-                        disabled={locked || saving}
+                        disabled={locked}
+                        aria-disabled={saving || undefined}
                         onClick={() => togglePick(item.id, current, p.id)}
                       >
                         {on && <CheckIcon />}

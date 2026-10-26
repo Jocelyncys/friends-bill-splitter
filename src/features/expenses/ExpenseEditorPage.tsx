@@ -167,7 +167,14 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       setOcrState('idle')
       setOcrMessage('')
     }
-    setDraft(d => ({ ...d, splitMethod: method }))
+    setDraft(d => {
+      // An empty Amount paid means "the items total": equal/custom start from it. A typed amount carries over as is.
+      if (isItemized(d.splitMethod) && !isItemized(method) && d.amount.trim() === '') {
+        const items = d.items.reduce((sum, item) => sum + (parseMoneyToCents(item.price) ?? 0), 0)
+        return { ...d, splitMethod: method, amount: items >= 1 ? centsToText(items) : '' }
+      }
+      return { ...d, splitMethod: method }
+    })
   }
 
   const scanReceipt = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -195,7 +202,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       const total = parsed.totalCents
       setDraft(d => {
         if (!isUntouched(d.items)) return { ...d, items: [...d.items, ...scanned] }
-        return { ...d, items: scanned, amount: total !== undefined && total !== scannedCents ? centsToText(total) : d.amount }
+        return { ...d, items: scanned, amount: total !== undefined && total !== scannedCents ? centsToText(total) : '' }
       })
       setOcrMessage(t('editor.scan.reviewHint'))
       setOcrState('review')
