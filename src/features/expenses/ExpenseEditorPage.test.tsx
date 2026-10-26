@@ -51,6 +51,17 @@ function renderEditor(entry = '/event/ev-1/expenses/new') {
   )
 }
 
+async function openMore() {
+  const toggle = await screen.findByRole('button', { name: 'More options' })
+  if (toggle.getAttribute('aria-expanded') !== 'true') await userEvent.click(toggle)
+}
+
+function localToday() {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 async function fillSimple() {
   await userEvent.type(await screen.findByLabelText('Description'), 'Dinner')
   await userEvent.type(screen.getByLabelText('Amount'), '10.01')
@@ -343,6 +354,7 @@ describe('ExpenseEditorPage (itemized, several people and amount paid)', () => {
   async function startHostAssign() {
     renderEditor()
     await userEvent.type(await screen.findByLabelText('Description'), 'Dinner')
+    await openMore()
     await userEvent.selectOptions(screen.getByLabelText('Split method'), 'host_assignment')
   }
   async function fillItem(n: number, name: string, price: string, people: string[]) {
@@ -509,9 +521,84 @@ describe('ExpenseEditorPage (itemized, several people and amount paid)', () => {
 it('has exactly one field labelled "Amount" (the split-method select must not match via its options)', async () => {
   renderEditor()
   await screen.findByLabelText('Description')
+  await openMore()
   expect(screen.getAllByLabelText('Amount')).toHaveLength(1)
   expect(screen.getAllByLabelText(/amount/i)).toEqual([screen.getByRole('textbox', { name: 'Amount' })])
   expect(screen.getByLabelText('Split method').tagName).toBe('SELECT')
+})
+
+describe('ExpenseEditorPage (more options)', () => {
+  it('keeps payer, date, split method and people collapsed for a new simple expense, with a summary', async () => {
+    renderEditor()
+    const toggle = await screen.findByRole('button', { name: 'More options' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAccessibleDescription('Paid by you, today, split equally among 2')
+    expect(screen.getByLabelText('Description')).toBeInTheDocument()
+    expect(screen.getByLabelText('Amount')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Split method')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Date')).not.toBeInTheDocument()
+    expect(screen.queryByText('Paid by')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Split between' })).not.toBeInTheDocument()
+
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Split method')).toHaveValue('equal')
+    expect(screen.getByLabelText('Date')).toHaveValue(localToday())
+    expect(screen.getByRole('group', { name: 'Split between' })).toBeInTheDocument()
+  })
+
+  it('updates the summary from what was picked', async () => {
+    renderEditor()
+    await openMore()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Bob' }))
+    await userEvent.clear(screen.getByLabelText('Date'))
+    await userEvent.type(screen.getByLabelText('Date'), '2026-10-20')
+    await userEvent.click(screen.getByRole('button', { name: 'More options' }))
+    expect(screen.getByRole('button', { name: 'More options' })).toHaveAccessibleDescription(
+      'Paid by you, 20 Oct, for 1 person only',
+    )
+  })
+
+  it('opens by itself to show an error inside it', async () => {
+    renderEditor()
+    await openMore()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Alice' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Bob' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More options' }))
+    await fillSimple()
+    await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
+    expect(screen.getByRole('button', { name: 'More options' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Choose at least one person to split with.')).toBeInTheDocument()
+    expect(saveExpense).not.toHaveBeenCalled()
+  })
+
+  const savedEqual = (expenseDate: string, participants = ['u-a', 'u-b']) => ({
+    creatorUserId: 'u-a',
+    claims: {},
+    payload: {
+      id: 'x-9', eventId: 'ev-1', payerUserId: 'u-a', description: 'Dinner', category: 'food', expenseDate,
+      totalCents: 1000, splitMethod: 'equal', items: [],
+      allocations: participants.map(id => ({ itemId: null, participantUserId: id, amountCents: 1000 / participants.length })),
+    },
+  })
+
+  it('stays collapsed when editing an expense that uses the defaults', async () => {
+    getExpense.mockResolvedValue(savedEqual(localToday()))
+    renderEditor('/event/ev-1/expenses/x-9/edit')
+    expect(await screen.findByRole('button', { name: 'More options' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('opens when editing an expense that differs from the defaults', async () => {
+    getExpense.mockResolvedValue(savedEqual(localToday(), ['u-a']))
+    renderEditor('/event/ev-1/expenses/x-9/edit')
+    expect(await screen.findByRole('button', { name: 'More options' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('opens when the split method is not equal', async () => {
+    renderEditor('/event/ev-1/expenses/new?scan=1')
+    expect(await screen.findByRole('button', { name: 'More options' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Split method')).toHaveValue('items')
+  })
 })
 
 describe('ExpenseEditorPage (saved expense)', () => {

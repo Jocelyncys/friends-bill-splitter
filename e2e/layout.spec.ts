@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
-import { addSimpleExpense, createEvent, eventIdOf, inviteLink, joinEvent, newUser } from './helpers.ts'
+import { addSimpleExpense, createEvent, eventIdOf, inviteLink, joinEvent, newUser, openMoreOptions } from './helpers.ts'
 
 // Automated part of the plan's manual bilingual/mobile checks (Step 5). Runs at 360×800 (mobile project)
 // and 1280×800 (desktop project).
@@ -59,6 +59,7 @@ test('bilingual screens fit the viewport; guided, active and attention states re
   await addSimpleExpense(page, 'Strawberry farm tickets', '64.00')
   await page.getByRole('button', { name: 'Add simple expense' }).click()
   await page.getByLabel('Description').fill('Steamboat dinner')
+  await openMoreOptions(page)
   await page.getByLabel('Split method').selectOption({ label: 'Itemized (friends claim items)' })
   await page.getByLabel('Item 1 name').fill('Seafood set')
   await page.getByLabel('Item 1 price').fill('88.00')
@@ -105,6 +106,7 @@ test('bilingual screens fit the viewport; guided, active and attention states re
         // The items fieldset once grew past 360px (fieldset min-width + file input) and swallowed taps on Save.
         await page.goto(`/#/event/${eventId}/expenses/new`)
         await expect(page.getByRole('heading', { level: 1 })).toHaveText(headings[lang].editor)
+        await openMoreOptions(page)
         await page.locator('select:has(option[value="items"])').selectOption('items')
         await page.getByRole('button', { name: addItem[lang] }).click()
         await expect(page.locator('.item-row')).toHaveCount(2)
@@ -143,6 +145,7 @@ test('claim page with nine people: the assignment chips wrap without overflow', 
   await owner.reload()
   await owner.getByRole('button', { name: 'Add simple expense' }).click()
   await owner.getByLabel('Description').fill('Banquet')
+  await openMoreOptions(owner)
   await owner.getByLabel('Split method').selectOption({ label: 'Itemized (friends claim items)' })
   await owner.getByLabel('Item 1 name').fill('Steamed fish')
   await owner.getByLabel('Item 1 price').fill('88.00')

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createEvent, inviteLink, joinEvent, newUser, rm } from './helpers.ts'
+import { createEvent, inviteLink, joinEvent, newUser, openMoreOptions, rm } from './helpers.ts'
 
 test('single bill: itemized entry, a friend claims an item, the host assigns the rest, then settle', async ({ browser }) => {
   test.setTimeout(120_000)
@@ -13,6 +13,7 @@ test('single bill: itemized entry, a friend claims an item, the host assigns the
   // Itemized, friends claim items: two items entered by hand.
   await owner.getByRole('button', { name: 'Add simple expense' }).click()
   await owner.getByLabel('Description').fill('Mamak dinner')
+  await openMoreOptions(owner)
   await owner.getByLabel('Split method').selectOption({ label: 'Itemized (friends claim items)' })
   await owner.getByLabel('Item 1 name').fill('Nasi lemak')
   await owner.getByLabel('Item 1 price').fill('12.00')
@@ -79,6 +80,7 @@ test('single bill: the host shares one item between two people, enters a lower a
   await owner.reload()
   await owner.getByRole('button', { name: 'Add simple expense' }).click()
   await owner.getByLabel('Description').fill('Satay dinner')
+  await openMoreOptions(owner)
   await owner.getByLabel('Split method').selectOption({ label: 'Itemized (I assign items)' })
   await owner.getByLabel('Item 1 name').fill('Satay platter')
   await owner.getByLabel('Item 1 price').fill('20.00')

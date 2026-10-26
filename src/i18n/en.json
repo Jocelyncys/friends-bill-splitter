@@ -153,6 +153,19 @@
       "difference": "Discounts, tax and rounding: {{amount}}",
       "line": "Discounts, tax and rounding",
       "items": "Items"
+    },
+    "more": {
+      "toggle": "More options",
+      "summary": "Paid by {{payer}}, {{date}}, {{split}}",
+      "you": "you",
+      "today": "today",
+      "split": {
+        "equal_one": "for 1 person only",
+        "equal_other": "split equally among {{count}}",
+        "custom": "custom amounts",
+        "items": "friends claim items",
+        "host_assignment": "you assign items"
+      }
     }
   },
   "expenseError": {

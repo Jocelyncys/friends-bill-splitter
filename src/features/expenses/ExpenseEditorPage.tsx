@@ -2,8 +2,9 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } 
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { CameraIcon, CheckIcon, ImageIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { CameraIcon, CheckIcon, ChevronDownIcon, ImageIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import type { ShellContext } from '../../components/shellContext'
+import { shortDate } from '../../lib/shortDate'
 import { useOnline } from '../../lib/useOnline'
 import { deleteDraft, getDraft, saveDraft } from '../offline/draftDb'
 import { isTransientSaveError } from '../offline/syncDrafts'
@@ -46,6 +47,21 @@ const isUntouched = (items: DraftItem[]) => items.length === 1 && items[0].descr
 const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', price: '', assigneeIds: [] })
 
 const isItemized = (method: DraftSplitMethod) => method === 'items' || method === 'host_assignment'
+
+/** Fields that live under "More options"; an error in one of them opens it. */
+const MORE_FIELDS: (keyof FormErrors)[] = ['payer', 'date', 'participants', 'shares']
+
+/** True when payer, date, split method or people differ from what a new expense starts with. */
+function differsFromDefaults(draft: ExpenseDraft, home: EventHome): boolean {
+  const everyone = home.members.map(m => m.userId)
+  return (
+    draft.payerUserId !== home.me.userId ||
+    draft.expenseDate !== today() ||
+    draft.splitMethod !== 'equal' ||
+    draft.participantIds.length !== everyone.length ||
+    !everyone.every(id => draft.participantIds.includes(id))
+  )
+}
 
 type Existing = { id: string; result: SavedExpense | 'failed' }
 
@@ -145,6 +161,8 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
     shares: {},
     items: [blankItem()],
   })
+  // Payer, date, split method and people start tucked away, unless they already differ from the defaults.
+  const [moreOpen, setMoreOpen] = useState(() => differsFromDefaults(draft, home))
   const [errors, setErrors] = useState<FormErrors>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -239,11 +257,26 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       : null
   const pays = personItems && paidCents !== null ? paysRows(paidCents, personItems, people) : []
 
+  const moreSummary = t('editor.more.summary', {
+    payer: draft.payerUserId === home.me.userId ? t('editor.more.you') : nameOf(draft.payerUserId, '?'),
+    date: draft.expenseDate === today()
+      ? t('editor.more.today')
+      : /^\d{4}-\d{2}-\d{2}$/.test(draft.expenseDate)
+        ? shortDate(new Date(`${draft.expenseDate}T00:00:00`), i18n.language)
+        : draft.expenseDate,
+    split: draft.splitMethod === 'equal'
+      ? t('editor.more.split.equal', { count: draft.participantIds.length })
+      : t(`editor.more.split.${draft.splitMethod}`),
+  })
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setServerError(null)
     const result = validateDraft(draft)
-    if (!result.ok) return setErrors(result.errors)
+    if (!result.ok) {
+      if (MORE_FIELDS.some(key => result.errors[key])) setMoreOpen(true) // never hide an error
+      return setErrors(result.errors)
+    }
     setErrors({})
     setBusy(true)
     const payload = buildPayload({ id: expenseId, eventId, category: saved?.category }, result.values)
@@ -308,74 +341,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
               {fieldError('amount')}
             </>
           )}
-
-          {canPickPayer ? (
-            <div className="field">
-              <label className="field__label" htmlFor={`${formId}-payer`}>{t('editor.payer')}</label>
-              <select id={`${formId}-payer`} value={draft.payerUserId} onChange={e => set('payerUserId', e.target.value)}>
-                {home.members.map(m => (
-                  <option key={m.userId} value={m.userId}>{nameOf(m.userId, m.displayName)}</option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <p className="field field--static"><span className="field__label">{t('editor.payer')}</span> <strong>{nameOf(draft.payerUserId, home.me.displayName)}</strong></p>
-          )}
-          {fieldError('payer')}
-
-          <label className="field">
-            <span className="field__label">{t('editor.date')}</span>
-            <input type="date" value={draft.expenseDate} onChange={e => set('expenseDate', e.target.value)} />
-          </label>
-          {fieldError('date')}
-
-          <div className="field">
-            <label className="field__label" htmlFor={`${formId}-split`}>{t('editor.splitMethod')}</label>
-            <select id={`${formId}-split`} value={draft.splitMethod} onChange={e => changeMethod(e.target.value as DraftSplitMethod)}>
-              {METHODS.map(m => (
-                <option key={m} value={m}>{t(`editor.method.${m}`)}</option>
-              ))}
-            </select>
-          </div>
         </div>
-
-        {draft.splitMethod === 'equal' && (
-          <fieldset className="group">
-            <legend className="group__legend">{t('editor.participants')}</legend>
-            {home.members.map(m => (
-              <label key={m.userId} className="field field--check">
-                <input
-                  type="checkbox"
-                  checked={draft.participantIds.includes(m.userId)}
-                  onChange={e =>
-                    set('participantIds', e.target.checked ? [...draft.participantIds, m.userId] : draft.participantIds.filter(id => id !== m.userId))
-                  }
-                />
-                {nameOf(m.userId, m.displayName)}
-              </label>
-            ))}
-            {fieldError('participants')}
-          </fieldset>
-        )}
-
-        {draft.splitMethod === 'custom' && (
-          <fieldset className="group">
-            <legend className="group__legend">{t('editor.participants')}</legend>
-            {home.members.map(m => (
-              <label key={m.userId} className="field">
-                <span className="field__label">{t('editor.shareFor', { name: nameOf(m.userId, m.displayName) })}</span>
-                <input
-                  inputMode="decimal"
-                  value={draft.shares[m.userId] ?? ''}
-                  onChange={e => set('shares', { ...draft.shares, [m.userId]: e.target.value })}
-                  autoComplete="off"
-                />
-              </label>
-            ))}
-            <p className="group__total" aria-live="polite">{t('editor.remaining', { amount: money(difference) })}</p>
-            {fieldError('shares')}
-          </fieldset>
-        )}
 
         {itemized && (
           <fieldset className="group">
@@ -470,6 +436,97 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
               </div>
             )}
           </fieldset>
+        )}
+
+        <div className="group more-options">
+          <button
+            type="button"
+            className="more-options__toggle"
+            aria-expanded={moreOpen}
+            aria-labelledby={`${formId}-more`}
+            aria-describedby={moreOpen ? undefined : `${formId}-more-summary`}
+            onClick={() => setMoreOpen(open => !open)}
+          >
+            <span className="more-options__text">
+              <span id={`${formId}-more`} className="more-options__title">{t('editor.more.toggle')}</span>
+              {!moreOpen && <span id={`${formId}-more-summary`} className="more-options__summary">{moreSummary}</span>}
+            </span>
+            <ChevronDownIcon />
+          </button>
+          {moreOpen && (
+            <>
+              {canPickPayer ? (
+                <div className="field">
+                  <label className="field__label" htmlFor={`${formId}-payer`}>{t('editor.payer')}</label>
+                  <select id={`${formId}-payer`} value={draft.payerUserId} onChange={e => set('payerUserId', e.target.value)}>
+                    {home.members.map(m => (
+                      <option key={m.userId} value={m.userId}>{nameOf(m.userId, m.displayName)}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <p className="field field--static"><span className="field__label">{t('editor.payer')}</span> <strong>{nameOf(draft.payerUserId, home.me.displayName)}</strong></p>
+              )}
+              {fieldError('payer')}
+
+              <label className="field">
+                <span className="field__label">{t('editor.date')}</span>
+                <input type="date" value={draft.expenseDate} onChange={e => set('expenseDate', e.target.value)} />
+              </label>
+              {fieldError('date')}
+
+              <div className="field">
+                <label className="field__label" htmlFor={`${formId}-split`}>{t('editor.splitMethod')}</label>
+                <select id={`${formId}-split`} value={draft.splitMethod} onChange={e => changeMethod(e.target.value as DraftSplitMethod)}>
+                  {METHODS.map(m => (
+                    <option key={m} value={m}>{t(`editor.method.${m}`)}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+        </div>
+
+        {moreOpen && (
+          <>
+            {draft.splitMethod === 'equal' && (
+              <fieldset className="group">
+                <legend className="group__legend">{t('editor.participants')}</legend>
+                {home.members.map(m => (
+                  <label key={m.userId} className="field field--check">
+                    <input
+                      type="checkbox"
+                      checked={draft.participantIds.includes(m.userId)}
+                      onChange={e =>
+                        set('participantIds', e.target.checked ? [...draft.participantIds, m.userId] : draft.participantIds.filter(id => id !== m.userId))
+                      }
+                    />
+                    {nameOf(m.userId, m.displayName)}
+                  </label>
+                ))}
+                {fieldError('participants')}
+              </fieldset>
+            )}
+
+            {draft.splitMethod === 'custom' && (
+              <fieldset className="group">
+                <legend className="group__legend">{t('editor.participants')}</legend>
+                {home.members.map(m => (
+                  <label key={m.userId} className="field">
+                    <span className="field__label">{t('editor.shareFor', { name: nameOf(m.userId, m.displayName) })}</span>
+                    <input
+                      inputMode="decimal"
+                      value={draft.shares[m.userId] ?? ''}
+                      onChange={e => set('shares', { ...draft.shares, [m.userId]: e.target.value })}
+                      autoComplete="off"
+                    />
+                  </label>
+                ))}
+                <p className="group__total" aria-live="polite">{t('editor.remaining', { amount: money(difference) })}</p>
+                {fieldError('shares')}
+              </fieldset>
+            )}
+          </>
         )}
 
         {reviewing && (

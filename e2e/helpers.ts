@@ -48,6 +48,13 @@ export async function addSimpleExpense(page: Page, description: string, amount: 
   await expect(page.locator('.expense-row', { hasText: description })).toBeVisible()
 }
 
+/** In the expense editor: opens "More options" (payer, date, split method, people) if it is collapsed. */
+export async function openMoreOptions(page: Page): Promise<void> {
+  const toggle = page.locator('.more-options__toggle')
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+}
+
 export async function goHome(page: Page): Promise<void> {
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Home' }).click()
 }

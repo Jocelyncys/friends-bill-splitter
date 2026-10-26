@@ -2,17 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import type { EventMode } from '../../domain/types'
+import { shortDate } from '../../lib/shortDate'
 import { ensureAnonymousSession } from '../auth/anonymousSession'
 import { createEventRepository } from './eventRepository'
 import { readPreferredName } from './preferredName'
 
 const MODES: EventMode[] = ['single_bill', 'trip_event']
-
-/** "26 Oct" in English (day first, as in Malaysia), "10月26日" in Chinese. */
-function shortDate(language: string): string {
-  const locale = language.startsWith('zh') ? 'zh-CN' : 'en-GB'
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date())
-}
 
 export function CreateEventPage() {
   const { mode } = useParams()
@@ -26,7 +21,7 @@ export function CreateEventPage() {
   if (!MODES.includes(mode as EventMode)) return <Navigate to="/" replace />
 
   const defaultName = t(mode === 'single_bill' ? 'create.defaultBill' : 'create.defaultTrip', {
-    date: shortDate(i18n.language),
+    date: shortDate(new Date(), i18n.language),
   })
 
   const submit = async (e: FormEvent) => {

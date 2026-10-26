@@ -153,6 +153,19 @@
       "difference": "折扣、税费和凑整：{{amount}}",
       "line": "折扣、税费和凑整",
       "items": "项目"
+    },
+    "more": {
+      "toggle": "更多选项",
+      "summary": "由{{payer}}付款，{{date}}，{{split}}",
+      "you": "你",
+      "today": "今天",
+      "split": {
+        "equal_one": "只算 1 人",
+        "equal_other": "{{count}} 人平分",
+        "custom": "自定义金额",
+        "items": "朋友自行认领",
+        "host_assignment": "由你分配项目"
+      }
     }
   },
   "expenseError": {
