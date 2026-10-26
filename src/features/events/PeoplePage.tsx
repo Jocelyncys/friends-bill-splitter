@@ -69,7 +69,7 @@ export function PeoplePage() {
         })}
       </ul>
       <h2>{t('event.invite')}</h2>
-      <InvitePanel eventId={eventId} />
+      <InvitePanel eventId={eventId} eventName={home.event.name} />
     </main>
   )
 }

@@ -51,7 +51,7 @@ export function EventRoute() {
       onViewPayments={() => navigate(`/event/${eventId}/payments`)}
     >
       <DraftList eventId={eventId} currency={home.event.currency} />
-      {showInvite && <InvitePanel eventId={eventId} token={unsavedInviteToken} />}
+      {showInvite && <InvitePanel eventId={eventId} eventName={home.event.name} token={unsavedInviteToken} />}
     </EventHomePage>
   )
 }

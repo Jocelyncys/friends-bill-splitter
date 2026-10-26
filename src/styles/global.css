@@ -1033,6 +1033,11 @@ input[type='radio']:focus-visible {
   margin: 0 0 24px;
 }
 
+.invite-panel__share {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
 .invite-panel .group {
   display: flex;
   align-items: flex-end;

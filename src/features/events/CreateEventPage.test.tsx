@@ -42,7 +42,7 @@ describe('CreateEventPage', () => {
     })
     function Landing() {
       const state = useLocation().state as { unsavedInviteToken?: string } | null
-      return <InvitePanel eventId="ev-9" token={state?.unsavedInviteToken} />
+      return <InvitePanel eventId="ev-9" eventName="Dinner" token={state?.unsavedInviteToken} />
     }
     try {
       render(

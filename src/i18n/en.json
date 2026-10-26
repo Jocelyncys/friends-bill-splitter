@@ -83,7 +83,9 @@
       "estimate": "An estimate until the event is settled.",
       "settled": "Fixed when the event was settled.",
       "waiting": "Your balance shows once every item has an owner."
-    }
+    },
+    "shareInvite": "Share invite",
+    "inviteText": "Join “{{name}}” to split the bill with me."
   },
   "expenses": {
     "title": "Expenses",

@@ -83,7 +83,9 @@
       "estimate": "结算前为估算金额。",
       "settled": "按结算时确定的金额。",
       "waiting": "所有项目都有人认领后，会显示你的结余。"
-    }
+    },
+    "shareInvite": "分享邀请",
+    "inviteText": "加入「{{name}}」，和我一起分账。"
   },
   "expenses": {
     "title": "开销",
