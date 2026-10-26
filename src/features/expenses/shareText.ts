@@ -12,6 +12,9 @@ export function sharedEachText(t: TFunction, money: (cents: number) => string, t
   return t('claim.sharedEach', { count, amount })
 }
 
+/** "−RM 3.57" / "+RM 1.20": the discounts, tax and rounding of a bill, with a real minus sign. */
+export const signedMoney = (money: (cents: number) => string, cents: number) => `${cents < 0 ? '−' : '+'}${money(Math.abs(cents))}`
+
 export type PaysRow = { userId: string; name: string; itemsCents: number; paysCents: number }
 
 /** What each person pays: the amount paid split over their items subtotals (domain owedShares, live display). */

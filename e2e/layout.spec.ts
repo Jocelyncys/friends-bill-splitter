@@ -87,7 +87,7 @@ test('bilingual screens fit the viewport; guided, active and attention states re
     'zh-CN': { home: '你想做什么？', editor: '添加开销', people: '成员', settlement: '结算' },
   }
   const addItem = { en: 'Add item', 'zh-CN': '添加项目' }
-  const addAdjustment = { en: 'Add adjustment', 'zh-CN': '添加调整项' }
+  const amountPaid = { en: 'Amount paid', 'zh-CN': '实付金额' }
   const saveExpense = { en: 'Save expense', 'zh-CN': '保存开销' }
   for (const [lang, button] of [['en', 'English'], ['zh-CN', '简体中文']] as const) {
     await test.step(`screens in ${lang}`, async () => {
@@ -113,17 +113,16 @@ test('bilingual screens fit the viewport; guided, active and attention states re
         await page.getByRole('button', { name: saveExpense[lang] }).click({ trial: true })
         await page.screenshot({ path: testInfo.outputPath(`editor-itemized-${lang}.png`), fullPage: true })
       })
-      await test.step('host-assign editor with people chips and adjustments', async () => {
+      await test.step('host-assign editor with people chips and amount paid', async () => {
         await page.locator('select:has(option[value="items"])').selectOption('host_assignment')
         await expect(page.locator('.who-had')).toHaveCount(2)
         await page.locator('.who-had').first().getByRole('button').first().click()
-        await page.getByRole('button', { name: addAdjustment[lang] }).click()
-        await page.getByRole('button', { name: addAdjustment[lang] }).click()
-        await page.locator('.adj-row select').nth(1).selectOption('rounding')
-        await expect(page.locator('.sign-toggle')).toHaveCount(1)
+        await page.locator('.item-row').nth(0).locator('input').nth(1).fill('12.34')
+        await page.getByLabel(amountPaid[lang]).fill('10.00')
+        await expect(page.locator('.group__hint')).toContainText('−')
         await expectNoOverflow(page)
         await page.getByRole('button', { name: saveExpense[lang] }).click({ trial: true })
-        await page.screenshot({ path: testInfo.outputPath(`editor-adjustments-${lang}.png`), fullPage: true })
+        await page.screenshot({ path: testInfo.outputPath(`editor-amount-paid-${lang}.png`), fullPage: true })
       })
     })
   }

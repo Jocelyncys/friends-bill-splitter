@@ -4,7 +4,7 @@ import { CheckIcon, CloseIcon } from '../../components/icons'
 import { formatMoney } from '../../domain/money'
 import type { EventRole, SplitMethod } from '../../domain/types'
 import { PaysList } from './PaysList'
-import { paysRows, sharedEachText } from './shareText'
+import { paysRows, sharedEachText, signedMoney } from './shareText'
 
 export type ClaimItemView = {
   id: string
@@ -16,9 +16,6 @@ export type ClaimItemView = {
   /** True when a manager/creator assigned the item (self-claims are then not possible). */
   assigned: boolean
 }
-
-/** A bill-level line (signed cents). */
-export type ClaimAdjustmentView = { id: string; label: string; amountCents: number }
 
 type Props = {
   role: EventRole
@@ -37,8 +34,8 @@ type Props = {
   /** The event is settled: everything is read-only. */
   settled?: boolean
   errorMessage?: string
-  /** Voucher, tax, rounding ... of the bill; with them, totalCents is the amount paid. */
-  adjustments?: ClaimAdjustmentView[]
+  /** Discounts, tax and rounding of the bill (net signed cents, 0 = none); totalCents is then the amount paid. */
+  adjustmentCents?: number
   totalCents?: number
   onClaim?: (itemId: string) => void
   onUnclaim?: (itemId: string) => void
@@ -63,7 +60,7 @@ export function ClaimItemsPage({
   busy = false,
   settled = false,
   errorMessage,
-  adjustments = [],
+  adjustmentCents = 0,
   totalCents,
   onClaim,
   onUnclaim,
@@ -85,11 +82,11 @@ export function ClaimItemsPage({
     unallocated += item.totalCents - allocated
     for (const c of item.claims) shares.set(c.userId, (shares.get(c.userId) ?? 0) + c.amountCents)
   }
-  // With adjustments, what each person pays is the amount paid split over their items (owedShares), once
+  // With an amount paid different from the items, what each person pays is the amount paid split over their items (owedShares), once
   // every item has someone; until then only the item amounts are shown.
   const itemsCents = items.reduce((sum, item) => sum + item.totalCents, 0)
-  const paidCents = totalCents ?? itemsCents + adjustments.reduce((sum, a) => sum + a.amountCents, 0)
-  const pays = adjustments.length > 0 && unallocated === 0 ? paysRows(paidCents, Object.fromEntries(shares), participants) : []
+  const paidCents = totalCents ?? itemsCents + adjustmentCents
+  const pays = adjustmentCents !== 0 && unallocated === 0 ? paysRows(paidCents, Object.fromEntries(shares), participants) : []
 
   const togglePick = (itemId: string, current: string[], userId: string) =>
     setPicking(p => {
@@ -203,14 +200,12 @@ export function ClaimItemsPage({
               ))}
             </ul>
           )}
-          {adjustments.length > 0 && (
+          {adjustmentCents !== 0 && (
             <>
               <hr className="receipt__rule" />
-              <p className="expense-row"><span>{t('editor.adj.items')}</span> <span className="amount">{money(itemsCents)}</span></p>
-              {adjustments.map(a => (
-                <p key={a.id} className="expense-row"><span>{a.label}</span> <span className="amount">{money(a.amountCents)}</span></p>
-              ))}
-              <p className="expense-row receipt__paid"><span>{t('editor.adj.paid')}</span> <strong className="amount">{money(paidCents)}</strong></p>
+              <p className="expense-row"><span>{t('editor.paid.items')}</span> <span className="amount">{money(itemsCents)}</span></p>
+              <p className="expense-row"><span>{t('editor.paid.line')}</span> <span className="amount">{signedMoney(money, adjustmentCents)}</span></p>
+              <p className="expense-row receipt__paid"><span>{t('editor.paid.label')}</span> <strong className="amount">{money(paidCents)}</strong></p>
               {pays.length === 0 && <p className="note">{t('claim.paysWaiting')}</p>}
             </>
           )}

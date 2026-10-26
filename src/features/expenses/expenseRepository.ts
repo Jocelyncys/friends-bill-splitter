@@ -21,11 +21,14 @@ export type SaveExpenseAllocation = {
 
 export type AdjustmentKind = 'discount' | 'tax' | 'service' | 'rounding' | 'other'
 
-/** Bill-level line (voucher negative; SST, service charge, rounding positive). Item methods only. */
+/**
+ * Bill-level line, item methods only. The app sends at most one: { kind: 'other', label: null, amountCents:
+ * paid - items } ("Amount paid"). Expenses saved by older versions may hold several labelled rows.
+ */
 export type SaveExpenseAdjustment = {
   id: string
   kind: AdjustmentKind
-  label: string // 1-60 chars
+  label: string | null // 1-60 chars; null only for 'other'
   amountCents: number // signed, never 0
   sortOrder: number
 }
@@ -189,7 +192,7 @@ type SavedExpenseRow = {
   split_method: SplitMethod
   expense_items: Array<{ id: string; description: string; quantity: number; total_cents: number; sort_order: number }>
   allocations: Array<{ item_id: string | null; participant_user_id: string; amount_cents: number; source: string }>
-  expense_adjustments: Array<{ id: string; kind: AdjustmentKind; label: string; amount_cents: number; sort_order: number }>
+  expense_adjustments: Array<{ id: string; kind: AdjustmentKind; label: string | null; amount_cents: number; sort_order: number }>
 }
 
 const SAVED_EXPENSE_COLUMNS =

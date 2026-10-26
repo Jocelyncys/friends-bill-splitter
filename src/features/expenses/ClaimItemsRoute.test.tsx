@@ -92,6 +92,20 @@ describe('ClaimItemsRoute', () => {
     expect(within(screen.getByRole('group', { name: 'Who had Satay' })).getByRole('button', { name: 'Xan' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('shows the net of an older expense with several adjustment rows as one line', async () => {
+    mocks.getExpenseClaims.mockResolvedValue({
+      ...claims,
+      totalCents: 857,
+      adjustments: [
+        { id: 'a1', kind: 'discount', label: 'Voucher', amountCents: -200, sortOrder: 0 },
+        { id: 'a2', kind: 'tax', label: 'SST', amountCents: 57, sortOrder: 1 },
+      ],
+    })
+    renderRoute()
+    expect((await screen.findByText('Discounts, tax and rounding')).parentElement).toHaveTextContent('−RM 1.43')
+    expect(screen.queryByText('Voucher')).not.toBeInTheDocument()
+  })
+
   it('keeps the previous claims and shows a banner when a reload fails', async () => {
     renderRoute()
     await userEvent.click(await screen.findByRole('button', { name: 'Claim for me' }))

@@ -224,31 +224,6 @@ describe('ExpenseEditorPage', () => {
       expect(screen.getByRole('button', { name: 'Confirm items' })).toBeInTheDocument()
     })
 
-    it('pre-fills the voucher and tax lines of a receipt as adjustments for review', async () => {
-      recognizeReceipt.mockResolvedValue(['NASI LEMAK 12.50', 'Voucher -2.00', 'SST 6% 0.63', 'TOTAL 11.13'])
-      saveExpense.mockResolvedValue({ id: 'x' })
-      renderEditor('/event/ev-1/expenses/new?scan=1')
-      await pick()
-      expect(await screen.findByDisplayValue('NASI LEMAK')).toBeInTheDocument()
-      expect(screen.getByLabelText('Adjustment 1 type')).toHaveValue('discount')
-      expect(screen.getByLabelText('Adjustment 1 label')).toHaveValue('Voucher')
-      expect(screen.getByLabelText('Adjustment 1 amount')).toHaveValue('2.00')
-      expect(screen.getByLabelText('Adjustment 2 type')).toHaveValue('tax')
-      expect(screen.getByLabelText('Adjustment 2 amount')).toHaveValue('0.63')
-      expect(screen.getByText('Amount paid').parentElement).toHaveTextContent('RM 11.13')
-      await userEvent.click(screen.getByRole('button', { name: 'Confirm items' }))
-      await userEvent.type(screen.getByLabelText('Description'), 'Breakfast')
-      await userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
-      await waitFor(() => expect(saveExpense).toHaveBeenCalledTimes(1))
-      expect(saveExpense.mock.calls[0][0]).toMatchObject({
-        totalCents: 1113,
-        adjustments: [
-          { kind: 'discount', label: 'Voucher', amountCents: -200, sortOrder: 0 },
-          { kind: 'tax', label: 'SST 6%', amountCents: 63, sortOrder: 1 },
-        ],
-      })
-    })
-
     it('disables save while recognizing', async () => {
       recognizeReceipt.mockReturnValue(new Promise(() => {}))
       renderEditor('/event/ev-1/expenses/new?scan=1')
@@ -334,7 +309,7 @@ describe('ExpenseEditorPage', () => {
   })
 })
 
-describe('ExpenseEditorPage (itemized, several people and adjustments)', () => {
+describe('ExpenseEditorPage (itemized, several people and amount paid)', () => {
   const save = () => userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
 
   async function startHostAssign() {
@@ -349,13 +324,6 @@ describe('ExpenseEditorPage (itemized, several people and adjustments)', () => {
     const who = screen.getByRole('group', { name: `Who had Item ${n}` })
     for (const person of people) await userEvent.click(within(who).getByRole('button', { name: person }))
   }
-  async function addAdjustment(n: number, kind: string, label: string, amount: string) {
-    await userEvent.click(screen.getByRole('button', { name: 'Add adjustment' }))
-    await userEvent.selectOptions(screen.getByLabelText(`Adjustment ${n} type`), kind)
-    await userEvent.type(screen.getByLabelText(`Adjustment ${n} label`), label)
-    await userEvent.type(screen.getByLabelText(`Adjustment ${n} amount`), amount)
-  }
-
   it('assigns one item to several people and splits it equally', async () => {
     saveExpense.mockResolvedValue({ id: 'x' })
     await startHostAssign()
@@ -412,17 +380,16 @@ describe('ExpenseEditorPage (itemized, several people and adjustments)', () => {
     expect(saveExpense.mock.calls[0][0].allocations).toHaveLength(2)
   })
 
-  it('adds a voucher, SST and rounding and saves the amount paid', async () => {
+  it('saves a lower amount paid as one difference and shows what each person pays', async () => {
     saveExpense.mockResolvedValue({ id: 'x' })
     await startHostAssign()
     await fillItem(1, 'Rice', '11.11', ['Alice'])
     await fillItem(2, 'Pork', '17.46', ['Bob'])
-    await addAdjustment(1, 'discount', 'Voucher', '5')
-    await addAdjustment(2, 'tax', 'SST (6%)', '1.41')
-    await addAdjustment(3, 'rounding', 'Bill rounding', '0.02')
-
-    expect(within(screen.getByRole('group', { name: 'Bill summary' })).getByText('Items').parentElement).toHaveTextContent('RM 28.57')
-    expect(screen.getByText('Amount paid').parentElement).toHaveTextContent('RM 25.00')
+    const paid = screen.getByLabelText('Amount paid')
+    expect(paid).toHaveAttribute('placeholder', '28.57')
+    expect(screen.queryByRole('list', { name: 'What each person pays' })).not.toBeInTheDocument()
+    await userEvent.type(paid, '25')
+    expect(screen.getByText('Discounts, tax and rounding: −RM 3.57')).toHaveAttribute('aria-live', 'polite')
     const pays = screen.getByRole('list', { name: 'What each person pays' })
     expect(within(pays).getByText('Items RM 11.11 → pays RM 9.72')).toBeInTheDocument()
     expect(within(pays).getByText('Items RM 17.46 → pays RM 15.28')).toBeInTheDocument()
@@ -431,43 +398,35 @@ describe('ExpenseEditorPage (itemized, several people and adjustments)', () => {
     await waitFor(() => expect(saveExpense).toHaveBeenCalledTimes(1))
     expect(saveExpense.mock.calls[0][0]).toMatchObject({
       totalCents: 2500,
-      adjustments: [
-        { kind: 'discount', label: 'Voucher', amountCents: -500, sortOrder: 0 },
-        { kind: 'tax', label: 'SST (6%)', amountCents: 141, sortOrder: 1 },
-        { kind: 'rounding', label: 'Bill rounding', amountCents: 2, sortOrder: 2 },
-      ],
+      adjustments: [{ kind: 'other', label: null, amountCents: -357, sortOrder: 0 }],
     })
   })
 
-  it('lets rounding take money off with the sign toggle, and removes a row', async () => {
+  it('shows a higher amount paid (service charge) as a plus', async () => {
+    await startHostAssign()
+    await fillItem(1, 'Rice', '10', ['Alice'])
+    await userEvent.type(screen.getByLabelText('Amount paid'), '11.20')
+    expect(screen.getByText('Discounts, tax and rounding: +RM 1.20')).toBeInTheDocument()
+  })
+
+  it('sends no adjustment when Amount paid is empty or equals the items', async () => {
     saveExpense.mockResolvedValue({ id: 'x' })
     await startHostAssign()
     await fillItem(1, 'Rice', '10', ['Alice'])
-    await addAdjustment(1, 'service', 'Service charge', '1')
-    expect(screen.queryByRole('button', { name: 'Subtract adjustment 1' })).not.toBeInTheDocument()
-    await addAdjustment(2, 'rounding', 'Rounding', '0.02')
-    const sign = screen.getByRole('button', { name: 'Subtract adjustment 2' })
-    expect(sign).toHaveAttribute('aria-pressed', 'false')
-    await userEvent.click(sign)
-    expect(sign).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('Amount paid').parentElement).toHaveTextContent('RM 10.98')
-    await userEvent.click(screen.getByRole('button', { name: 'Remove adjustment 1' }))
-    expect(screen.getByLabelText('Adjustment 1 label')).toHaveValue('Rounding')
+    await userEvent.type(screen.getByLabelText('Amount paid'), '10.00')
+    expect(screen.queryByText(/Discounts, tax and rounding/)).not.toBeInTheDocument()
     await save()
     await waitFor(() => expect(saveExpense).toHaveBeenCalledTimes(1))
-    expect(saveExpense.mock.calls[0][0]).toMatchObject({
-      totalCents: 998,
-      adjustments: [{ kind: 'rounding', label: 'Rounding', amountCents: -2, sortOrder: 0 }],
-    })
+    expect(saveExpense.mock.calls[0][0]).toMatchObject({ totalCents: 1000, adjustments: [] })
   })
 
-  it('tells screen readers whether a fixed-sign amount is subtracted or added', async () => {
+  it('blocks an Amount paid that is not money', async () => {
     await startHostAssign()
     await fillItem(1, 'Rice', '10', ['Alice'])
-    await addAdjustment(1, 'discount', 'Voucher', '2')
-    await addAdjustment(2, 'tax', 'SST', '0.60')
-    expect(screen.getByLabelText('Adjustment 1 amount')).toHaveAccessibleDescription('subtracted')
-    expect(screen.getByLabelText('Adjustment 2 amount')).toHaveAccessibleDescription('added')
+    await userEvent.type(screen.getByLabelText('Amount paid'), '0')
+    await save()
+    expect(await screen.findByText('Enter an amount of at least 0.01 with up to 2 decimal places.')).toBeInTheDocument()
+    expect(saveExpense).not.toHaveBeenCalled()
   })
 
   it('counts self-claims of a friends-claim expense, so what each person pays shows once every item has someone', async () => {
@@ -487,53 +446,28 @@ describe('ExpenseEditorPage (itemized, several people and adjustments)', () => {
     })
     renderEditor('/event/ev-1/expenses/x-4/edit')
     const pays = await screen.findByRole('list', { name: 'What each person pays' })
+    expect(screen.getByLabelText('Amount paid')).toHaveValue('25.00')
     expect(within(pays).getByText('Items RM 11.11 → pays RM 9.72')).toBeInTheDocument()
     expect(within(pays).getByText('Items RM 17.46 → pays RM 15.28')).toBeInTheDocument()
   })
 
-  it('blocks saving an adjustment without a label or amount', async () => {
+  it('carries Amount paid over as the total when switching to an equal split, without asking', async () => {
     await startHostAssign()
     await fillItem(1, 'Rice', '10', ['Alice'])
-    await userEvent.click(screen.getByRole('button', { name: 'Add adjustment' }))
-    await save()
-    expect(await screen.findByText('Each adjustment needs a label (up to 60 characters) and an amount other than 0.')).toBeInTheDocument()
-    expect(saveExpense).not.toHaveBeenCalled()
-  })
-
-  it('blocks adjustments that leave nothing to pay', async () => {
-    await startHostAssign()
-    await fillItem(1, 'Rice', '5', ['Alice'])
-    await addAdjustment(1, 'discount', 'Voucher', '5')
-    await save()
-    expect(await screen.findByText('The amount paid must be at least 0.01.')).toBeInTheDocument()
-    expect(saveExpense).not.toHaveBeenCalled()
-  })
-
-  it('warns before switching to an equal split removes the adjustments', async () => {
-    await startHostAssign()
-    await fillItem(1, 'Rice', '10', ['Alice'])
-    await addAdjustment(1, 'discount', 'Voucher', '2')
+    await userEvent.type(screen.getByLabelText('Amount paid'), '8')
     await userEvent.selectOptions(screen.getByLabelText('Split method'), 'equal')
-    const dialog = screen.getByRole('dialog', { name: 'Remove the adjustments?' })
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Back' }))
-    expect(screen.getByLabelText('Split method')).toHaveValue('host_assignment')
-    expect(screen.getByLabelText('Adjustment 1 label')).toHaveValue('Voucher')
-
-    await userEvent.selectOptions(screen.getByLabelText('Split method'), 'equal')
-    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove adjustments' }))
-    expect(screen.getByLabelText('Split method')).toHaveValue('equal')
-    expect(screen.getByLabelText('Amount')).toHaveValue('8.00')
-    await userEvent.selectOptions(screen.getByLabelText('Split method'), 'host_assignment')
-    expect(screen.queryByLabelText('Adjustment 1 label')).not.toBeInTheDocument()
-  })
-
-  it('switches between the two itemized methods without a warning and keeps the adjustments', async () => {
-    await startHostAssign()
-    await fillItem(1, 'Rice', '10', ['Alice'])
-    await addAdjustment(1, 'discount', 'Voucher', '2')
-    await userEvent.selectOptions(screen.getByLabelText('Split method'), 'items')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Adjustment 1 label')).toHaveValue('Voucher')
+    expect(screen.getByLabelText('Amount')).toHaveValue('8')
+    await userEvent.selectOptions(screen.getByLabelText('Split method'), 'items')
+    expect(screen.getByLabelText('Amount paid')).toHaveValue('8')
+  })
+
+  it('keeps Amount paid when switching between the two itemized methods', async () => {
+    await startHostAssign()
+    await fillItem(1, 'Rice', '10', ['Alice'])
+    await userEvent.type(screen.getByLabelText('Amount paid'), '8')
+    await userEvent.selectOptions(screen.getByLabelText('Split method'), 'items')
+    expect(screen.getByLabelText('Amount paid')).toHaveValue('8')
   })
 })
 

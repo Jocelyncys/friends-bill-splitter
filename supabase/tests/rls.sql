@@ -1,5 +1,5 @@
 begin;
-select plan(368);
+select plan(375);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -1638,6 +1638,39 @@ select throws_ok($$select public.confirm_settlement('b2ae0000-0000-0000-0000-000
     (select revision from public.events where id = 'b2ae0000-0000-0000-0000-000000000005'))$$,
   '22023', 'unresolved_expenses', 'an expense with a positive total and no allocations is unresolved');
 reset role;
+
+-- Batch 2C (0011): one 'other' adjustment with a null label --
+select ok((select is_nullable = 'YES' from information_schema.columns
+    where table_schema = 'public' and table_name = 'expense_adjustments' and column_name = 'label'),
+  'expense_adjustments.label is nullable');
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('b2ce0000-0000-0000-0000-000000000001', 'Simple', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b2c1');
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('b2ce0000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner'),
+  ('b2ce0000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant'),
+  ('b2ce0000-0000-0000-0000-000000000001', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'F', 'participant');
+create function pg_temp.simple(p_total text, p_adj jsonb) returns jsonb language sql as $$
+  select pg_temp.with_adj(pg_temp.exp('b2c00000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', p_total::jsonb, 'item_claim',
+    jsonb_build_array(pg_temp.it('b2c10000-0000-0000-0000-000000000001', 2000, 0), pg_temp.it('b2c10000-0000-0000-0000-000000000002', 857, 1)),
+    '[]', 'b2ce0000-0000-0000-0000-000000000001'), p_adj) $$;
+grant execute on function pg_temp.simple(text, jsonb) to public;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.simple('2500', jsonb_build_array(pg_temp.adj('b2c20000-0000-0000-0000-000000000001', 'other', '', -357, 0))))$$,
+  '22023', 'invalid_adjustment', 'an empty adjustment label is still rejected');
+select throws_ok($$select public.save_expense(pg_temp.simple('2500', jsonb_build_array(pg_temp.adj('b2c20000-0000-0000-0000-000000000001', 'discount', null, -357, 0))))$$,
+  '22023', 'invalid_adjustment', 'only kind other may leave the label out');
+select throws_ok($$select public.save_expense(pg_temp.simple('2500', jsonb_build_array(pg_temp.adj('b2c20000-0000-0000-0000-000000000001', 'other', null, -356, 0))))$$,
+  '22023', 'adjustment_mismatch', 'the single adjustment must still make items + adjustment = total');
+select lives_ok($$select public.save_expense(pg_temp.simple('2500', jsonb_build_array(pg_temp.adj('b2c20000-0000-0000-0000-000000000001', 'other', null, -357, 0))))$$,
+  'one other adjustment with a null label (amount paid 25.00 for items 28.57) is accepted');
+reset role;
+select results_eq($$select kind, label, amount_cents from public.expense_adjustments where expense_id = 'b2c00000-0000-0000-0000-000000000001'$$,
+  $$values ('other'::text, null::text, -357::bigint)$$, 'the amount-paid difference is stored as one unlabelled other row');
+select throws_ok($$insert into public.expense_adjustments (id, expense_id, kind, label, amount_cents)
+    values ('b2c20000-0000-0000-0000-000000000009', 'b2c00000-0000-0000-0000-000000000001', 'other', '', 1)$$,
+  '23514', null, 'the table still rejects an empty label');
 
 select * from finish();
 rollback;

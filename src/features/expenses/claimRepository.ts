@@ -79,7 +79,7 @@ type ExpenseClaimsRow = {
   claiming_closed: boolean
   expense_items: Array<{ id: string; description: string; quantity: number; total_cents: number; sort_order: number }>
   allocations: Array<{ id: string; item_id: string | null; participant_user_id: string; amount_cents: number; source: AllocationSource }>
-  expense_adjustments?: Array<{ id: string; kind: SaveExpenseAdjustment['kind']; label: string; amount_cents: number; sort_order: number }>
+  expense_adjustments?: Array<{ id: string; kind: SaveExpenseAdjustment['kind']; label: string | null; amount_cents: number; sort_order: number }>
 }
 
 export function createClaimRepository(client: SupabaseClient = supabase) {

@@ -124,10 +124,7 @@
       "date_invalid": "请选择有效日期。",
       "participants_required": "请至少选择一位分摊对象。",
       "shares_mismatch": "各项金额之和必须等于总额。",
-      "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。",
-      "invalid_adjustment": "每个调整项都需要名称（最多 60 个字符）和不为 0 的金额。",
-      "adjustments_need_items": "请先添加有价格的项目，再添加调整项。",
-      "adjustments_total": "实付金额至少为 0.01。"
+      "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。"
     },
     "scan": {
       "previewAlt": "收据照片预览",
@@ -146,30 +143,12 @@
     "deleteBody": "“{{description}}”将从此活动中为所有人删除，且无法撤销。",
     "deleteConfirm": "删除",
     "whoHad": "谁点了项目 {{n}}",
-    "adj": {
-      "title": "调整项",
-      "hint": "账单上的优惠券、税、服务费或凑整。",
-      "add": "添加调整项",
-      "type": "调整项 {{n}} 类型",
-      "label": "调整项 {{n}} 名称",
-      "amount": "调整项 {{n}} 金额",
-      "subtract": "调整项 {{n}} 改为扣减",
-      "remove": "删除调整项 {{n}}",
-      "kind": {
-        "discount": "折扣",
-        "tax": "税",
-        "service": "服务费",
-        "rounding": "凑整",
-        "other": "其他"
-      },
-      "summary": "账单小结",
-      "items": "项目",
-      "paid": "实付金额",
-      "switchTitle": "移除调整项？",
-      "switchBody": "平均分摊和自定义金额按实付金额（{{amount}}）计算，调整项将被移除。",
-      "switchConfirm": "移除调整项",
-      "subtracted": "扣减",
-      "added": "加上"
+    "paid": {
+      "label": "实付金额",
+      "hint": "选填。如账单实付金额不同（优惠券、税费、凑整），请填写。",
+      "difference": "折扣、税费和凑整：{{amount}}",
+      "line": "折扣、税费和凑整",
+      "items": "项目"
     }
   },
   "expenseError": {
@@ -192,7 +171,7 @@
     "allocation_exceeds_item": "某个项目的分配金额超过了它的价格。",
     "invalid_adjustment": "某项调整无效。",
     "adjustments_not_allowed": "此分摊方式不使用调整项。",
-    "adjustments_need_items": "请先添加有价格的项目，再添加调整项。",
+    "adjustments_need_items": "请先添加有价格的项目，再填写不同的实付金额。",
     "adjustment_mismatch": "项目加上调整项与实付金额不符。",
     "invalid_payload": "无法读取此开销，请重试。",
     "not_event_member": "你不是此活动的成员。",
@@ -231,7 +210,7 @@
     "assign": "分配",
     "paysTitle": "每人实付",
     "paysLine": "项目 {{items}} → 实付 {{pays}}",
-    "paysWaiting": "每个项目都有人后，会显示计入调整项后的每人实付金额。",
+    "paysWaiting": "每个项目都有人后，会显示计入折扣和税费后的每人实付金额。",
     "assignItem": "分配{{item}}"
   },
   "actionError": {

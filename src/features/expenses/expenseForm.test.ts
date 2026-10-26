@@ -1,16 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
-  adjustmentsCents,
   buildPayload,
   customDifference,
   draftFromPayload,
   itemCentsByPerson,
   parseMoneyToCents,
-  signForKind,
   validateDraft,
-  type DraftAdjustment,
   type ExpenseDraft,
 } from './expenseForm'
+import type { SaveExpensePayload } from './expenseRepository'
 
 describe('parseMoneyToCents', () => {
   it.each([
@@ -149,45 +147,52 @@ describe('draftFromPayload', () => {
     roundTrip({ ...head, splitMethod: 'host_assignment', items })
   })
 
-  it('carries saved adjustments through an edit so a re-save keeps them and the paid total', () => {
+  const legacy = (splitMethod: 'item_claim' | 'host_assignment', adjustments?: SaveExpensePayload['adjustments'], totalCents = 2500): SaveExpensePayload => ({
+    id: 'e1', eventId: 'ev', payerUserId: 'u-a', description: 'Dinner', expenseDate: '2026-10-25',
+    totalCents, splitMethod,
+    items: [
+      { id: 'i1', description: 'Noodles', quantity: 1, totalCents: 1111, sortOrder: 0 },
+      { id: 'i2', description: 'Tea', quantity: 1, totalCents: 1746, sortOrder: 1 },
+    ],
+    allocations: [
+      { itemId: 'i1', participantUserId: 'u-a', amountCents: 1111 },
+      { itemId: 'i2', participantUserId: 'u-b', amountCents: 1746 },
+    ],
+    ...(adjustments ? { adjustments } : {}),
+  })
+
+  it('shows the amount paid of a saved expense with several adjustment rows and collapses them into one on save', () => {
     const adjustments = [
       { id: 'a1', kind: 'discount' as const, label: 'Voucher', amountCents: -500, sortOrder: 0 },
       { id: 'a2', kind: 'tax' as const, label: 'SST', amountCents: 141, sortOrder: 1 },
       { id: 'a3', kind: 'rounding' as const, label: 'Rounding', amountCents: 2, sortOrder: 2 },
     ]
     for (const splitMethod of ['item_claim', 'host_assignment'] as const) {
-      const saved = {
-        id: 'e1', eventId: 'ev', payerUserId: 'u-a', description: 'Dinner', expenseDate: '2026-10-25',
-        totalCents: 2500, splitMethod,
-        items: [
-          { id: 'i1', description: 'Noodles', quantity: 1, totalCents: 1111, sortOrder: 0 },
-          { id: 'i2', description: 'Tea', quantity: 1, totalCents: 1746, sortOrder: 1 },
-        ],
-        allocations: [
-          { itemId: 'i1', participantUserId: 'u-a', amountCents: 1111 },
-          { itemId: 'i2', participantUserId: 'u-b', amountCents: 1746 },
-        ],
-        adjustments,
-      }
+      const saved = legacy(splitMethod, adjustments)
       const draft = draftFromPayload(saved)
-      expect(draft.adjustments).toEqual([
-        { id: 'a1', kind: 'discount', label: 'Voucher', amount: '5.00', sign: -1 },
-        { id: 'a2', kind: 'tax', label: 'SST', amount: '1.41', sign: 1 },
-        { id: 'a3', kind: 'rounding', label: 'Rounding', amount: '0.02', sign: 1 },
-      ])
+      expect(draft.amount).toBe('25.00')
       const again = validateDraft(draft)
       if (!again.ok) throw new Error('refilled form invalid')
-      expect(buildPayload({ id: 'e1', eventId: 'ev' }, again.values)).toEqual(saved)
+      expect(buildPayload({ id: 'e1', eventId: 'ev' }, again.values)).toEqual({
+        ...saved,
+        adjustments: [{ id: 'e1', kind: 'other', label: null, amountCents: -357, sortOrder: 0 }],
+      })
     }
   })
 
-  it('treats a saved itemized payload without adjustments as having none', () => {
-    const draft = draftFromPayload({
-      id: 'e1', eventId: 'ev', payerUserId: 'u-a', description: 'Dinner', expenseDate: '2026-10-25', totalCents: 810,
-      splitMethod: 'host_assignment', items: [{ id: 'i1', description: 'Noodles', quantity: 1, totalCents: 810, sortOrder: 0 }],
-      allocations: [{ itemId: 'i1', participantUserId: 'u-b', amountCents: 810 }],
-    })
-    expect(draft.adjustments).toEqual([])
+  it('round-trips an amount paid exactly (offline drafts and edits)', () => {
+    for (const amount of ['25.00', '30.01', '0.01']) {
+      const draft: ExpenseDraft = { ...head, splitMethod: 'host_assignment', amount, items }
+      roundTrip(draft)
+      const r = validateDraft(draft)
+      if (!r.ok) throw new Error('fixture invalid')
+      expect(draftFromPayload(buildPayload({ id: 'e1', eventId: 'ev' }, r.values)).amount).toBe(amount)
+    }
+  })
+
+  it('leaves Amount paid empty for a saved itemized payload without adjustments', () => {
+    expect(draftFromPayload(legacy('host_assignment', undefined, 2857)).amount).toBe('')
+    expect(draftFromPayload(legacy('item_claim', [], 2857)).amount).toBe('')
   })
 })
 
@@ -287,73 +292,44 @@ describe('multi-person assignment', () => {
   })
 })
 
-describe('bill adjustments', () => {
-  const adj = (patch: Partial<DraftAdjustment>): DraftAdjustment => ({ id: 'a1', kind: 'discount', label: 'Voucher', amount: '5.00', sign: -1, ...patch })
-  const receipt = (adjustments: DraftAdjustment[], splitMethod: ExpenseDraft['splitMethod'] = 'host_assignment'): ExpenseDraft => ({
+describe('amount paid', () => {
+  const receipt = (amount: string, splitMethod: ExpenseDraft['splitMethod'] = 'host_assignment'): ExpenseDraft => ({
     ...base,
     splitMethod,
-    amount: '',
+    amount,
     items: [
       { id: 'i1', description: 'Rice', price: '11.11', assigneeIds: ['u-a'] },
       { id: 'i2', description: 'Pork', price: '17.46', assigneeIds: ['u-b'] },
     ],
-    adjustments,
   })
 
-  it('sends signed cents and a paid total of items + adjustments', () => {
-    const payload = ok(receipt([
-      adj({}),
-      adj({ id: 'a2', kind: 'tax', label: 'SST (6%)', amount: '1.41', sign: 1 }),
-      adj({ id: 'a3', kind: 'rounding', label: 'Bill rounding', amount: '0.02', sign: 1 }),
-    ]))
-    expect(payload.totalCents).toBe(2500)
-    expect(payload.adjustments).toEqual([
-      { id: 'a1', kind: 'discount', label: 'Voucher', amountCents: -500, sortOrder: 0 },
-      { id: 'a2', kind: 'tax', label: 'SST (6%)', amountCents: 141, sortOrder: 1 },
-      { id: 'a3', kind: 'rounding', label: 'Bill rounding', amountCents: 2, sortOrder: 2 },
-    ])
+  it('sends one unlabelled other adjustment for the difference and the amount paid as the total', () => {
+    for (const method of ['items', 'host_assignment'] as const) {
+      const payload = ok(receipt('25.00', method))
+      expect(payload.totalCents).toBe(2500)
+      expect(payload.adjustments).toEqual([{ id: ctx.id, kind: 'other', label: null, amountCents: -357, sortOrder: 0 }])
+    }
   })
 
-  it('trims the label and keeps a negative rounding', () => {
-    const payload = ok(receipt([adj({ kind: 'rounding', label: '  Rounding ', amount: '0.02', sign: -1 })], 'items'))
-    expect(payload.adjustments).toEqual([{ id: 'a1', kind: 'rounding', label: 'Rounding', amountCents: -2, sortOrder: 0 }])
-    expect(payload.totalCents).toBe(2855)
+  it('adds a positive difference when more was paid than the items (service charge)', () => {
+    const payload = ok(receipt('30.00'))
+    expect(payload.totalCents).toBe(3000)
+    expect(payload.adjustments).toEqual([{ id: ctx.id, kind: 'other', label: null, amountCents: 143, sortOrder: 0 }])
   })
 
-  it.each([
-    ['an empty label', { label: '  ' }],
-    ['a label over 60 characters', { label: 'x'.repeat(61) }],
-    ['a zero amount', { amount: '0.00' }],
-    ['an empty amount', { amount: '' }],
-    ['three decimals', { amount: '1.005' }],
-  ])('rejects %s as invalid_adjustment', (_name, patch) => {
-    expect(validateDraft(receipt([adj(patch)]))).toMatchObject({ ok: false, errors: { adjustments: 'invalid_adjustment' } })
+  it.each(['', '  ', '28.57'])('sends no adjustment when Amount paid is %j (empty or equal to the items)', amount => {
+    const payload = ok(receipt(amount))
+    expect(payload.totalCents).toBe(2857)
+    expect(payload.adjustments).toEqual([])
   })
 
-  it('accepts a 60-character label', () => {
-    expect(validateDraft(receipt([adj({ label: 'x'.repeat(60) })])).ok).toBe(true)
+  it.each(['0', '0.00', '-1', '1.005', 'abc'])('rejects Amount paid %j', amount => {
+    expect(validateDraft(receipt(amount))).toMatchObject({ ok: false, errors: { amount: 'amount_invalid' } })
   })
 
-  it('rejects adjustments that bring the amount paid below 0.01', () => {
-    expect(validateDraft(receipt([adj({ amount: '28.57' })]))).toMatchObject({ ok: false, errors: { adjustments: 'adjustments_total' } })
-  })
-
-  it('ignores adjustments for equal and custom splits', () => {
-    const payload = ok({ ...base, adjustments: [adj({})] })
+  it('equal and custom splits never send adjustments', () => {
+    const payload = ok({ ...base })
     expect(payload.adjustments).toBeUndefined()
     expect(payload.totalCents).toBe(1000)
-  })
-
-  it('adjustmentsCents sums only the valid rows', () => {
-    expect(adjustmentsCents([adj({}), adj({ id: 'a2', kind: 'tax', amount: '1.41', sign: 1 }), adj({ id: 'a3', amount: 'x' })])).toBe(-359)
-    expect(adjustmentsCents(undefined)).toBe(0)
-  })
-
-  it('signForKind: discount is always minus, tax and service plus, rounding and other keep the chosen sign', () => {
-    expect(signForKind('discount', 1)).toBe(-1)
-    expect(signForKind('tax', -1)).toBe(1)
-    expect(signForKind('service', -1)).toBe(1)
-    expect(signForKind('rounding', -1)).toBe(-1)
-    expect(signForKind('other', 1)).toBe(1)
   })
 })

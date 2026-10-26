@@ -60,7 +60,7 @@ test('single bill: itemized entry, a friend claims an item, the host assigns the
   await ben.context().close()
 })
 
-test('single bill: the host shares one item between two people, takes off a voucher, then settle', async ({ browser }) => {
+test('single bill: the host shares one item between two people, enters a lower amount paid, then settle', async ({ browser }) => {
   test.setTimeout(120_000)
   const owner = await newUser(browser)
   const ben = await newUser(browser)
@@ -69,7 +69,7 @@ test('single bill: the host shares one item between two people, takes off a vouc
   const link = await inviteLink(owner)
   await joinEvent(ben, link, 'Ben')
 
-  // Satay platter RM 20 shared by Ana and Ben, teh tarik RM 8 for Ben, voucher RM 5 off: paid RM 23.
+  // Satay platter RM 20 shared by Ana and Ben, teh tarik RM 8 for Ben, RM 5 off: paid RM 23.
   await owner.reload()
   await owner.getByRole('button', { name: 'Add simple expense' }).click()
   await owner.getByLabel('Description').fill('Satay dinner')
@@ -85,14 +85,10 @@ test('single bill: the host shares one item between two people, takes off a vouc
   await owner.getByLabel('Item 2 price').fill('8.00')
   await owner.getByRole('group', { name: 'Who had Item 2' }).getByRole('button', { name: 'Ben' }).click()
 
-  await owner.getByRole('button', { name: 'Add adjustment' }).click()
-  await expect(owner.getByLabel('Adjustment 1 type')).toHaveValue('discount')
-  await owner.getByLabel('Adjustment 1 label').fill('Voucher')
-  await owner.getByLabel('Adjustment 1 amount').fill('5.00')
-  const summary = owner.getByRole('group', { name: 'Bill summary' })
-  await expect(summary).toContainText(rm('23.00'))
+  await owner.getByLabel('Amount paid').fill('23.00')
+  await expect(owner.getByText(/Discounts, tax and rounding: −RM\s?5\.00/)).toBeVisible()
   // Ana's items RM 10, Ben's RM 18: the RM 23 paid splits 8.21 / 14.79 (largest remainder to Ben).
-  const pays = summary.getByRole('list', { name: 'What each person pays' })
+  const pays = owner.getByRole('list', { name: 'What each person pays' })
   await expect(pays.getByRole('listitem').filter({ hasText: 'Ben' })).toContainText(rm('14.79'))
   await owner.getByRole('button', { name: 'Save expense' }).click()
   await expect(owner.locator('.expense-row', { hasText: 'Satay dinner' })).toContainText(rm('23.00'))

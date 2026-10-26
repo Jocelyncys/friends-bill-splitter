@@ -13,28 +13,23 @@ import { EventStatus } from '../events/EventStatus'
 import { displayNames } from '../events/memberNames'
 import { useEventHome } from '../events/useEventHome'
 import {
-  ADJUSTMENT_KINDS,
-  adjustmentsCents,
   buildPayload,
   centsToText,
   customDifference,
   draftFromPayload,
-  hasSignChoice,
   itemCentsByPerson,
   parseMoneyToCents,
-  signForKind,
   validateDraft,
-  type DraftAdjustment,
   type DraftItem,
   type DraftSplitMethod,
   type ExpenseDraft,
   type FormErrors,
 } from './expenseForm'
-import { createExpenseRepository, ExpenseSaveError, type AdjustmentKind, type SavedExpense, type SaveExpensePayload } from './expenseRepository'
+import { createExpenseRepository, ExpenseSaveError, type SavedExpense, type SaveExpensePayload } from './expenseRepository'
 import { recognizeReceipt } from '../ocr/ocrEngine'
 import { PaysList } from './PaysList'
 import { parseReceipt } from './receiptParser'
-import { paysRows, sharedEachText } from './shareText'
+import { paysRows, sharedEachText, signedMoney } from './shareText'
 
 const METHODS: DraftSplitMethod[] = ['equal', 'custom', 'items', 'host_assignment']
 
@@ -49,8 +44,6 @@ type OcrState = 'idle' | 'recognizing' | 'review' | 'failed'
 const isUntouched = (items: DraftItem[]) => items.length === 1 && items[0].description === '' && items[0].price === ''
 
 const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', price: '', assigneeIds: [] })
-
-const blankAdjustment = (): DraftAdjustment => ({ id: crypto.randomUUID(), kind: 'discount', label: '', amount: '', sign: -1 })
 
 const isItemized = (method: DraftSplitMethod) => method === 'items' || method === 'host_assignment'
 
@@ -156,8 +149,6 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
   const [serverError, setServerError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  // A switch to equal/custom that would drop the adjustments waits for confirmation here.
-  const [pendingMethod, setPendingMethod] = useState<DraftSplitMethod | null>(null)
   const [ocrState, setOcrState] = useState<OcrState>('idle')
   const [ocrMessage, setOcrMessage] = useState('')
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
@@ -169,24 +160,14 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
     if (receiptUrlRef.current) URL.revokeObjectURL(receiptUrlRef.current)
   }, [])
 
-  const applyMethod = (method: DraftSplitMethod, dropAdjustments = false) => {
+  // Amount (equal/custom) and Amount paid (itemized) are one field, so switching method keeps what was typed.
+  const changeMethod = (method: DraftSplitMethod) => {
     if (!isItemized(method)) {
       scanRun.current += 1 // drop any in-flight scan; the scan UI is going away
       setOcrState('idle')
       setOcrMessage('')
     }
-    setDraft(d => {
-      if (!dropAdjustments) return { ...d, splitMethod: method }
-      // Equal/custom work from one amount: start from what was paid unless an amount is already typed.
-      const paid = d.items.reduce((sum, item) => sum + (parseMoneyToCents(item.price) ?? 0), 0) + adjustmentsCents(d.adjustments)
-      const amount = d.amount.trim() === '' && paid >= 1 ? centsToText(paid) : d.amount
-      return { ...d, splitMethod: method, adjustments: [], amount }
-    })
-  }
-
-  const changeMethod = (method: DraftSplitMethod) => {
-    if (!isItemized(method) && (draft.adjustments?.length ?? 0) > 0) return setPendingMethod(method)
-    applyMethod(method)
+    setDraft(d => ({ ...d, splitMethod: method }))
   }
 
   const scanReceipt = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -208,18 +189,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       const parsed = parseReceipt(lines)
       if (parsed.items.length === 0) throw new Error('no items')
       const scanned = parsed.items.map(item => ({ id: crypto.randomUUID(), description: item.description, price: centsToText(item.totalCents), assigneeIds: [] }))
-      const scannedAdjustments = parsed.adjustments.map(a => ({
-        id: crypto.randomUUID(),
-        kind: a.kind,
-        label: a.label,
-        amount: centsToText(Math.abs(a.amountCents)),
-        sign: a.amountCents < 0 ? (-1 as const) : (1 as const),
-      }))
-      setDraft(d => ({
-        ...d,
-        items: isUntouched(d.items) ? scanned : [...d.items, ...scanned],
-        adjustments: [...(d.adjustments ?? []), ...scannedAdjustments],
-      }))
+      setDraft(d => ({ ...d, items: isUntouched(d.items) ? scanned : [...d.items, ...scanned] }))
       setOcrMessage(t('editor.scan.reviewHint'))
       setOcrState('review')
     } catch {
@@ -236,14 +206,6 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
     const ids = draft.items[index].assigneeIds
     setItem(index, { assigneeIds: ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId] })
   }
-  const adjustments = draft.adjustments ?? []
-  const setAdjustment = (index: number, patch: Partial<DraftAdjustment>) =>
-    set('adjustments', adjustments.map((a, i) => (i === index ? { ...a, ...patch } : a)))
-  // Rounding / other start as "+" unless the row already had a chosen sign.
-  const changeKind = (index: number, kind: AdjustmentKind) => {
-    const previous = adjustments[index]
-    setAdjustment(index, { kind, sign: signForKind(kind, hasSignChoice(previous.kind) ? previous.sign : 1) })
-  }
   const money = (cents: number) => formatMoney(cents, home.event.currency, i18n.language)
   const fieldError = (key: keyof FormErrors) => (errors[key] ? <p className="field-error">{t(`editor.errors.${errors[key]}`)}</p> : null)
 
@@ -251,15 +213,17 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
   const itemized = isItemized(draft.splitMethod)
   const reviewing = itemized && ocrState === 'review'
   const itemsTotal = draft.items.reduce((sum, item) => sum + (parseMoneyToCents(item.price) ?? 0), 0)
-  const paidTotal = itemsTotal + adjustmentsCents(adjustments)
+  // Amount paid, when typed, valid and different from the items: the difference is the discounts, tax and rounding.
+  const paidCents = itemized ? parseMoneyToCents(draft.amount) : null
+  const paidDifference = paidCents !== null && paidCents !== itemsTotal ? paidCents - itemsTotal : 0
   const difference = customDifference(draft.amount, draft.shares)
   const people = home.members.map(m => ({ id: m.userId, name: nameOf(m.userId, m.displayName) }))
   // Self-claimed items (friends-claim) count for their claimers: the server splits them with the same equal rule.
   const personItems =
-    itemized && adjustments.length > 0
+    paidDifference !== 0
       ? itemCentsByPerson(draft.items.map(item => (item.assigneeIds.length > 0 ? item : { ...item, assigneeIds: claims[item.id] ?? [] })))
       : null
-  const pays = personItems ? paysRows(paidTotal, personItems, people) : []
+  const pays = personItems && paidCents !== null ? paysRows(paidCents, personItems, people) : []
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -464,89 +428,26 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
             <div className="group__actions">
               <button type="button" className="add-row" onClick={() => set('items', [...draft.items, blankItem()])}><PlusIcon />{t('editor.addItem')}</button>
             </div>
-            {adjustments.length === 0 && (
-              <p className="group__total">{t('editor.total')} <strong className="amount">{money(itemsTotal)}</strong></p>
-            )}
+            <p className="group__total">{t('editor.total')} <strong className="amount">{money(itemsTotal)}</strong></p>
             {fieldError('items')}
-          </fieldset>
-        )}
-
-        {itemized && (
-          <fieldset className="group">
-            <legend className="group__legend">{t('editor.adj.title')}</legend>
-            {adjustments.length === 0 && <p className="group__hint">{t('editor.adj.hint')}</p>}
-            {adjustments.map((a, index) => {
-              const n = index + 1
-              const minus = signForKind(a.kind, a.sign) < 0
-              return (
-                <div key={a.id} className="adj-row">
-                  <div className="field">
-                    <label className="field__label" htmlFor={`${formId}-adj-kind-${a.id}`}>{t('editor.adj.type', { n })}</label>
-                    <select id={`${formId}-adj-kind-${a.id}`} value={a.kind} onChange={e => changeKind(index, e.target.value as AdjustmentKind)}>
-                      {ADJUSTMENT_KINDS.map(kind => (
-                        <option key={kind} value={kind}>{t(`editor.adj.kind.${kind}`)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <label className="field">
-                    <span className="field__label">{t('editor.adj.label', { n })}</span>
-                    <input value={a.label} maxLength={60} onChange={e => setAdjustment(index, { label: e.target.value })} autoComplete="off" />
-                  </label>
-                  <div className="field adj-row__amount">
-                    <label className="field__label" htmlFor={`${formId}-adj-amount-${a.id}`}>{t('editor.adj.amount', { n })}</label>
-                    <div className="signed-input">
-                      {hasSignChoice(a.kind) ? (
-                        <button
-                          type="button"
-                          className="sign-toggle"
-                          aria-pressed={minus}
-                          onClick={() => setAdjustment(index, { sign: minus ? 1 : -1 })}
-                        >
-                          <span aria-hidden="true">{minus ? '−' : '+'}</span>
-                          <span className="sr-only">{t('editor.adj.subtract', { n })}</span>
-                        </button>
-                      ) : (
-                        <span className="signed-input__sign">
-                          <span aria-hidden="true">{minus ? '−' : '+'}</span>
-                          <span className="sr-only" id={`${formId}-adj-sign-${a.id}`}>{t(minus ? 'editor.adj.subtracted' : 'editor.adj.added')}</span>
-                        </span>
-                      )}
-                      <input
-                        id={`${formId}-adj-amount-${a.id}`}
-                        aria-describedby={hasSignChoice(a.kind) ? undefined : `${formId}-adj-sign-${a.id}`}
-                        inputMode="decimal"
-                        value={a.amount}
-                        onChange={e => setAdjustment(index, { amount: e.target.value })}
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
-                  <button type="button" className="quiet danger icon-button" onClick={() => set('adjustments', adjustments.filter((_, i) => i !== index))}>
-                    <TrashIcon />
-                    <span className="sr-only">{t('editor.adj.remove', { n })}</span>
-                  </button>
-                </div>
-              )
-            })}
-            <div className="group__actions">
-              <button type="button" className="add-row" onClick={() => set('adjustments', [...adjustments, blankAdjustment()])}>
-                <PlusIcon />{t('editor.adj.add')}
-              </button>
-            </div>
-            {adjustments.length > 0 && (
-              <div className="bill-summary" role="group" aria-label={t('editor.adj.summary')}>
-                <p className="bill-summary__row"><span>{t('editor.adj.items')}</span> <span className="amount">{money(itemsTotal)}</span></p>
-                {adjustments.map(a => {
-                  const cents = parseMoneyToCents(a.amount)
-                  if (cents === null) return null
-                  return (
-                    <p key={a.id} className="bill-summary__row">
-                      <span>{a.label.trim() || t(`editor.adj.kind.${a.kind}`)}</span>{' '}
-                      <span className="amount">{money(signForKind(a.kind, a.sign) * cents)}</span>
-                    </p>
-                  )
-                })}
-                <p className="bill-summary__row bill-summary__paid"><span>{t('editor.adj.paid')}</span> <strong className="amount">{money(paidTotal)}</strong></p>
+            <label className="field">
+              <span className="field__label">{t('editor.paid.label')}</span>
+              <input
+                inputMode="decimal"
+                value={draft.amount}
+                placeholder={itemsTotal > 0 ? centsToText(itemsTotal) : undefined}
+                onChange={e => set('amount', e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+            <p className="group__hint" aria-live="polite">
+              {paidDifference !== 0
+                ? t('editor.paid.difference', { amount: signedMoney(money, paidDifference) })
+                : t('editor.paid.hint')}
+            </p>
+            {fieldError('amount')}
+            {paidDifference !== 0 && (
+              <div className="bill-summary">
                 {pays.length > 0 ? (
                   <PaysList rows={pays} label={t('claim.paysTitle')} money={money} />
                 ) : (
@@ -554,7 +455,6 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
                 )}
               </div>
             )}
-            {fieldError('adjustments')}
           </fieldset>
         )}
 
@@ -583,19 +483,6 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
           onConfirm={() => void deleteExpense()}
         >
           <p>{t('editor.deleteBody', { description: saved?.description ?? '' })}</p>
-        </ConfirmDialog>
-      )}
-      {pendingMethod && (
-        <ConfirmDialog
-          title={t('editor.adj.switchTitle')}
-          confirmLabel={t('editor.adj.switchConfirm')}
-          onCancel={() => setPendingMethod(null)}
-          onConfirm={() => {
-            applyMethod(pendingMethod, true)
-            setPendingMethod(null)
-          }}
-        >
-          <p>{t('editor.adj.switchBody', { amount: money(paidTotal) })}</p>
         </ConfirmDialog>
       )}
     </main>

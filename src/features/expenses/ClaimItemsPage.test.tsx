@@ -130,29 +130,24 @@ describe('ClaimItemsPage', () => {
     expect(screen.getByText('Shared by 2, RM 5.00 to RM 5.01 each')).toBeInTheDocument()
   })
 
-  describe('with bill adjustments', () => {
+  describe('with an amount paid different from the items', () => {
     const rice: ClaimItemView = { id: 'i1', description: 'Rice', quantity: 1, totalCents: 1111, assigned: true, claims: [{ userId: 'alice', amountCents: 1111 }] }
     const pork: ClaimItemView = { id: 'i2', description: 'Pork', quantity: 1, totalCents: 1746, assigned: true, claims: [{ userId: 'ben', amountCents: 1746 }] }
-    const adjustments = [
-      { id: 'a1', label: 'Voucher', amountCents: -500 },
-      { id: 'a2', label: 'SST (6%)', amountCents: 141 },
-      { id: 'a3', label: 'Bill rounding', amountCents: 2 },
-    ]
 
-    it('shows each person’s items and what they pay after the voucher, tax and rounding', () => {
-      render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants} items={[rice, pork]} adjustments={adjustments} totalCents={2500} />)
+    it('shows one discounts line, the amount paid and what each person pays', () => {
+      render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants} items={[rice, pork]} adjustmentCents={-357} totalCents={2500} />)
       const shares = screen.getByRole('list', { name: 'Each person’s share' })
       expect(within(shares).getByText('Items RM 11.11 → pays RM 9.72')).toBeInTheDocument()
       expect(within(shares).getByText('RM 9.72')).toBeInTheDocument()
       expect(within(shares).getByText('Items RM 17.46 → pays RM 15.28')).toBeInTheDocument()
-      expect(screen.getByText('Voucher').parentElement).toHaveTextContent('-RM 5.00')
+      expect(screen.getByText('Discounts, tax and rounding').parentElement).toHaveTextContent('−RM 3.57')
       expect(screen.getByText('Amount paid').parentElement).toHaveTextContent('RM 25.00')
     })
 
     it('waits for every item to have someone before showing what each person pays', () => {
       const open = { ...pork, assigned: false, claims: [] }
-      render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants} items={[rice, open]} adjustments={adjustments} totalCents={2500} />)
-      expect(screen.getByText('What each person pays, adjustments included, appears once every item has someone.')).toBeInTheDocument()
+      render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants} items={[rice, open]} adjustmentCents={-357} totalCents={2500} />)
+      expect(screen.getByText('What each person pays, discounts and tax included, appears once every item has someone.')).toBeInTheDocument()
       expect(screen.queryByText(/→ pays/)).not.toBeInTheDocument()
       expect(within(screen.getByRole('list', { name: 'Each person’s share' })).getByText('RM 11.11')).toBeInTheDocument()
     })

@@ -124,10 +124,7 @@
       "date_invalid": "Please choose a valid date.",
       "participants_required": "Choose at least one person to split with.",
       "shares_mismatch": "The amounts must add up to the total.",
-      "items_invalid": "Every item needs a name, a valid price and (if required) an assignee.",
-      "invalid_adjustment": "Each adjustment needs a label (up to 60 characters) and an amount other than 0.",
-      "adjustments_need_items": "Add items with a price before adding adjustments.",
-      "adjustments_total": "The amount paid must be at least 0.01."
+      "items_invalid": "Every item needs a name, a valid price and (if required) an assignee."
     },
     "scan": {
       "previewAlt": "Receipt photo preview",
@@ -146,30 +143,12 @@
     "deleteBody": "“{{description}}” will be removed for everyone in this event. This cannot be undone.",
     "deleteConfirm": "Delete",
     "whoHad": "Who had Item {{n}}",
-    "adj": {
-      "title": "Adjustments",
-      "hint": "Voucher, tax, service charge or rounding on the bill.",
-      "add": "Add adjustment",
-      "type": "Adjustment {{n}} type",
-      "label": "Adjustment {{n}} label",
-      "amount": "Adjustment {{n}} amount",
-      "subtract": "Subtract adjustment {{n}}",
-      "remove": "Remove adjustment {{n}}",
-      "kind": {
-        "discount": "Discount",
-        "tax": "Tax",
-        "service": "Service charge",
-        "rounding": "Rounding",
-        "other": "Other"
-      },
-      "summary": "Bill summary",
-      "items": "Items",
-      "paid": "Amount paid",
-      "switchTitle": "Remove the adjustments?",
-      "switchBody": "Split equally and Custom amounts work from the amount paid ({{amount}}), so the adjustment lines will be removed.",
-      "switchConfirm": "Remove adjustments",
-      "subtracted": "subtracted",
-      "added": "added"
+    "paid": {
+      "label": "Amount paid",
+      "hint": "Optional. Fill in if the bill came to a different amount (voucher, tax, rounding).",
+      "difference": "Discounts, tax and rounding: {{amount}}",
+      "line": "Discounts, tax and rounding",
+      "items": "Items"
     }
   },
   "expenseError": {
@@ -192,7 +171,7 @@
     "allocation_exceeds_item": "An item is assigned for more than its price.",
     "invalid_adjustment": "One of the adjustments is not valid.",
     "adjustments_not_allowed": "This split method does not use adjustments.",
-    "adjustments_need_items": "Add items with a price before adding adjustments.",
+    "adjustments_need_items": "Add items with a price before entering a different amount paid.",
     "adjustment_mismatch": "The items plus adjustments do not add up to the amount paid.",
     "invalid_payload": "The expense could not be read. Please try again.",
     "not_event_member": "You are not a member of this event.",
@@ -231,7 +210,7 @@
     "assign": "Assign",
     "paysTitle": "What each person pays",
     "paysLine": "Items {{items}} → pays {{pays}}",
-    "paysWaiting": "What each person pays, adjustments included, appears once every item has someone.",
+    "paysWaiting": "What each person pays, discounts and tax included, appears once every item has someone.",
     "assignItem": "Assign {{item}}"
   },
   "actionError": {
