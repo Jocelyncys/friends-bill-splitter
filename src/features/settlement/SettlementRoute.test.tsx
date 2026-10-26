@@ -99,7 +99,7 @@ describe('SettlementRoute', () => {
       expect(mocks.confirmSettlement).not.toHaveBeenCalled()
       await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirm and settle' }))
       expect(mocks.confirmSettlement).toHaveBeenCalledWith({ eventId: 'e1', method: 'optimized_direct', coordinatorId: null, expectedRevision: 7 })
-      expect(await screen.findByRole('heading', { name: 'Payments' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'Payments', level: 1 })).toBeInTheDocument()
     })
 
     it('Later and Cancel go home without any repository mutation', async () => {
