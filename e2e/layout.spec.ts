@@ -31,7 +31,7 @@ const READY: Record<string, (page: Page) => Promise<void>> = {
   home: page => expect(page.getByRole('main').getByRole('article').first()).toBeVisible(),
   editor: page => expect(page.locator('.more-options__toggle')).toHaveAttribute('aria-expanded', 'false'),
   people: page => expect(page.getByRole('main').getByRole('listitem')).toHaveCount(1),
-  settlement: page => expect(page.locator('.plan .receipt__row').first()).toBeVisible(),
+  settlement: page => expect(page.locator('.plan .receipt__total')).toBeVisible(),
 }
 
 async function check(page: Page, testInfo: TestInfo, screen: string, lang: string) {
