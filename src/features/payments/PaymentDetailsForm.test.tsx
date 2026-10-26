@@ -76,6 +76,19 @@ describe('PaymentDetailsForm', () => {
     expect(mocks.saveMyPaymentDetails.mock.calls[0][1]).toMatchObject({ preferredMethod: 'qr', bankName: 'Maybank' })
   })
 
+  it('refuses half-filled bank details instead of dropping them, even with a QR', async () => {
+    render(<PaymentDetailsForm eventId="e1" userId="ben" />)
+    await userEvent.upload(screen.getByLabelText('Upload your DuitNow QR'), png())
+    await openBank()
+    await userEvent.type(screen.getByLabelText('Bank name'), 'Maybank')
+    await userEvent.click(screen.getByRole('button', { name: 'Or add bank details' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save details' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('or leave them all empty')
+    expect(screen.getByRole('button', { name: 'Or add bank details' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Bank name')).toHaveValue('Maybank')
+    expect(mocks.saveMyPaymentDetails).not.toHaveBeenCalled()
+  })
+
   it('opens the bank fields to show a bank field error', async () => {
     render(<PaymentDetailsForm eventId="e1" userId="ben" />)
     await openBank()

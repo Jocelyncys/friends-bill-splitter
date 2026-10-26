@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatMoney } from '../../domain/money'
@@ -15,12 +15,19 @@ export function EventRoute() {
   const { eventId = '' } = useParams()
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
+  const locationState = location.state as { unsavedInviteToken?: string; showInvite?: boolean } | null
   // Set only when the new event's invite token could not be stored on this device: show it once.
-  const locationState = useLocation().state as { unsavedInviteToken?: string; showInvite?: boolean } | null
   const unsavedInviteToken = locationState?.unsavedInviteToken
   // A new trip opens with the invite first; once the user toggles it, it goes back to its usual place.
   const [inviteFirst, setInviteFirst] = useState(!!locationState?.showInvite)
   const [showInvite, setShowInvite] = useState(!!unsavedInviteToken || inviteFirst)
+  // The invite opens once, for this visit: clear the flag so Back or a reload does not open it again.
+  useEffect(() => {
+    if (locationState?.showInvite) void navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null })
+    // Read once on mount; the panel keeps its own state for this visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const state = useEventHome(eventId)
   const { drafts, loaded: draftsLoaded } = useDrafts(eventId)
   const position = useMyPosition(state.status === 'ready' ? state.home : undefined)

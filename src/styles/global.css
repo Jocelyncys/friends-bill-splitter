@@ -1101,7 +1101,15 @@ input[type='radio']:focus-visible {
 
 .invite-panel__share {
   width: 100%;
-  margin-bottom: 12px;
+}
+
+/* Live region: stays in the tree when empty so the "Copied" announcement is heard. */
+.invite-panel__status {
+  min-height: 12px;
+  margin: 4px 0 8px;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-align: center;
 }
 
 .invite-panel .group {

@@ -50,7 +50,6 @@ const inputs = (over: Partial<SettlementInputs> = {}): SettlementInputs => ({
     { userId: 'ann', paidCents: 1000, owedCents: 500 },
     { userId: 'bob', paidCents: 0, owedCents: 500 },
   ],
-  payerAllocations: [{ expenseId: 'x1', payerId: 'ann', participantId: 'bob', amountCents: 500 }],
   unresolved: [],
   ...over,
 })

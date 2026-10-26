@@ -37,4 +37,11 @@ describe('paymentDetailsSchema', () => {
     expect(paymentDetailsSchema.parse(bank).preferredMethod).toBe('bank')
     expect(paymentDetailsSchema.parse({ ...bank, qrFile: png() }).preferredMethod).toBe('qr')
   })
+
+  it('rejects a partly filled bank set rather than dropping it', () => {
+    const result = paymentDetailsSchema.safeParse({ qrFile: png(), bankName: 'Maybank', accountHolderName: '', accountNumber: '' })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0].message).toBe('bank_incomplete')
+    expect(paymentDetailsSchema.safeParse({ qrFile: png(), bankName: ' ', accountHolderName: '', accountNumber: '' }).success).toBe(true)
+  })
 })

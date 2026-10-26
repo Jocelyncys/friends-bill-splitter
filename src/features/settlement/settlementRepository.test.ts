@@ -71,12 +71,6 @@ describe('settlementRepository.getSettlementInputs', () => {
         { userId: 'ben', paidCents: 500, owedCents: 1728 },
         { userId: 'cara', paidCents: 500, owedCents: 0 },
       ],
-      payerAllocations: [
-        { expenseId: 'e1', payerId: 'ali', participantId: 'ali', amountCents: 972 },
-        { expenseId: 'e1', payerId: 'ali', participantId: 'ben', amountCents: 1528 },
-        { expenseId: 'e2', payerId: 'ben', participantId: 'ben', amountCents: 200 },
-        { expenseId: 'e3', payerId: 'cara', participantId: 'ali', amountCents: 500 },
-      ],
       unresolved: [
         { expenseId: 'e2', description: 'Snacks', unallocatedCents: 300 },
         { expenseId: 'e3', description: 'Kopi', unallocatedCents: 500 },

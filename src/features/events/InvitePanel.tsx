@@ -22,25 +22,31 @@ export function InvitePanel({
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
+  // Share fell back to copying: say so next to the Share button.
+  const [shareCopied, setShareCopied] = useState(false)
   const token = unsavedToken ?? readToken(eventId)
   if (!token) return <p className="note">{t('event.inviteOnlyOnCreatorDevice')}</p>
   const url = `${window.location.origin}${window.location.pathname}#/join/${token}`
-  const copy = async () => {
+  const writeLink = async () => {
     try {
       await navigator.clipboard.writeText(url)
-      setCopied(true)
+      return true
     } catch {
-      // clipboard blocked; the link stays selectable in the field
+      return false // clipboard blocked; the link stays selectable in the field
     }
   }
+  const copy = async () => setCopied(await writeLink())
   const share = async () => {
-    if (typeof navigator.share !== 'function') return copy()
-    try {
-      await navigator.share({ title: eventName, text: t('event.inviteText', { name: eventName }), url })
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return // sheet closed by the user
-      await copy()
+    setShareCopied(false)
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: eventName, text: t('event.inviteText', { name: eventName }), url })
+        return
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return // sheet closed by the user
+      }
     }
+    setShareCopied(await writeLink())
   }
   return (
     <section className="invite-panel">
@@ -49,6 +55,7 @@ export function InvitePanel({
         <LinkIcon />
         {t('event.shareInvite')}
       </button>
+      <p role="status" className="invite-panel__status">{shareCopied ? t('common.copied') : ''}</p>
       <div className="group">
         <label className="field">
           <span className="field__label">{t('event.inviteLinkLabel')}</span>

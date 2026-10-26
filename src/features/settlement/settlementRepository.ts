@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import { compareIds } from '../../domain/allocation'
-import type { PayerAllocation, Total } from '../../domain/settlement'
+import type { Total } from '../../domain/settlement'
 import type { EventRole } from '../../domain/types'
 
 // Settlement RPC + reads from migration 202610240008. Reads are RLS selects; the
@@ -67,7 +67,6 @@ export type SettlementInputs = {
   revision: number // pass back as expectedRevision
   members: SettlementMember[]
   totals: Total[] // everyone who paid or shares in an expense, by id
-  payerAllocations: PayerAllocation[]
   unresolved: Array<{ expenseId: string; description: string; unallocatedCents: number }>
 }
 
@@ -153,7 +152,6 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
         if (!total) totals.set(userId, (total = { userId, paidCents: 0, owedCents: 0 }))
         return total
       }
-      const payerAllocations: PayerAllocation[] = []
       const unresolved: SettlementInputs['unresolved'] = []
       for (const x of expenses.data as unknown as ExpenseRow[]) {
         totalFor(x.payer_user_id).paidCents += x.total_cents
@@ -168,7 +166,6 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
       }
       for (const o of (owed.data ?? []) as OwedShareRow[]) {
         totalFor(o.participant_user_id).owedCents += o.owed_cents
-        payerAllocations.push({ expenseId: o.expense_id, payerId: o.payer_user_id, participantId: o.participant_user_id, amountCents: o.owed_cents })
       }
 
       return {
@@ -179,7 +176,6 @@ export function createSettlementRepository(client: SupabaseClient = supabase) {
           role: m.role,
         })),
         totals: [...totals.values()].sort((a, b) => compareIds(a.userId, b.userId)),
-        payerAllocations,
         unresolved,
       }
     },

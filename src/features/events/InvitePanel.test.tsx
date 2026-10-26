@@ -43,13 +43,15 @@ describe('InvitePanel', () => {
     await Promise.resolve()
     expect(writeText).not.toHaveBeenCalled()
     expect(screen.queryByText('Copied')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('copies the link when sharing is not available', async () => {
+  it('copies the link when sharing is not available, and says so', async () => {
     render(<InvitePanel eventId="ev-1" eventName="Penang Trip" />)
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
     fireEvent.click(screen.getByRole('button', { name: 'Share invite' }))
-    expect(await screen.findByText('Copied')).toBeInTheDocument()
+    await vi.waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Copied'))
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('#/join/tok-1'))
   })
 
@@ -57,7 +59,7 @@ describe('InvitePanel', () => {
     setShare(vi.fn().mockRejectedValue(new DOMException('nope', 'NotAllowedError')))
     render(<InvitePanel eventId="ev-1" eventName="Penang Trip" />)
     fireEvent.click(screen.getByRole('button', { name: 'Share invite' }))
-    expect(await screen.findByText('Copied')).toBeInTheDocument()
+    await vi.waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Copied'))
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('#/join/tok-1'))
   })
 

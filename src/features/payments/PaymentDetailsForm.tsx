@@ -88,7 +88,7 @@ export function PaymentDetailsForm({ eventId, userId, warnBeforeSave = false, on
       setStatus(null)
       const code = parsed.error.issues[0].message
       // A bank error, or nothing given at all: show the bank fields so the fix is in view.
-      if (code === 'account_number' || code === 'method_required') setBankOpen(true)
+      if (code === 'account_number' || code === 'bank_incomplete' || code === 'method_required') setBankOpen(true)
       const key = `paymentForm.errors.${code}`
       setError(t(i18n.exists(key) ? key : 'paymentForm.errors.generic'))
       return

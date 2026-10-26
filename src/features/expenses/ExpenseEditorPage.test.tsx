@@ -322,6 +322,7 @@ describe('ExpenseEditorPage', () => {
       renderEditor('/event/ev-1/expenses/new?scan=1')
       await pick()
       await screen.findByRole('button', { name: 'Confirm items' })
+      await openMore()
       await userEvent.selectOptions(screen.getByLabelText('Split method'), 'equal')
       expect(screen.getByRole('button', { name: 'Save expense' })).toBeEnabled()
     })
@@ -331,6 +332,7 @@ describe('ExpenseEditorPage', () => {
       recognizeReceipt.mockReturnValue(new Promise<string[]>(r => { finish = r }))
       renderEditor('/event/ev-1/expenses/new?scan=1')
       await pick()
+      await openMore()
       await userEvent.selectOptions(screen.getByLabelText('Split method'), 'equal')
       expect(screen.getByRole('button', { name: 'Save expense' })).toBeEnabled()
       finish(['TEH O 3.00'])
@@ -612,10 +614,39 @@ describe('ExpenseEditorPage (more options)', () => {
     expect(await screen.findByRole('button', { name: 'More options' })).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('opens when the split method is not equal', async () => {
+  it('stays collapsed in the scan flow, where friends claim items is the default', async () => {
     renderEditor('/event/ev-1/expenses/new?scan=1')
-    expect(await screen.findByRole('button', { name: 'More options' })).toHaveAttribute('aria-expanded', 'true')
+    const toggle = await screen.findByRole('button', { name: 'More options' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAccessibleDescription('Paid by you, today, friends claim items')
+    await userEvent.click(toggle)
     expect(screen.getByLabelText('Split method')).toHaveValue('items')
+  })
+
+  it('opens when a new expense is not split equally outside the scan flow', async () => {
+    getDraft.mockResolvedValue({
+      payload: {
+        id: 'd-1', eventId: 'ev-1', payerUserId: 'u-a', description: 'Taxi', category: 'other', expenseDate: localToday(),
+        totalCents: 1000, splitMethod: 'custom', items: [], adjustments: [],
+        allocations: [
+          { itemId: null, participantUserId: 'u-a', amountCents: 400 },
+          { itemId: null, participantUserId: 'u-b', amountCents: 600 },
+        ],
+      },
+    })
+    renderEditor('/event/ev-1/expenses/new?draft=d-1')
+    expect(await screen.findByRole('button', { name: 'More options' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Split method')).toHaveValue('custom')
+  })
+
+  it('points the toggle at the fields it shows', async () => {
+    renderEditor()
+    await openMore()
+    const ids = (screen.getByRole('button', { name: 'More options' }).getAttribute('aria-controls') ?? '').split(' ')
+    expect(ids.length).toBe(2)
+    for (const id of ids) expect(document.getElementById(id)).not.toBeNull()
+    expect(document.getElementById(ids[0])).toContainElement(screen.getByLabelText('Split method'))
+    expect(document.getElementById(ids[1])).toContainElement(screen.getByRole('checkbox', { name: 'Bob' }))
   })
 })
 

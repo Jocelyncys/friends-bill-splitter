@@ -52,12 +52,12 @@ const isItemized = (method: DraftSplitMethod) => method === 'items' || method ==
 const MORE_FIELDS: (keyof FormErrors)[] = ['payer', 'date', 'participants', 'shares']
 
 /** True when payer, date, split method or people differ from what a new expense starts with. */
-function differsFromDefaults(draft: ExpenseDraft, home: EventHome): boolean {
+function differsFromDefaults(draft: ExpenseDraft, home: EventHome, defaultMethod: DraftSplitMethod): boolean {
   const everyone = home.members.map(m => m.userId)
   return (
     draft.payerUserId !== home.me.userId ||
     draft.expenseDate !== today() ||
-    draft.splitMethod !== 'equal' ||
+    draft.splitMethod !== defaultMethod ||
     draft.participantIds.length !== everyone.length ||
     !everyone.every(id => draft.participantIds.includes(id))
   )
@@ -151,18 +151,20 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
   // Selects sit beside (not inside) their <label>: a wrapping label's text would include every option,
   // so e.g. "Custom amounts" made the split-method select match a search for the "Amount" field.
   const formId = useId()
+  // A new expense from the scan flow starts itemized (friends claim items); everything else starts equal.
+  const defaultMethod: DraftSplitMethod = !saved && searchParams.get('scan') === '1' ? 'items' : 'equal'
   const [draft, setDraft] = useState<ExpenseDraft>(() => saved ? draftFromPayload(saved) : {
     description: '',
     amount: '',
     payerUserId: home.me.userId,
     expenseDate: today(),
-    splitMethod: searchParams.get('scan') === '1' ? 'items' : 'equal',
+    splitMethod: defaultMethod,
     participantIds: home.members.map(m => m.userId),
     shares: {},
     items: [blankItem()],
   })
   // Payer, date, split method and people start tucked away, unless they already differ from the defaults.
-  const [moreOpen, setMoreOpen] = useState(() => differsFromDefaults(draft, home))
+  const [moreOpen, setMoreOpen] = useState(() => differsFromDefaults(draft, home, defaultMethod))
   const [errors, setErrors] = useState<FormErrors>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -287,6 +289,9 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       ? t('editor.more.split.equal', { count: draft.participantIds.length })
       : t(`editor.more.split.${draft.splitMethod}`),
   })
+
+  const hasPeople = draft.splitMethod === 'equal' || draft.splitMethod === 'custom'
+  const moreControls = hasPeople ? `${formId}-more-fields ${formId}-more-people` : `${formId}-more-fields`
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -450,6 +455,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
             type="button"
             className="more-options__toggle"
             aria-expanded={moreOpen}
+            aria-controls={moreOpen ? moreControls : undefined}
             aria-labelledby={`${formId}-more`}
             aria-describedby={moreOpen ? undefined : `${formId}-more-summary`}
             onClick={() => setMoreOpen(open => !open)}
@@ -461,7 +467,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
             <ChevronDownIcon />
           </button>
           {moreOpen && (
-            <>
+            <div id={`${formId}-more-fields`}>
               {canPickPayer ? (
                 <div className="field">
                   <label className="field__label" htmlFor={`${formId}-payer`}>{t('editor.payer')}</label>
@@ -490,12 +496,12 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
                   ))}
                 </select>
               </div>
-            </>
+            </div>
           )}
         </div>
 
-        {moreOpen && (
-          <>
+        {moreOpen && hasPeople && (
+          <div id={`${formId}-more-people`} className="more-options__people">
             {draft.splitMethod === 'equal' && (
               <fieldset className="group">
                 <legend className="group__legend">{t('editor.participants')}</legend>
@@ -533,7 +539,7 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
                 {fieldError('shares')}
               </fieldset>
             )}
-          </>
+          </div>
         )}
 
         {reviewing && (

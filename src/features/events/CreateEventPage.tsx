@@ -44,8 +44,9 @@ export function CreateEventPage() {
         stored = false // storage unavailable: hand the link to the event page once, with a warning
       }
       const home = `/event/${eventId}`
-      if (!stored) return void navigate(home, { state: { unsavedInviteToken: inviteToken } })
-      if (mode === 'single_bill') {
+      if (!stored) {
+        await navigate(home, { state: { unsavedInviteToken: inviteToken } })
+      } else if (mode === 'single_bill') {
         // A single bill starts at the receipt scan. The event home replaces this form, so Back lands there.
         await navigate(home, { replace: true })
         await navigate(`${home}/expenses/new?scan=1`)

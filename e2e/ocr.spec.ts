@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
-import { createEvent } from './helpers.ts'
+import { createEvent, openMoreOptions } from './helpers.ts'
 
 // No retries: a slow or failing OCR run should be seen, not retried away.
 test.describe.configure({ retries: 0 })
@@ -18,6 +18,9 @@ test('@slow scans a receipt in the browser without contacting third-party origin
 
   await createEvent(page, 'Single Bill', 'Kedai makan', 'Ana')
   await page.getByRole('button', { name: 'Scan a receipt' }).click()
+  // Friends claim items is the scan default, so More options stays collapsed.
+  await expect(page.locator('.more-options__toggle')).toHaveAttribute('aria-expanded', 'false')
+  await openMoreOptions(page)
   await expect(page.getByLabel('Split method')).toHaveValue('items')
   await page.getByLabel('Description').fill('Breakfast')
   await page.getByLabel('Choose photo').setInputFiles(RECEIPT)

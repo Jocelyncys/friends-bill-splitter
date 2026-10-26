@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
@@ -40,6 +40,7 @@ export function SettlementPreview({
   const { t, i18n } = useTranslation()
   const [confirming, setConfirming] = useState<{ revision?: number } | null>(null)
   const [staleNotice, setStaleNotice] = useState(false)
+  const transfersTitleId = useId()
   const money = (cents: number) => formatMoney(cents, currency, i18n.language)
 
   const nameOf = (id: string) => preview?.members.find(m => m.id === id)?.name ?? t('settlement.formerMember')
@@ -82,7 +83,7 @@ export function SettlementPreview({
       )}
 
       {preview && (
-        <section className="plan" aria-labelledby="plan-transfers-title">
+        <section className="plan">
           <div className="plan__totals">
             <p>{t('settlement.totalPaid', { amount: money(preview.totalPaidCents) })}</p>
             <p>{t('settlement.totalOwed', { amount: money(preview.totalOwedCents) })}</p>
@@ -94,8 +95,8 @@ export function SettlementPreview({
           </ul>
           <div className="receipt">
             <div className="receipt__paper">
-              <h2 id="plan-transfers-title" className="receipt__title">{t('settlement.transfersTitle')}</h2>
-              <ul className="plain-list" aria-labelledby="plan-transfers-title">
+              <h2 id={transfersTitleId} className="receipt__title">{t('settlement.transfersTitle')}</h2>
+              <ul className="plain-list" aria-labelledby={transfersTitleId}>
                 {transfers.map((x, index) => (
                   <li key={index} className="receipt__row">
                     <span>{t('settlement.transferRow', { payer: nameOf(x.payerId), receiver: nameOf(x.receiverId) })}</span>

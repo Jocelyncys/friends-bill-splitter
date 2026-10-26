@@ -348,6 +348,7 @@
       "qr_type": "二维码图片必须是 PNG、JPEG 或 WebP。",
       "qr_size": "二维码图片不能超过 5 MB。",
       "account_number": "账号必须为 4 到 34 个字符。",
+      "bank_incomplete": "请填写银行名称、户名和账号，或全部留空。",
       "generic": "请检查信息后重试。"
     }
   },

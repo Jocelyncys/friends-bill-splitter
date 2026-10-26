@@ -22,6 +22,11 @@ export const paymentDetailsSchema = z
       .refine(v => !v || (v.length >= 4 && v.length <= 34), { message: 'account_number' }),
     paymentReference: z.string().trim().max(100).optional(),
   })
+  // Bank details are all or nothing: a partly filled set is an error, never silently dropped.
+  .refine(v => [0, 3].includes([v.bankName, v.accountHolderName, v.accountNumber].filter(Boolean).length), {
+    message: 'bank_incomplete',
+    path: ['bankName'],
+  })
   .refine(v => Boolean(v.qrFile) || Boolean(v.bankName && v.accountHolderName && v.accountNumber), {
     message: 'method_required',
     path: ['qrFile'],

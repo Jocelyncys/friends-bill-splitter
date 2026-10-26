@@ -348,6 +348,7 @@
       "qr_type": "The QR image must be PNG, JPEG or WebP.",
       "qr_size": "The QR image must be 5 MB or smaller.",
       "account_number": "The account number must be 4 to 34 characters.",
+      "bank_incomplete": "Fill in the bank name, account holder and account number, or leave them all empty.",
       "generic": "Please check the details and try again."
     }
   },
