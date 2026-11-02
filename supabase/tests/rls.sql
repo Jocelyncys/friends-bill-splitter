@@ -1,5 +1,5 @@
 begin;
-select plan(465);
+select plan(478);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -2013,6 +2013,64 @@ reset role;
 select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b4000000-0000-0000-0000-000000000006') order by 1$$,
   $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 0::bigint), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 100::bigint)$$,
   'owed shares follow the unit allocations');
+
+-- Batch 4 fix round (0013): whole units written as 2.0; unit RPC guards ---------------------------
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 667, '2.0'),
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 333, '1.0'))))$$,
+  'save_expense accepts units written as 2.0 / 1.0');
+select throws_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 1000, '2.5'))))$$,
+  '22023', 'invalid_units', 'save_expense still rejects 2.5 units cleanly');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000031' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 667::bigint, 2), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 333::bigint, 1)$$,
+  'units written as 2.0 are stored as 2');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002',
+    '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":2.0}]')$$, 'assign_item_units accepts units written as 2.0');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000002' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 700::bigint, 2)$$, 'an assignment of 2.0 units stores 2 units');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[]')$$, 'clear it again');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.set_claiming_closed('b4000000-0000-0000-0000-000000000001', true)$$, 'C closes claiming on X');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000002', 1)$$,
+  '22023', 'claiming_closed', 'unit claims stop when claiming is closed');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.set_claiming_closed('b4000000-0000-0000-0000-000000000001', false)$$, 'C reopens claiming on X');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000002', 1)$$,
+  '22023', 'item_not_found', 'a non-member cannot claim units (the item stays hidden)');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[{"member_id":"dddddddd-dddd-dddd-dddd-dddddddddddd","units":1}]')$$,
+  '22023', 'item_not_found', 'a non-member cannot assign units');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000061', 1)$$,
+  '22023', 'event_not_open', 'unit claims stop once the event is settled');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000061', '[{"member_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","units":2}]')$$,
+  '22023', 'event_not_open', 'units cannot be assigned once the event is settled');
+reset role;
 
 select * from finish();
 rollback;
