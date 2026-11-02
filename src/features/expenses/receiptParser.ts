@@ -156,7 +156,7 @@ const LEADING_QTY = /^(\d{1,3})\s+(?=\p{L})/u // "2 Teh Ais" (not confirmed on i
 type Parts = { description: string; quantity?: number; strongQuantity: boolean; unitCents?: number }
 
 /** Takes quantity and unit-price markers off the text before the line total. */
-function splitQuantity(head: string): Parts {
+function splitQuantity(head: string, totalCents: number): Parts {
   let text = head.replace(REF_NOTE, '').trim()
   let quantity: number | undefined
   let strongQuantity = false
@@ -177,10 +177,16 @@ function splitQuantity(head: string): Parts {
   const unitOnly = (m: RegExpMatchArray) => {
     unitCents = toCents(m[1], m[2]) ?? undefined
   }
+  // "Milo Dinosaur 2.20 2": a quantity only when unit x quantity fits the total; otherwise the number belongs to
+  // the name ("Coke 1.50 330", "Room 12.00 101") and goes back into it.
+  let nameNumber: string | undefined
   const unitAndQty = (m: RegExpMatchArray) => {
     unitCents = toCents(m[1], m[2]) ?? undefined
-    quantity = Number(m[3])
-    strongQuantity = true
+    const q = Number(m[3])
+    if (unitCents !== undefined && q >= 1 && Math.abs(q * unitCents - totalCents) * 2 <= q) {
+      quantity = q
+      strongQuantity = true
+    } else nameNumber = m[3]
   }
   const rightEnd: Array<[RegExp, (m: RegExpMatchArray) => void]> = [
     [QTY_TIMES_UNIT, qtyAndUnit],
@@ -190,6 +196,7 @@ function splitQuantity(head: string): Parts {
     [TRAILING_UNIT, unitOnly],
   ]
   rightEnd.some(([re, fn]) => take(re, fn))
+  if (nameNumber !== undefined) text = `${text} ${nameNumber}`
   // "(4.32/ea)" anywhere.
   take(UNIT_PRICE, m => (unitCents ??= toCents(m[1], m[2]) ?? undefined))
   text = text.replace(DANGLING_EA, '').trim()
@@ -217,7 +224,7 @@ function splitQuantity(head: string): Parts {
 
 /** Decides quantity and unit price from what was printed; the line total always wins. */
 function resolveItem(head: string, totalCents: number): Omit<ParsedReceiptItem, 'lowConfidence'> & { unsure: boolean } {
-  const parts = splitQuantity(head)
+  const parts = splitQuantity(head, totalCents)
   let { quantity, unitCents } = parts
   let description = parts.description
   let unsure = false

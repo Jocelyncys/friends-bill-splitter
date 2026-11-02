@@ -281,6 +281,18 @@ describe('ExpenseEditorPage', () => {
       expect(screen.getByLabelText('Amount paid')).toHaveValue('')
     })
 
+    it('still finishes the scan in a hidden tab, where no animation frames come', async () => {
+      recognizeReceipt.mockResolvedValue(['TEH O 3.00'])
+      vi.stubGlobal('requestAnimationFrame', () => 0)
+      try {
+        renderEditor('/event/ev-1/expenses/new?scan=1')
+        await pick()
+        expect(await screen.findByDisplayValue('TEH O')).toBeInTheDocument()
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
     it('disables save while recognizing', async () => {
       recognizeReceipt.mockReturnValue(new Promise(() => {}))
       renderEditor('/event/ev-1/expenses/new?scan=1')

@@ -172,6 +172,11 @@ describe('parseReceipt quantities', () => {
     expect(pick(parseReceipt([line]).items)).toEqual([[description, quantity, unitCents, totalCents]])
   })
 
+  it('reads a number between two prices as a quantity only when unit x quantity fits the total', () => {
+    expect(pick(parseReceipt(['Coke 1.50 330 1.50']).items)).toEqual([['Coke 330', 1, 150, 150]])
+    expect(pick(parseReceipt(['Room 12.00 101 12.00']).items)).toEqual([['Room 101', 1, 1200, 1200]])
+  })
+
   it('keeps a small leading number in the name unless it divides the total, and flags an unconfirmed quantity', () => {
     expect(pick(parseReceipt(['7 Up 3.00']).items)).toEqual([['7 Up', 1, 300, 300]])
     // 450 divides by 3, so "3" may be a quantity: taken, but marked "Check this" (it could be "3 Layer Tea").

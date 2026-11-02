@@ -231,8 +231,12 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
       })
       if (run !== scanRun.current) return
       setScanProgress({ stage: 'building' })
-      // Let "Building items" reach the screen before the (synchronous) parse.
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      // Let "Building items" reach the screen before the (synchronous) parse. A hidden tab gets no frames, so a
+      // short timeout lets the parse finish there too.
+      await new Promise<void>(resolve => {
+        requestAnimationFrame(() => resolve())
+        setTimeout(resolve, 50)
+      })
       if (run !== scanRun.current) return
       const parsed = parseReceipt(lines)
       if (parsed.items.length === 0) throw new Error('no items')
