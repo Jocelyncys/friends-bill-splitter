@@ -134,8 +134,6 @@
     },
     "scan": {
       "previewAlt": "收据照片预览",
-      "loadingModel": "正在加载文字识别…首次可能需要一些时间。",
-      "recognizing": "正在识别收据…",
       "reviewHint": "请检查项目和价格，然后确认。",
       "confirm": "确认项目",
       "failed": "无法识别此收据，请手动输入项目。",
@@ -147,7 +145,16 @@
         "subtotal_mismatch": "项目合计 {{items}}，但收据小计是 {{subtotal}}。请核对项目。",
         "multiple_totals": "找到多个总额。请核对实付金额。",
         "no_total": "收据上没有找到总额。请核对实付金额。"
-      }
+      },
+      "progressLabel": "读取收据进度",
+      "stage": {
+        "loading": "正在加载识别器",
+        "starting": "正在启动识别器",
+        "reading": "正在读取收据",
+        "building": "正在整理项目"
+      },
+      "megabytes": "{{loaded}} / {{total}} MB",
+      "firstTime": "第一次可能需要一些时间。"
     },
     "offlineHint": "你目前离线。这笔支出会先保存在此设备上，恢复联网后自动发送。",
     "editTitle": "编辑开销",

@@ -134,8 +134,6 @@
     },
     "scan": {
       "previewAlt": "Receipt photo preview",
-      "loadingModel": "Loading the text reader… the first time can take a while.",
-      "recognizing": "Reading your receipt…",
       "reviewHint": "Check the items and prices, then confirm.",
       "confirm": "Confirm items",
       "failed": "Could not read this receipt. Enter the items by hand.",
@@ -147,7 +145,16 @@
         "subtotal_mismatch": "Items add up to {{items}} but the receipt subtotal is {{subtotal}}. Check the items.",
         "multiple_totals": "Several totals found. Check Amount paid.",
         "no_total": "No total found on the receipt. Check Amount paid."
-      }
+      },
+      "progressLabel": "Reading the receipt",
+      "stage": {
+        "loading": "Loading the reader",
+        "starting": "Starting the reader",
+        "reading": "Reading your receipt",
+        "building": "Building items"
+      },
+      "megabytes": "{{loaded}} of {{total}} MB",
+      "firstTime": "The first time can take a while."
     },
     "offlineHint": "You are offline. The expense will be saved on this device and sent when you are back online.",
     "editTitle": "Edit expense",

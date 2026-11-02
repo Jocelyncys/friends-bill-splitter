@@ -22,10 +22,14 @@ class FakeWorker extends EventTarget {
 }
 
 const file = new File(['x'], 'r.jpg', { type: 'image/jpeg' })
+const loadingBytes = { stage: 'loading', loadedBytes: 5, totalBytes: 10, filesDone: 1, files: 3 } as const
 const succeed: Behaviour = (_, reply) => {
-  reply({ phase: 'recognizing' })
+  reply({ progress: loadingBytes })
+  reply({ progress: { stage: 'starting' } })
+  reply({ progress: { stage: 'reading' } })
   reply({ lines: [{ text: 'TEH 3.00', confidence: 0.98 }] })
 }
+const stages = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls.map(c => c[0].stage)
 
 // Fresh module per test: the worker and readiness are cached at module level.
 async function load() {
@@ -49,8 +53,11 @@ describe('recognizeReceipt', () => {
     expect(await recognizeReceipt(file, second)).toEqual([{ text: 'TEH 3.00', confidence: 0.98 }])
     expect(workers).toHaveLength(1)
     expect(workers[0].url).toMatch(/ocr\.worker\.ts/)
-    expect(first.mock.calls.map(c => c[0])).toEqual(['loading', 'recognizing'])
-    expect(second.mock.calls.map(c => c[0])).toEqual(['recognizing'])
+    // Loading is reported at once (before the worker answers), then the worker's own progress.
+    expect(stages(first)).toEqual(['loading', 'loading', 'starting', 'reading'])
+    expect(first.mock.calls[1][0]).toEqual(loadingBytes)
+    // Once the reader is ready a scan starts at reading.
+    expect(stages(second)[0]).toBe('reading')
   })
 
   it('sends absolute, same-origin asset URLs with the image', async () => {
@@ -72,7 +79,7 @@ describe('recognizeReceipt', () => {
     behaviour = succeed
     const progress = vi.fn()
     expect(await recognizeReceipt(file, progress)).toEqual([{ text: 'TEH 3.00', confidence: 0.98 }])
-    expect(progress.mock.calls[0][0]).toBe('loading')
+    expect(progress.mock.calls[0][0].stage).toBe('loading')
   })
 
   it('replaces a crashed worker', async () => {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -285,8 +285,35 @@ describe('ExpenseEditorPage', () => {
       recognizeReceipt.mockReturnValue(new Promise(() => {}))
       renderEditor('/event/ev-1/expenses/new?scan=1')
       await pick()
-      expect(await screen.findByText(/Loading the text reader/)).toBeInTheDocument()
+      const bar = await screen.findByRole('progressbar', { name: 'Reading the receipt' })
+      expect(bar).toHaveAttribute('aria-valuenow', '0')
+      expect(screen.getByText('Loading the reader')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Save expense' })).toBeDisabled()
+    })
+
+    it('moves one progress bar through the reader’s stages', async () => {
+      let report: (progress: unknown) => void = () => {}
+      let finish: (lines: string[]) => void = () => {}
+      recognizeReceipt.mockImplementation((_file: File, onProgress: (progress: unknown) => void) => {
+        report = onProgress
+        onProgress({ stage: 'loading', loadedBytes: 0, totalBytes: 0, filesDone: 0, files: 3 })
+        return new Promise<string[]>(r => { finish = r })
+      })
+      renderEditor('/event/ev-1/expenses/new?scan=1')
+      await pick()
+      const bar = await screen.findByRole('progressbar', { name: 'Reading the receipt' })
+      act(() => report({ stage: 'loading', loadedBytes: 12_500_000, totalBytes: 25_000_000, filesDone: 1, files: 3 }))
+      expect(bar).toHaveAttribute('aria-valuenow', '28')
+      expect(screen.getByText('12.5 of 25.0 MB')).toBeInTheDocument()
+      act(() => report({ stage: 'starting' }))
+      expect(bar).toHaveAttribute('aria-valuenow', '55')
+      expect(screen.getByText('Starting the reader')).toBeInTheDocument()
+      act(() => report({ stage: 'reading' }))
+      expect(bar).toHaveAttribute('aria-valuenow', '65')
+      expect(screen.getByText('Reading your receipt')).toBeInTheDocument()
+      await act(async () => finish(['TEH O 3.00']))
+      expect(await screen.findByDisplayValue('TEH O')).toBeInTheDocument()
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     })
 
     it('reviews parsed rows, lets the user edit them, and saves only after Confirm + Save', async () => {

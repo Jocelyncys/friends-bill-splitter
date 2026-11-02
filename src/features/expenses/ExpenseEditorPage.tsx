@@ -30,6 +30,8 @@ import {
 } from './expenseForm'
 import { createExpenseRepository, ExpenseSaveError, type SavedExpense, type SaveExpensePayload } from './expenseRepository'
 import { recognizeReceipt } from '../ocr/ocrEngine'
+import type { OcrProgress } from '../ocr/ocrProgress'
+import { ScanProgress } from '../ocr/ScanProgress'
 import { PaysList } from './PaysList'
 import { parseReceipt, type ReceiptWarning } from './receiptParser'
 import { paysRows, sharedEachText, signedMoney } from './shareText'
@@ -179,6 +181,7 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [ocrState, setOcrState] = useState<OcrState>('idle')
   const [ocrMessage, setOcrMessage] = useState('')
+  const [scanProgress, setScanProgress] = useState<OcrProgress | null>(null)
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
   // From the last scan: what to double-check (warnings) and the rows the reader was unsure about.
   const [scanWarnings, setScanWarnings] = useState<ReceiptWarning[]>([])
@@ -218,14 +221,16 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
     receiptUrlRef.current = url
     setReceiptUrl(url)
     setOcrState('recognizing')
-    setOcrMessage(t('editor.scan.loadingModel'))
+    setOcrMessage('')
+    setScanProgress({ stage: 'loading', loadedBytes: 0, totalBytes: 0, filesDone: 0, files: 3 })
     setScanWarnings([])
     setCheckIds(new Set())
     try {
-      const lines = await recognizeReceipt(file, phase => {
-        if (run === scanRun.current) setOcrMessage(t(phase === 'loading' ? 'editor.scan.loadingModel' : 'editor.scan.recognizing'))
+      const lines = await recognizeReceipt(file, progress => {
+        if (run === scanRun.current) setScanProgress(progress)
       })
       if (run !== scanRun.current) return
+      setScanProgress({ stage: 'building' })
       const parsed = parseReceipt(lines)
       if (parsed.items.length === 0) throw new Error('no items')
       const scanned = parsed.items.map(item => ({
@@ -247,10 +252,12 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
         if (!isUntouched(d.items)) return { ...d, description, items: [...d.items, ...scanned] }
         return { ...d, description, items: scanned, amount: total !== undefined && total !== scannedCents ? centsToText(total) : '' }
       })
+      setScanProgress(null)
       setOcrMessage(t('editor.scan.reviewHint'))
       setOcrState('review')
     } catch {
       if (run !== scanRun.current) return
+      setScanProgress(null)
       setOcrMessage(t('editor.scan.failed'))
       setOcrState('failed')
     }
@@ -414,6 +421,7 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
             <legend className="group__legend">{t('editor.items')}</legend>
             {!scanFirst && photoPicks}
             {receiptUrl && <img className="receipt-preview" src={receiptUrl} alt={t('editor.scan.previewAlt')} />}
+            {ocrState === 'recognizing' && scanProgress && <ScanProgress progress={scanProgress} />}
             <p className="group__status" aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
             {reviewing && scanWarnings.length > 0 && (
               <ul className="scan-warnings" aria-label={t('editor.scan.warningsTitle')}>

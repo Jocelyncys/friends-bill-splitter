@@ -1268,6 +1268,67 @@ input[type='radio']:focus-visible {
   margin: 4px 0 0;
 }
 
+/* ---------- Receipt reading progress ---------- */
+.scan-progress {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.scan-progress__text {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.scan-progress__detail {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-progress__track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--petal);
+  box-shadow: inset 0 0 0 1px var(--rose);
+}
+
+.scan-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--plum);
+  transition: width 240ms ease-out;
+}
+
+/* Reading the receipt is one engine call: the bar holds its value and only shows it is working. */
+.scan-progress__fill--working {
+  background-image: linear-gradient(90deg, var(--plum) 0%, var(--plum) 40%, var(--rose-deep) 50%, var(--plum) 60%, var(--plum) 100%);
+  background-size: 200% 100%;
+  animation: scan-working 1.6s linear infinite;
+}
+
+@keyframes scan-working {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-progress__fill--working {
+    animation: none;
+    background-image: none;
+  }
+}
+
 /* ---------- Receipt review ---------- */
 /* What to double-check after a scan, and rows the reader was unsure about. */
 .scan-warnings {

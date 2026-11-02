@@ -1,9 +1,9 @@
 import type { OcrLine } from '../expenses/receiptParser'
+import type { OcrProgress } from './ocrProgress'
 
-export type OcrPhase = 'loading' | 'recognizing'
 export type OcrAssets = ReturnType<typeof ocrAssetUrls>
 export type OcrRequest = { assets: OcrAssets; image: Blob }
-export type OcrReply = { phase: 'recognizing' } | { lines: OcrLine[] } | { error: string }
+export type OcrReply = { progress: OcrProgress } | { lines: OcrLine[] } | { error: string }
 
 /**
  * Self-hosted OCR assets (downloaded by scripts/fetch-ocr-models.mjs into public/ocr-models/).
@@ -23,13 +23,15 @@ export function ocrAssetUrls(base: string = document.baseURI) {
 let worker: Worker | undefined
 let engineReady = false
 
+const ASSET_COUNT = 3 // det model, rec model, runtime wasm
+
 /**
  * Runs PaddleOCR entirely in the browser, in a dedicated worker (see ocr.worker.ts), so the SDK never
- * loads on the main thread. The SDK has no progress callback, so only coarse phases are reported.
- * All model and runtime files come from our own origin.
+ * loads on the main thread. Progress: the reader's download in bytes, then starting it, then reading the
+ * receipt (see ocrProgress.ts). All model and runtime files come from our own origin.
  */
-export function recognizeReceipt(file: File, onProgress?: (phase: OcrPhase) => void): Promise<OcrLine[]> {
-  if (!engineReady) onProgress?.('loading')
+export function recognizeReceipt(file: File, onProgress?: (progress: OcrProgress) => void): Promise<OcrLine[]> {
+  onProgress?.(engineReady ? { stage: 'reading' } : { stage: 'loading', loadedBytes: 0, totalBytes: 0, filesDone: 0, files: ASSET_COUNT })
   const current = (worker ??= new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' }))
   const { port1, port2 } = new MessageChannel()
   return new Promise((resolve, reject) => {
@@ -46,9 +48,9 @@ export function recognizeReceipt(file: File, onProgress?: (phase: OcrPhase) => v
     }
     current.addEventListener('error', onCrash)
     port1.onmessage = ({ data }: MessageEvent<OcrReply>) => {
-      if ('phase' in data) {
-        engineReady = true
-        onProgress?.(data.phase)
+      if ('progress' in data) {
+        if (data.progress.stage === 'reading') engineReady = true
+        onProgress?.(data.progress)
       } else if ('error' in data) {
         settle(() => reject(new Error(data.error)))
       } else {
