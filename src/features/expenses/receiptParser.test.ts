@@ -207,6 +207,7 @@ describe('parseReceipt line types', () => {
     ['www.selerakampung.my', 'junk'],
     ['Thank you, come again!', 'junk'],
     ['TAX INVOICE', 'junk'],
+    ['voice no: 127230 te:25/10/202620:09 ORDER', 'junk'],
     ['Teh Ais 3.50', 'item'],
   ])('%j is %s', (line, kind) => {
     expect(classifyReceiptLine(line)).toBe(kind)

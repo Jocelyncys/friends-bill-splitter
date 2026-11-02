@@ -77,8 +77,9 @@ const JUNK = [
   /\b(?:jalan|jln|lorong|lrg|taman|tmn|persiaran|lebuh|bandar|kampung\s+\w+\s*,)\b|\bno\.?\s*\d+\s*,|\blot\s*\d|\b\d{5}\s+\p{L}/iu,
   /\b(?:invoice|inv\s*no|receipt|rcpt|bill\s*no|order\s*(?:no|#)|cashier|server|counter|terminal|trans(?:action)?\s*(?:no|id)|ref\s*no|reg(?:istration)?\s*no|co\.?\s*no|sdn\.?\s*bhd|bhd\b|enterprise)\b/i,
   /\b(?:sst|gst)\s*(?:id|reg\w*|no)\b/i,
+  /(?:in)?voice\s*(?:no|#)|\bno\s*[:.#]\s*\d{4,}/i, // OCR often clips the "In" off "Invoice no: 127230"
   /\btable\s*(?:no\.?|#)?\s*:?\s*\d|\bpax\s*:?\s*\d/i,
-  /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?\b|\b(?:date|time|tarikh|masa)\b\s*:?/i,
+  /\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?\b|\b(?:date|time|tarikh|masa)\b\s*:?/i,
   /www\.|https?:|\.com\b|\.my\b|@\w+\.\w/i,
   /thank\s*you|terima\s*kasih|come\s*again|please\s*come|powered\s*by|wi-?fi|password|follow\s*us|goods\s*sold|no\s*refund/i,
 ]
