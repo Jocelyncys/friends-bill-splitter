@@ -1,5 +1,6 @@
 import type { OcrLine } from '../expenses/receiptParser'
 import type { OcrProgress } from './ocrProgress'
+import pins from './ocrPins.json'
 
 export type OcrAssets = ReturnType<typeof ocrAssetUrls>
 export type OcrRequest = { assets: OcrAssets; image: Blob }
@@ -13,10 +14,10 @@ export type OcrReply = { progress: OcrProgress } | { lines: OcrLine[] } | { erro
 export function ocrAssetUrls(base: string = document.baseURI) {
   const url = (path: string) => new URL(`ocr-models/${path}`, base).href
   return {
-    det: url('PP-OCRv5_mobile_det_onnx_infer.tar'),
-    rec: url('PP-OCRv5_mobile_rec_onnx_infer.tar'),
+    det: url(pins.det.file),
+    rec: url(pins.rec.file),
     // The SDK's inference worker embeds onnxruntime-web 1.24.3 glue; only the matching wasm binary is fetched.
-    wasm: url('ort-1.24.3/ort-wasm-simd-threaded.jsep.wasm'),
+    wasm: url(pins.wasm.file),
   }
 }
 

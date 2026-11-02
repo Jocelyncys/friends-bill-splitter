@@ -311,7 +311,17 @@ describe('ExpenseEditorPage', () => {
       act(() => report({ stage: 'reading' }))
       expect(bar).toHaveAttribute('aria-valuenow', '65')
       expect(screen.getByText('Reading your receipt')).toBeInTheDocument()
-      await act(async () => finish(['TEH O 3.00']))
+      // Building items gets one frame on screen before the parse runs.
+      const frames: FrameRequestCallback[] = []
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb))
+      try {
+        await act(async () => finish(['TEH O 3.00']))
+        expect(bar).toHaveAttribute('aria-valuenow', '92')
+        expect(screen.getByText('Building items')).toBeInTheDocument()
+        await act(async () => frames.forEach(cb => cb(0)))
+      } finally {
+        vi.unstubAllGlobals()
+      }
       expect(await screen.findByDisplayValue('TEH O')).toBeInTheDocument()
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     })

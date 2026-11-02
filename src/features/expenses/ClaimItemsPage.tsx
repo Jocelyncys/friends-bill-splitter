@@ -211,6 +211,10 @@ export function ClaimItemsPage({
   }
 
   const shareOf = (item: ClaimItemView, units: Units, id: string) => {
+    // Claims saved before units existed keep the server's equal split until someone changes them.
+    if (item.claims.some(c => c.units == null) && canon(units) === canon(Object.fromEntries(item.claims.map(c => [c.userId, c.units ?? 1])))) {
+      return item.claims.find(c => c.userId === id)?.amountCents ?? 0
+    }
     const counted = withoutZeros(units)
     if (!(id in counted) || sum(counted) > item.quantity) return 0
     return itemShares(item, Object.keys(counted), counted)[id] ?? 0
@@ -250,6 +254,8 @@ export function ClaimItemsPage({
         const left = item.quantity - sum(withoutZeros(shownUnits))
         const current = item.claims.map(c => c.userId)
         const picked = (picking[assignKey] as string[] | undefined) ?? current
+        // With the self stepper shown, the manager's own row would be a second control for the same person.
+        const unitRows = byUnit ? participants.filter(p => !(canSelfClaim && p.id === currentUserId)) : []
         const statusLine = (
           <p className="note claim-assign__status" aria-live="polite">
             {status[item.id] ? t(status[item.id] === 'saving' ? 'claim.saving' : 'claim.saved') : ''}
@@ -299,15 +305,15 @@ export function ClaimItemsPage({
                 >
                   {money(shareOf(item, shownUnits, currentUserId))}
                 </UnitStepper>
-                {!manage && statusLine}
+                {!(manage && unitRows.length > 0) && statusLine}
               </div>
             )}
-            {manage && (
+            {manage && !(byUnit && unitRows.length === 0) && (
               <div className="claim-assign">
                 <span id={`who-had-${item.id}`} className="field__label">{t('claim.whoHad', { item: item.description })}</span>
                 {byUnit ? (
                   <div className="unit-list" role="group" aria-labelledby={`who-had-${item.id}`}>
-                    {participants.map(p => (
+                    {unitRows.map(p => (
                       <div key={p.id} className="unit-row">
                         <span className="unit-row__name">{p.name}</span>
                         <UnitStepper

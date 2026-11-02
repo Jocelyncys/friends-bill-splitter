@@ -1,0 +1,5 @@
+{
+  "det": { "file": "PP-OCRv5_mobile_det_onnx_infer.tar", "sha256": "781056046c9ed77a15c94681605db6a0f62317c2e9cce6931c71da2478d4bc30" },
+  "rec": { "file": "PP-OCRv5_mobile_rec_onnx_infer.tar", "sha256": "f7e792bc836f36e7ef895ad47c426d75b0b75b1650caa6d63fe9418441ffba8c" },
+  "wasm": { "file": "ort-1.24.3/ort-wasm-simd-threaded.jsep.wasm", "sha256": "2e0a3d0e3f6b7c13ecfaba38c13691fd19c9ed470e72f9d7d8416ca59ab6dbcd" }
+}

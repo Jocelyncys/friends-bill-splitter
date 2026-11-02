@@ -107,8 +107,9 @@ describe('itemShares', () => {
     expect(itemShares({ totalCents: 1000, quantity: 3 }, ['a', 'b'], { a: 2, b: 1 })).toEqual({ a: 667, b: 333 })
   })
 
-  it('counts a claimer without a unit count as one unit', () => {
+  it('splits equally when any claimer has no unit count (claims from before units), like the server', () => {
     expect(itemShares({ totalCents: 700, quantity: 2 }, ['a', 'b'])).toEqual({ a: 350, b: 350 })
+    expect(itemShares({ totalCents: 1000, quantity: 3 }, ['a', 'b'], { a: 2 })).toEqual({ a: 500, b: 500 })
   })
 
   it('returns no shares for nobody', () => {

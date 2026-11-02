@@ -231,6 +231,9 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
       })
       if (run !== scanRun.current) return
       setScanProgress({ stage: 'building' })
+      // Let "Building items" reach the screen before the (synchronous) parse.
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      if (run !== scanRun.current) return
       const parsed = parseReceipt(lines)
       if (parsed.items.length === 0) throw new Error('no items')
       const scanned = parsed.items.map(item => ({

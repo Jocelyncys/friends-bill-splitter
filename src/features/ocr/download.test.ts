@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { downloadAll } from './download'
+import { downloadAll, sha256Hex } from './download'
 
 function response(chunks: number[], { length = true, ok = true } = {}) {
   const body = new ReadableStream<Uint8Array>({
@@ -38,5 +38,23 @@ describe('downloadAll', () => {
 
   it('fails on an HTTP error', async () => {
     await expect(downloadAll([{ url: 'a' }], () => {}, async () => response([1], { ok: false }))).rejects.toThrow('HTTP 404')
+  })
+
+  it('aborts the other downloads when one fails', async () => {
+    const signals: AbortSignal[] = []
+    const fetcher = vi.fn((url: string, signal?: AbortSignal) => {
+      if (signal) signals.push(signal)
+      if (url === 'bad') return Promise.resolve(response([1], { ok: false }))
+      return new Promise<Response>((_, reject) => signal?.addEventListener('abort', () => reject(signal.reason)))
+    })
+    await expect(downloadAll([{ url: 'slow' }, { url: 'bad' }], () => {}, fetcher)).rejects.toThrow('HTTP 404')
+    expect(signals).toHaveLength(2)
+    expect(signals.every(signal => signal.aborted)).toBe(true)
+  })
+})
+
+describe('sha256Hex', () => {
+  it('hashes the bytes of a blob', async () => {
+    expect(await sha256Hex(new Blob(['abc']))).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
   })
 })

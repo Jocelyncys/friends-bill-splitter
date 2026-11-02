@@ -7,6 +7,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 
+// The same pins are checked again in the browser before the OCR worker uses the files (src/features/ocr/ocrPins.json).
+const PINS = JSON.parse(readFileSync(new URL('../src/features/ocr/ocrPins.json', import.meta.url), 'utf8'))
+
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'ocr-models')
 const PADDLE = 'https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0'
 
@@ -15,21 +18,21 @@ const PADDLE = 'https://paddle-model-ecology.bj.bcebos.com/paddlex/official_infe
 // (the onnxruntime-web 1.30.0 in node_modules is a different build and would not load).
 const FILES = [
   {
-    out: 'PP-OCRv5_mobile_det_onnx_infer.tar',
-    url: `${PADDLE}/PP-OCRv5_mobile_det_onnx_infer.tar`,
-    sha256: '781056046c9ed77a15c94681605db6a0f62317c2e9cce6931c71da2478d4bc30',
+    out: PINS.det.file,
+    url: `${PADDLE}/${PINS.det.file}`,
+    sha256: PINS.det.sha256,
   },
   {
-    out: 'PP-OCRv5_mobile_rec_onnx_infer.tar',
-    url: `${PADDLE}/PP-OCRv5_mobile_rec_onnx_infer.tar`,
-    sha256: 'f7e792bc836f36e7ef895ad47c426d75b0b75b1650caa6d63fe9418441ffba8c',
+    out: PINS.rec.file,
+    url: `${PADDLE}/${PINS.rec.file}`,
+    sha256: PINS.rec.sha256,
   },
   {
-    out: 'ort-1.24.3/ort-wasm-simd-threaded.jsep.wasm',
+    out: PINS.wasm.file,
     url: 'https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.24.3.tgz',
     archiveSha256: 'd521349a11a1f6012ce6b21fcdafce310b3111bbb7552a1d1f7dcb2714b76d78',
     entry: 'package/dist/ort-wasm-simd-threaded.jsep.wasm',
-    sha256: '2e0a3d0e3f6b7c13ecfaba38c13691fd19c9ed470e72f9d7d8416ca59ab6dbcd',
+    sha256: PINS.wasm.sha256,
   },
 ]
 

@@ -271,6 +271,31 @@ describe('items with a quantity (claim by unit)', () => {
     expect(onAssignUnits).toHaveBeenCalledWith('t1', { alice: 2, ben: 1 })
   })
 
+  it('shows the server equal split for claims saved before units existed', () => {
+    render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants}
+      items={[{ ...tehAis, quantity: 3, totalCents: 1000, claims: [{ userId: 'alice', amountCents: 500, units: null }, { userId: 'ben', amountCents: 500, units: null }] }]} />)
+    expect(within(stepper('me')).getByText('RM 5.00')).toBeInTheDocument()
+  })
+
+  it('gives a manager one control for themselves: the self stepper, not a second row under Who had', () => {
+    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[tehAis]} />)
+    expect(stepper('me')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Units Alice had for Teh Ais' })).not.toBeInTheDocument()
+    expect(stepper('Ben')).toBeInTheDocument()
+  })
+
+  it('drops an empty Who had list when the manager is the only person', () => {
+    render(<ClaimItemsPage role="owner" currentUserId="alice" participants={[participants[0]]} items={[tehAis]} />)
+    expect(stepper('me')).toBeInTheDocument()
+    expect(screen.queryByText('Who had Teh Ais')).not.toBeInTheDocument()
+  })
+
+  it('keeps the manager row when the item cannot be self-claimed (host assigns)', () => {
+    render(<ClaimItemsPage role="owner" currentUserId="alice" splitMethod="host_assignment" participants={participants} items={[tehAis]} />)
+    expect(stepper('Alice')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Units you had for Teh Ais' })).not.toBeInTheDocument()
+  })
+
   it('disables the steppers while offline', () => {
     render(<ClaimItemsPage role="owner" currentUserId="alice" offline participants={participants} items={[tehAis]} />)
     expect(more('Ben')).toBeDisabled()

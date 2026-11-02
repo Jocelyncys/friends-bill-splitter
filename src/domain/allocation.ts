@@ -81,11 +81,11 @@ export function allocateByUnits(total: number, quantity: number, units: Allocati
 }
 
 /**
- * One item's shares: quantity 1 -> allocateEqual among `ids`; quantity > 1 -> allocateByUnits, where an id without
- * a count in `units` had one unit.
+ * One item's shares: quantity 1 -> allocateEqual among `ids`; quantity > 1 -> allocateByUnits. When any id has no
+ * count in `units` (claims saved before units existed) the item is split equally, as resplit_item_claims does.
  */
 export function itemShares(item: { totalCents: number; quantity: number }, ids: string[], units: AllocationMap = {}): AllocationMap {
   if (ids.length === 0) return {}
-  if (item.quantity <= 1) return allocateEqual(item.totalCents, ids)
-  return allocateByUnits(item.totalCents, item.quantity, Object.fromEntries(ids.map(id => [id, units[id] ?? 1])))
+  if (item.quantity <= 1 || ids.some(id => units[id] === undefined)) return allocateEqual(item.totalCents, ids)
+  return allocateByUnits(item.totalCents, item.quantity, Object.fromEntries(ids.map(id => [id, units[id]])))
 }
