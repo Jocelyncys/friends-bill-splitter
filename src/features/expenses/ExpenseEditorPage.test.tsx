@@ -837,3 +837,52 @@ describe('ExpenseEditorPage (quantity and claim by unit)', () => {
     ])
   })
 })
+
+describe('ExpenseEditorPage (smarter receipt review)', () => {
+  const photo = () => new File(['x'], 'receipt.jpg', { type: 'image/jpeg' })
+  const pick = async () => userEvent.upload(await screen.findByLabelText('Choose photo'), photo())
+
+  it('fills quantities, and the shop name as the description when it is blank', async () => {
+    recognizeReceipt.mockResolvedValue(['KEDAI KOPI SIN HUAT', 'Tel: 03-7876 5432', '2 Teh Ais 7.00', '1 Kopi O 2.20', 'Total RM 9.20'])
+    renderEditor('/event/ev-1/expenses/new?scan=1')
+    await pick()
+    expect(await screen.findByDisplayValue('Teh Ais')).toBeInTheDocument()
+    expect(screen.getByLabelText('Item 1 qty')).toHaveValue('2')
+    expect(screen.getByLabelText('Item 1 price')).toHaveValue('7.00')
+    expect(screen.getByText('2 × RM 3.50')).toBeInTheDocument()
+    expect(screen.getByLabelText('Item 2 qty')).toHaveValue('1')
+    expect(screen.getByLabelText('Description')).toHaveValue('KEDAI KOPI SIN HUAT')
+  })
+
+  it('keeps a description that was already typed', async () => {
+    recognizeReceipt.mockResolvedValue(['KEDAI KOPI SIN HUAT', '2 Teh Ais 7.00', 'Total RM 7.00'])
+    renderEditor('/event/ev-1/expenses/new?scan=1')
+    await userEvent.type(await screen.findByLabelText('Description'), 'Breakfast')
+    await pick()
+    expect(await screen.findByDisplayValue('Teh Ais')).toBeInTheDocument()
+    expect(screen.getByLabelText('Description')).toHaveValue('Breakfast')
+  })
+
+  it('lists the receipt warnings', async () => {
+    recognizeReceipt.mockResolvedValue(['Ayam Penyet 12.90', 'Es Teh 2.50', 'Subtotal 18.40', 'TOTAL 18.40', 'TOTAL RM 19.00'])
+    renderEditor('/event/ev-1/expenses/new?scan=1')
+    await pick()
+    const warnings = await screen.findByRole('list', { name: 'Check before saving' })
+    expect(within(warnings).getByText('Items add up to RM 15.40 but the receipt subtotal is RM 18.40. Check the items.')).toBeInTheDocument()
+    expect(within(warnings).getByText('Several totals found. Check Amount paid.')).toBeInTheDocument()
+  })
+
+  it('marks rows the reader was unsure about until they are edited', async () => {
+    recognizeReceipt.mockResolvedValue([
+      { text: 'Ayam Penyet 12.90', confidence: 0.97 },
+      { text: 'Kerupuk 1.00', confidence: 0.6 },
+      { text: 'Total 13.90', confidence: 0.95 },
+    ])
+    renderEditor('/event/ev-1/expenses/new?scan=1')
+    await pick()
+    expect(await screen.findByDisplayValue('Kerupuk')).toBeInTheDocument()
+    expect(screen.getAllByText('Check this')).toHaveLength(1)
+    await userEvent.type(screen.getByLabelText('Item 2 name'), 's')
+    expect(screen.queryByText('Check this')).not.toBeInTheDocument()
+  })
+})

@@ -140,7 +140,14 @@
       "confirm": "确认项目",
       "failed": "无法识别此收据，请手动输入项目。",
       "takePhoto": "拍照",
-      "choosePhoto": "选择照片"
+      "choosePhoto": "选择照片",
+      "checkRow": "请核对",
+      "warningsTitle": "保存前请核对",
+      "warn": {
+        "subtotal_mismatch": "项目合计 {{items}}，但收据小计是 {{subtotal}}。请核对项目。",
+        "multiple_totals": "找到多个总额。请核对实付金额。",
+        "no_total": "收据上没有找到总额。请核对实付金额。"
+      }
     },
     "offlineHint": "你目前离线。这笔支出会先保存在此设备上，恢复联网后自动发送。",
     "editTitle": "编辑开销",

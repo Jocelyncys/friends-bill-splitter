@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseReceiptLines } from '../expenses/receiptParser'
-import { groupIntoLines, type OcrBox } from './ocrLines'
+import { groupIntoLines, groupIntoScoredLines, type OcrBox } from './ocrLines'
 
 const box = (text: string, x: number, y: number, w = 100, h = 30): OcrBox => ({
   text,
@@ -45,5 +45,15 @@ describe('groupIntoLines', () => {
     const flat = (text: string, x: number, y: number): OcrBox => ({ text, poly: [[x, y], [x + 50, y]] })
     expect(groupIntoLines([flat('A', 0, 0), flat('1.00', 100, 0), flat('B', 0, 40)])).toEqual(['A 1.00', 'B'])
     expect(groupIntoLines([box('Kopi', 0, 0), flat('9.00', 200, 15), box('Teh', 0, 45)])).toEqual(['Kopi 9.00', 'Teh'])
+  })
+})
+
+describe('groupIntoScoredLines', () => {
+  it('gives each line the lowest score of its boxes', () => {
+    const scored = (text: string, x: number, y: number, score: number): OcrBox => ({ ...box(text, x, y), score })
+    expect(groupIntoScoredLines([scored('Kopi', 0, 0, 0.98), scored('9.00', 300, 2, 0.71), scored('Teh', 0, 50, 0.9)])).toEqual([
+      { text: 'Kopi 9.00', confidence: 0.71 },
+      { text: 'Teh', confidence: 0.9 },
+    ])
   })
 })

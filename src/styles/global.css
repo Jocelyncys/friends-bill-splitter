@@ -1268,6 +1268,48 @@ input[type='radio']:focus-visible {
   margin: 4px 0 0;
 }
 
+/* ---------- Receipt review ---------- */
+/* What to double-check after a scan, and rows the reader was unsure about. */
+.scan-warnings {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-control);
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+  font-size: var(--text-sm);
+  list-style: none;
+}
+
+.scan-warnings li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.scan-warnings .icon,
+.item-row__check .icon {
+  color: var(--amber);
+  margin-top: 1px;
+}
+
+.item-row--check {
+  box-shadow: inset 3px 0 0 var(--amber);
+  margin-left: -12px;
+  padding-left: 12px;
+}
+
+.item-row > .item-row__check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 6px;
+  color: var(--amber-ink);
+  font-weight: 600;
+}
+
 /* ---------- Claim by unit ---------- */
 /* "2 × RM 3.50" and "1 of 2 left" on one line under a quantity > 1 item. */
 .claim-item__units {

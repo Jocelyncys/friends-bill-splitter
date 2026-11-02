@@ -1,4 +1,6 @@
-export type OcrBox = { text: string; poly: Array<[number, number]> }
+import type { OcrLine } from '../expenses/receiptParser'
+
+export type OcrBox = { text: string; poly: Array<[number, number]>; score?: number }
 
 /** Share of the median box height a box's centre may sit from a row's running centre and still join it. */
 const ROW_TOLERANCE = 0.6
@@ -10,13 +12,24 @@ const ROW_TOLERANCE = 0.6
  * centre, which also tolerates a slightly tilted photo. Each row reads left to right.
  */
 export function groupIntoLines(boxes: OcrBox[]): string[] {
+  return groupIntoScoredLines(boxes).map(line => line.text)
+}
+
+/** groupIntoLines, keeping each line's lowest box score as its confidence (when the boxes have scores). */
+export function groupIntoScoredLines(boxes: OcrBox[]): OcrLine[] {
   const placed = boxes
     .filter(box => box.poly.length > 0 && box.text.trim() !== '')
     .map(box => {
       const ys = box.poly.map(([, y]) => y)
       const top = Math.min(...ys)
       const bottom = Math.max(...ys)
-      return { text: box.text.trim(), left: Math.min(...box.poly.map(([x]) => x)), centre: (top + bottom) / 2, height: bottom - top }
+      return {
+        text: box.text.trim(),
+        score: box.score,
+        left: Math.min(...box.poly.map(([x]) => x)),
+        centre: (top + bottom) / 2,
+        height: bottom - top,
+      }
     })
     .sort((a, b) => a.centre - b.centre)
 
@@ -35,5 +48,10 @@ export function groupIntoLines(boxes: OcrBox[]): string[] {
       rows.push({ centreSum: box.centre, cells: [box] })
     }
   }
-  return rows.map(row => row.cells.sort((a, b) => a.left - b.left).map(cell => cell.text).join(' '))
+  return rows.map(row => {
+    const cells = row.cells.sort((a, b) => a.left - b.left)
+    const scores = cells.map(cell => cell.score).filter((score): score is number => score !== undefined)
+    const text = cells.map(cell => cell.text).join(' ')
+    return scores.length > 0 ? { text, confidence: Math.min(...scores) } : { text }
+  })
 }

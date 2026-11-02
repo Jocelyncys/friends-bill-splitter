@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } 
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { CameraIcon, CheckIcon, ChevronDownIcon, ImageIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { AlertIcon, CameraIcon, CheckIcon, ChevronDownIcon, ImageIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import type { ShellContext } from '../../components/shellContext'
 import { shortDate } from '../../lib/shortDate'
 import { useOnline } from '../../lib/useOnline'
@@ -31,7 +31,7 @@ import {
 import { createExpenseRepository, ExpenseSaveError, type SavedExpense, type SaveExpensePayload } from './expenseRepository'
 import { recognizeReceipt } from '../ocr/ocrEngine'
 import { PaysList } from './PaysList'
-import { parseReceipt } from './receiptParser'
+import { parseReceipt, type ReceiptWarning } from './receiptParser'
 import { paysRows, sharedEachText, signedMoney } from './shareText'
 import { UnitStepper } from './UnitStepper'
 import { itemShares } from '../../domain/allocation'
@@ -180,6 +180,9 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
   const [ocrState, setOcrState] = useState<OcrState>('idle')
   const [ocrMessage, setOcrMessage] = useState('')
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
+  // From the last scan: what to double-check (warnings) and the rows the reader was unsure about.
+  const [scanWarnings, setScanWarnings] = useState<ReceiptWarning[]>([])
+  const [checkIds, setCheckIds] = useState<ReadonlySet<string>>(() => new Set())
   const receiptUrlRef = useRef<string | null>(null)
   const scanRun = useRef(0)
 
@@ -216,6 +219,8 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
     setReceiptUrl(url)
     setOcrState('recognizing')
     setOcrMessage(t('editor.scan.loadingModel'))
+    setScanWarnings([])
+    setCheckIds(new Set())
     try {
       const lines = await recognizeReceipt(file, phase => {
         if (run === scanRun.current) setOcrMessage(t(phase === 'loading' ? 'editor.scan.loadingModel' : 'editor.scan.recognizing'))
@@ -226,17 +231,21 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
       const scanned = parsed.items.map(item => ({
         id: crypto.randomUUID(),
         description: item.description,
-        quantity: '1',
+        quantity: String(item.quantity),
         price: centsToText(item.totalCents),
         assigneeIds: [],
       }))
+      setCheckIds(new Set(scanned.filter((_, i) => parsed.items[i].lowConfidence).map(item => item.id)))
+      setScanWarnings(parsed.warnings)
       // The receipt's Total line is the amount paid. It only describes the scanned items, so it fills Amount paid
       // when they replace an empty form and differ from it.
       const scannedCents = parsed.items.reduce((sum, item) => sum + item.totalCents, 0)
       const total = parsed.totalCents
       setDraft(d => {
-        if (!isUntouched(d.items)) return { ...d, items: [...d.items, ...scanned] }
-        return { ...d, items: scanned, amount: total !== undefined && total !== scannedCents ? centsToText(total) : '' }
+        // The shop name fills a blank description; a typed one is kept.
+        const description = d.description.trim() === '' && parsed.merchant ? parsed.merchant.slice(0, 120) : d.description
+        if (!isUntouched(d.items)) return { ...d, description, items: [...d.items, ...scanned] }
+        return { ...d, description, items: scanned, amount: total !== undefined && total !== scannedCents ? centsToText(total) : '' }
       })
       setOcrMessage(t('editor.scan.reviewHint'))
       setOcrState('review')
@@ -250,6 +259,12 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
   const set = <K extends keyof ExpenseDraft>(key: K, value: ExpenseDraft[K]) => setDraft(d => ({ ...d, [key]: value }))
   const setItem = (index: number, patch: Partial<DraftItem>) =>
     set('items', draft.items.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+  // Editing a row the reader was unsure about counts as checking it.
+  const editItem = (index: number, patch: Partial<DraftItem>) => {
+    const id = draft.items[index].id
+    if (checkIds.has(id)) setCheckIds(previous => new Set([...previous].filter(other => other !== id)))
+    setItem(index, patch)
+  }
   const toggleAssignee = (index: number, userId: string) => {
     const ids = draft.items[index].assigneeIds
     setItem(index, { assigneeIds: ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId] })
@@ -400,6 +415,20 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
             {!scanFirst && photoPicks}
             {receiptUrl && <img className="receipt-preview" src={receiptUrl} alt={t('editor.scan.previewAlt')} />}
             <p className="group__status" aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
+            {reviewing && scanWarnings.length > 0 && (
+              <ul className="scan-warnings" aria-label={t('editor.scan.warningsTitle')}>
+                {scanWarnings.map(warning => (
+                  <li key={warning.kind}>
+                    <AlertIcon />
+                    <span>
+                      {warning.kind === 'subtotal_mismatch'
+                        ? t('editor.scan.warn.subtotal_mismatch', { items: money(warning.itemsCents), subtotal: money(warning.subtotalCents) })
+                        : t(`editor.scan.warn.${warning.kind}`)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {draft.items.map((item, index) => {
               const quantity = parseQuantity(item.quantity)
               const priceCents = parseMoneyToCents(item.price)
@@ -409,10 +438,10 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
               const left = byUnit ? quantity - unitsTaken(units) : 0
               const shares = byUnit && priceCents !== null && left >= 0 ? itemShares({ totalCents: priceCents, quantity }, item.assigneeIds, units) : {}
               return (
-                <div key={item.id} className="item-row">
+                <div key={item.id} className={checkIds.has(item.id) ? 'item-row item-row--check' : 'item-row'}>
                   <label className="field field--wide">
                     <span className="field__label">{t('editor.itemDescription', { n: index + 1 })}</span>
-                    <input value={item.description} onChange={e => setItem(index, { description: e.target.value })} autoComplete="off" />
+                    <input value={item.description} onChange={e => editItem(index, { description: e.target.value })} autoComplete="off" />
                   </label>
                   <label className="field">
                     <span className="field__label">{t('editor.qty')}</span>
@@ -420,13 +449,13 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
                       aria-label={t('editor.itemQuantity', { n: index + 1 })}
                       inputMode="numeric"
                       value={item.quantity ?? '1'}
-                      onChange={e => setItem(index, { quantity: e.target.value })}
+                      onChange={e => editItem(index, { quantity: e.target.value })}
                       autoComplete="off"
                     />
                   </label>
                   <label className="field">
                     <span className="field__label">{t('editor.itemPrice', { n: index + 1 })}</span>
-                    <input inputMode="decimal" value={item.price} onChange={e => setItem(index, { price: e.target.value })} autoComplete="off" />
+                    <input inputMode="decimal" value={item.price} onChange={e => editItem(index, { price: e.target.value })} autoComplete="off" />
                   </label>
                   {draft.items.length > 1 ? (
                     <button type="button" className="quiet danger icon-button" onClick={() => set('items', draft.items.filter((_, i) => i !== index))}>
@@ -434,6 +463,12 @@ function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {}
                       <span className="sr-only">{t('editor.removeItem', { n: index + 1 })}</span>
                     </button>
                   ) : <span aria-hidden="true" />}
+                  {checkIds.has(item.id) && (
+                    <p className="note item-row__check">
+                      <AlertIcon />
+                      {t('editor.scan.checkRow')}
+                    </p>
+                  )}
                   {byUnit && priceCents !== null && (
                     <p className="note">{t('claim.unitPrice', { count: quantity, price: money(Math.round(priceCents / quantity)) })}</p>
                   )}

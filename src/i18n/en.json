@@ -140,7 +140,14 @@
       "confirm": "Confirm items",
       "failed": "Could not read this receipt. Enter the items by hand.",
       "takePhoto": "Take photo",
-      "choosePhoto": "Choose photo"
+      "choosePhoto": "Choose photo",
+      "checkRow": "Check this",
+      "warningsTitle": "Check before saving",
+      "warn": {
+        "subtotal_mismatch": "Items add up to {{items}} but the receipt subtotal is {{subtotal}}. Check the items.",
+        "multiple_totals": "Several totals found. Check Amount paid.",
+        "no_total": "No total found on the receipt. Check Amount paid."
+      }
     },
     "offlineHint": "You are offline. The expense will be saved on this device and sent when you are back online.",
     "editTitle": "Edit expense",

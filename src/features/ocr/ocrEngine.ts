@@ -1,7 +1,9 @@
+import type { OcrLine } from '../expenses/receiptParser'
+
 export type OcrPhase = 'loading' | 'recognizing'
 export type OcrAssets = ReturnType<typeof ocrAssetUrls>
 export type OcrRequest = { assets: OcrAssets; image: Blob }
-export type OcrReply = { phase: 'recognizing' } | { lines: string[] } | { error: string }
+export type OcrReply = { phase: 'recognizing' } | { lines: OcrLine[] } | { error: string }
 
 /**
  * Self-hosted OCR assets (downloaded by scripts/fetch-ocr-models.mjs into public/ocr-models/).
@@ -26,7 +28,7 @@ let engineReady = false
  * loads on the main thread. The SDK has no progress callback, so only coarse phases are reported.
  * All model and runtime files come from our own origin.
  */
-export function recognizeReceipt(file: File, onProgress?: (phase: OcrPhase) => void): Promise<string[]> {
+export function recognizeReceipt(file: File, onProgress?: (phase: OcrPhase) => void): Promise<OcrLine[]> {
   if (!engineReady) onProgress?.('loading')
   const current = (worker ??= new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' }))
   const { port1, port2 } = new MessageChannel()

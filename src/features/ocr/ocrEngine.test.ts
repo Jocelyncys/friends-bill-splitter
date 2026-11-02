@@ -24,7 +24,7 @@ class FakeWorker extends EventTarget {
 const file = new File(['x'], 'r.jpg', { type: 'image/jpeg' })
 const succeed: Behaviour = (_, reply) => {
   reply({ phase: 'recognizing' })
-  reply({ lines: ['TEH 3.00'] })
+  reply({ lines: [{ text: 'TEH 3.00', confidence: 0.98 }] })
 }
 
 // Fresh module per test: the worker and readiness are cached at module level.
@@ -45,8 +45,8 @@ describe('recognizeReceipt', () => {
     const recognizeReceipt = await load()
     const first = vi.fn()
     const second = vi.fn()
-    expect(await recognizeReceipt(file, first)).toEqual(['TEH 3.00'])
-    expect(await recognizeReceipt(file, second)).toEqual(['TEH 3.00'])
+    expect(await recognizeReceipt(file, first)).toEqual([{ text: 'TEH 3.00', confidence: 0.98 }])
+    expect(await recognizeReceipt(file, second)).toEqual([{ text: 'TEH 3.00', confidence: 0.98 }])
     expect(workers).toHaveLength(1)
     expect(workers[0].url).toMatch(/ocr\.worker\.ts/)
     expect(first.mock.calls.map(c => c[0])).toEqual(['loading', 'recognizing'])
@@ -71,7 +71,7 @@ describe('recognizeReceipt', () => {
     await expect(recognizeReceipt(file)).rejects.toThrow('offline')
     behaviour = succeed
     const progress = vi.fn()
-    expect(await recognizeReceipt(file, progress)).toEqual(['TEH 3.00'])
+    expect(await recognizeReceipt(file, progress)).toEqual([{ text: 'TEH 3.00', confidence: 0.98 }])
     expect(progress.mock.calls[0][0]).toBe('loading')
   })
 
@@ -81,7 +81,7 @@ describe('recognizeReceipt', () => {
     await expect(recognizeReceipt(file)).rejects.toThrow('boom')
     expect(workers[0].terminated).toBe(true)
     behaviour = succeed
-    expect(await recognizeReceipt(file)).toEqual(['TEH 3.00'])
+    expect(await recognizeReceipt(file)).toEqual([{ text: 'TEH 3.00', confidence: 0.98 }])
     expect(workers).toHaveLength(2)
   })
 })
