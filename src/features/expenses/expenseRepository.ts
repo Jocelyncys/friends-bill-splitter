@@ -17,6 +17,8 @@ export type SaveExpenseAllocation = {
   itemId: string | null
   participantUserId: string
   amountCents: number
+  /** Units this person had of a quantity > 1 item (claim by unit); absent everywhere else. */
+  units?: number
 }
 
 export type AdjustmentKind = 'discount' | 'tax' | 'service' | 'rounding' | 'other'
@@ -65,6 +67,8 @@ export type SavedExpense = {
   creatorUserId: string
   /** item id -> user ids that self-claimed it; such items must not get allocations on save. */
   claims: Record<string, string[]>
+  /** item id -> user id -> units, for self-claims on quantity > 1 items. */
+  claimUnits: Record<string, Record<string, number>>
 }
 
 export type ExpenseFormError = { field?: keyof SaveExpensePayload; code: string }
@@ -101,6 +105,9 @@ const FIELD_BY_CODE: Record<string, keyof SaveExpensePayload | undefined> = {
   adjustments_not_allowed: 'adjustments',
   adjustments_need_items: 'adjustments',
   adjustment_mismatch: 'adjustments',
+  invalid_units: 'items',
+  units_exceed_quantity: 'items',
+  quantity_below_claims: 'items',
   // form-level: invalid_payload, not_event_member, event_not_open, event_mismatch, not_allowed
 }
 
@@ -145,6 +152,7 @@ function toRpcPayload(p: SaveExpensePayload) {
       item_id: a.itemId,
       participant_user_id: a.participantUserId,
       amount_cents: a.amountCents,
+      ...(a.units !== undefined ? { units: a.units } : {}),
     })),
     adjustments: (p.adjustments ?? []).map(a => ({
       id: a.id,
@@ -191,24 +199,28 @@ type SavedExpenseRow = {
   total_cents: number
   split_method: SplitMethod
   expense_items: Array<{ id: string; description: string; quantity: number; total_cents: number; sort_order: number }>
-  allocations: Array<{ item_id: string | null; participant_user_id: string; amount_cents: number; source: string }>
+  allocations: Array<{ item_id: string | null; participant_user_id: string; amount_cents: number; source: string; units?: number | null }>
   expense_adjustments: Array<{ id: string; kind: AdjustmentKind; label: string | null; amount_cents: number; sort_order: number }>
 }
 
 const SAVED_EXPENSE_COLUMNS =
   'id, event_id, creator_user_id, payer_user_id, description, category, expense_date, total_cents, split_method, ' +
-  'expense_items(id, description, quantity, total_cents, sort_order), allocations(item_id, participant_user_id, amount_cents, source), ' +
+  'expense_items(id, description, quantity, total_cents, sort_order), allocations(item_id, participant_user_id, amount_cents, source, units), ' +
   'expense_adjustments(id, kind, label, amount_cents, sort_order)'
 
 export function toSavedExpense(row: SavedExpenseRow): SavedExpense {
   const claims: Record<string, string[]> = {}
+  const claimUnits: Record<string, Record<string, number>> = {}
   for (const a of row.allocations) {
-    if (a.source === 'self_claim' && a.item_id) (claims[a.item_id] ??= []).push(a.participant_user_id)
+    if (a.source !== 'self_claim' || !a.item_id) continue
+    ;(claims[a.item_id] ??= []).push(a.participant_user_id)
+    if (a.units != null) (claimUnits[a.item_id] ??= {})[a.participant_user_id] = a.units
   }
   for (const ids of Object.values(claims)) ids.sort()
   return {
     creatorUserId: row.creator_user_id,
     claims,
+    claimUnits,
     payload: {
       id: row.id,
       eventId: row.event_id,
@@ -223,7 +235,12 @@ export function toSavedExpense(row: SavedExpenseRow): SavedExpense {
         .map(i => ({ id: i.id, description: i.description, quantity: i.quantity, totalCents: i.total_cents, sortOrder: i.sort_order })),
       allocations: row.allocations
         .filter(a => a.source !== 'self_claim')
-        .map(a => ({ itemId: a.item_id, participantUserId: a.participant_user_id, amountCents: a.amount_cents })),
+        .map(a => ({
+          itemId: a.item_id,
+          participantUserId: a.participant_user_id,
+          amountCents: a.amount_cents,
+          ...(a.units != null ? { units: a.units } : {}),
+        })),
       adjustments: [...row.expense_adjustments]
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(a => ({ id: a.id, kind: a.kind, label: a.label, amountCents: a.amount_cents, sortOrder: a.sort_order })),

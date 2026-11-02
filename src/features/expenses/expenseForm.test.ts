@@ -333,3 +333,78 @@ describe('amount paid', () => {
     expect(payload.totalCents).toBe(1000)
   })
 })
+
+describe('claim by unit (quantity > 1)', () => {
+  const itemized = (items: ExpenseDraft['items'], splitMethod: ExpenseDraft['splitMethod'] = 'host_assignment'): ExpenseDraft => ({
+    ...base,
+    splitMethod,
+    amount: '',
+    items,
+  })
+
+  it('sends the quantity and splits a host-assigned item by units (3 x 10.00 over 2/1 -> 667/333)', () => {
+    const payload = ok(itemized([
+      { id: 'i1', description: 'Teh Ais', quantity: '3', price: '10.00', assigneeIds: ['u-b', 'u-a'], units: { 'u-a': 2, 'u-b': 1 } },
+      { id: 'i2', description: 'Rice', price: '2.20', assigneeIds: ['u-b'] },
+    ]))
+    expect(payload.items.map(i => i.quantity)).toEqual([3, 1])
+    expect(payload.allocations).toEqual([
+      { itemId: 'i1', participantUserId: 'u-a', amountCents: 667, units: 2 },
+      { itemId: 'i1', participantUserId: 'u-b', amountCents: 333, units: 1 },
+      { itemId: 'i2', participantUserId: 'u-b', amountCents: 220 },
+    ])
+  })
+
+  it('host_assignment needs every unit of a quantity > 1 item given to someone', () => {
+    expect(validateDraft(itemized([
+      { id: 'i1', description: 'Teh Ais', quantity: '2', price: '7.00', assigneeIds: ['u-a'], units: { 'u-a': 1 } },
+    ]))).toMatchObject({ ok: false, errors: { items: 'units_incomplete' } })
+  })
+
+  it('rejects more units than the quantity', () => {
+    expect(validateDraft(itemized([
+      { id: 'i1', description: 'Teh Ais', quantity: '2', price: '7.00', assigneeIds: ['u-a', 'u-b'], units: { 'u-a': 2, 'u-b': 1 } },
+    ], 'items'))).toMatchObject({ ok: false, errors: { items: 'units_exceed_quantity' } })
+  })
+
+  it.each(['0', '-1', '1.5', 'x', '', '1000'])('rejects quantity %j', quantity => {
+    expect(validateDraft(itemized([{ id: 'i1', description: 'Teh Ais', quantity, price: '7.00', assigneeIds: ['u-a'] }])))
+      .toMatchObject({ ok: false, errors: { items: 'items_invalid' } })
+  })
+
+  it('itemized (claim) keeps a partial unit assignment', () => {
+    const payload = ok(itemized([
+      { id: 'i1', description: 'Teh Ais', quantity: '2', price: '7.00', assigneeIds: ['u-a'], units: { 'u-a': 1 } },
+    ], 'items'))
+    expect(payload.allocations).toEqual([{ itemId: 'i1', participantUserId: 'u-a', amountCents: 350, units: 1 }])
+  })
+
+  it('an assignee without a unit count on a quantity > 1 item has one unit', () => {
+    const payload = ok(itemized([{ id: 'i1', description: 'Teh Ais', quantity: '2', price: '7.00', assigneeIds: ['u-b', 'u-a'] }]))
+    expect(payload.allocations).toEqual([
+      { itemId: 'i1', participantUserId: 'u-a', amountCents: 350, units: 1 },
+      { itemId: 'i1', participantUserId: 'u-b', amountCents: 350, units: 1 },
+    ])
+  })
+
+  it('draftFromPayload refills quantity and units and round-trips', () => {
+    const saved = ok(itemized([
+      { id: 'i1', description: 'Teh Ais', quantity: '3', price: '10.00', assigneeIds: ['u-a', 'u-b'], units: { 'u-a': 2, 'u-b': 1 } },
+      { id: 'i2', description: 'Rice', price: '2.20', assigneeIds: ['u-b'] },
+    ]))
+    const draft = draftFromPayload(saved)
+    expect(draft.items.map(i => [i.quantity, i.units])).toEqual([['3', { 'u-a': 2, 'u-b': 1 }], ['1', {}]])
+    const again = validateDraft(draft)
+    if (!again.ok) throw new Error('refilled form invalid')
+    expect(buildPayload(ctx, again.values)).toEqual(saved)
+  })
+
+  it('itemCentsByPerson uses units and waits for every unit', () => {
+    expect(itemCentsByPerson([
+      { id: 'i1', description: 'Teh Ais', quantity: '3', price: '10.00', assigneeIds: ['u-a', 'u-b'], units: { 'u-a': 2, 'u-b': 1 } },
+    ])).toEqual({ 'u-a': 667, 'u-b': 333 })
+    expect(itemCentsByPerson([
+      { id: 'i1', description: 'Teh Ais', quantity: '3', price: '10.00', assigneeIds: ['u-a'], units: { 'u-a': 2 } },
+    ])).toBeNull()
+  })
+})

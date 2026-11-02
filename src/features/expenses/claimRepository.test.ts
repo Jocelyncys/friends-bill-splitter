@@ -16,11 +16,15 @@ describe('claimRepository', () => {
     await repository.unclaimItem('item-1')
     await repository.assignItem('item-1', ['user-2', 'user-3'])
     await repository.setClaimingClosed('exp-1', true)
+    await repository.claimItemUnits('item-1', 2)
+    await repository.assignItemUnits('item-1', [{ memberId: 'user-2', units: 2 }, { memberId: 'user-3', units: 1 }])
     expect(rpc.mock.calls).toEqual([
       ['claim_item', { item_id: 'item-1' }],
       ['unclaim_item', { item_id: 'item-1' }],
       ['assign_item', { item_id: 'item-1', member_ids: ['user-2', 'user-3'] }],
       ['set_claiming_closed', { expense_id: 'exp-1', closed: true }],
+      ['claim_item_units', { item_id: 'item-1', units: 2 }],
+      ['assign_item_units', { item_id: 'item-1', member_units: [{ member_id: 'user-2', units: 2 }, { member_id: 'user-3', units: 1 }] }],
     ])
   })
 
@@ -39,6 +43,8 @@ describe('claimRepository', () => {
     expect(toActionErrorCode({ code: '28000', message: 'not_authenticated' })).toBe('not_authenticated')
     expect(toActionErrorCode({ code: '22023', message: 'something_else' })).toBe('action_failed')
     expect(toActionErrorCode({ code: '22023', message: 'invalid_role_change' })).toBe('invalid_role_change')
+    expect(toActionErrorCode({ code: '22023', message: 'units_exceed_quantity' })).toBe('units_exceed_quantity')
+    expect(toActionErrorCode({ code: '22023', message: 'invalid_units' })).toBe('invalid_units')
   })
 
   it('loads an expense with its items (sorted) and allocations in camelCase cents', async () => {
@@ -50,7 +56,10 @@ describe('claimRepository', () => {
           { id: 'item-2', description: 'Tea', quantity: 1, total_cents: 500, sort_order: 1 },
           { id: 'item-1', description: 'Rice', quantity: 2, total_cents: 1001, sort_order: 0 },
         ],
-        allocations: [{ id: 'a-1', item_id: 'item-1', participant_user_id: 'user-2', amount_cents: 1001, source: 'self_claim' }],
+        allocations: [
+          { id: 'a-1', item_id: 'item-1', participant_user_id: 'user-2', amount_cents: 500, source: 'self_claim', units: 1 },
+          { id: 'a-2', item_id: 'item-2', participant_user_id: 'user-2', amount_cents: 500, source: 'self_claim', units: null },
+        ],
         expense_adjustments: [
           { id: 'adj-2', kind: 'rounding', label: 'Rounding', amount_cents: 2, sort_order: 1 },
           { id: 'adj-1', kind: 'discount', label: 'Voucher', amount_cents: -500, sort_order: 0 },
@@ -66,7 +75,10 @@ describe('claimRepository', () => {
         { id: 'item-1', description: 'Rice', quantity: 2, totalCents: 1001, sortOrder: 0 },
         { id: 'item-2', description: 'Tea', quantity: 1, totalCents: 500, sortOrder: 1 },
       ],
-      allocations: [{ id: 'a-1', itemId: 'item-1', participantUserId: 'user-2', amountCents: 1001, source: 'self_claim' }],
+      allocations: [
+        { id: 'a-1', itemId: 'item-1', participantUserId: 'user-2', amountCents: 500, source: 'self_claim', units: 1 },
+        { id: 'a-2', itemId: 'item-2', participantUserId: 'user-2', amountCents: 500, source: 'self_claim', units: null },
+      ],
       adjustments: [
         { id: 'adj-1', kind: 'discount', label: 'Voucher', amountCents: -500, sortOrder: 0 },
         { id: 'adj-2', kind: 'rounding', label: 'Rounding', amountCents: 2, sortOrder: 1 },

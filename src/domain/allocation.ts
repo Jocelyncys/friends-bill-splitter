@@ -62,3 +62,30 @@ export function allocateProportionally(total: number, weights: AllocationMap): A
 export function owedShares(totalCents: number, perPersonItemCents: AllocationMap): AllocationMap {
   return allocateProportionally(totalCents, perPersonItemCents)
 }
+
+/**
+ * Claim by unit: an item of `quantity` units costing `total` cents, where each id had `units[id]` units.
+ * Every unit claimed: allocateProportionally(total, units) (667/333 for 3 x 10.00 over 2/1). Units still
+ * unclaimed: each id gets floor(total * units / quantity) and the rest stays unallocated. Same rule as the
+ * server's unit_shares.
+ */
+export function allocateByUnits(total: number, quantity: number, units: AllocationMap): AllocationMap {
+  const counts = Object.values(units)
+  const claimed = counts.reduce((sum, n) => sum + n, 0)
+  if (!isCents(total) || !Number.isSafeInteger(quantity) || quantity < 1 || counts.some(n => !Number.isSafeInteger(n) || n < 1) || claimed > quantity) {
+    throw new Error('Invalid unit allocation')
+  }
+  if (counts.length === 0) return {}
+  if (claimed === quantity) return allocateProportionally(total, units)
+  return Object.fromEntries(Object.entries(units).map(([id, n]) => [id, Number((BigInt(total) * BigInt(n)) / BigInt(quantity))]))
+}
+
+/**
+ * One item's shares: quantity 1 -> allocateEqual among `ids`; quantity > 1 -> allocateByUnits, where an id without
+ * a count in `units` had one unit.
+ */
+export function itemShares(item: { totalCents: number; quantity: number }, ids: string[], units: AllocationMap = {}): AllocationMap {
+  if (ids.length === 0) return {}
+  if (item.quantity <= 1) return allocateEqual(item.totalCents, ids)
+  return allocateByUnits(item.totalCents, item.quantity, Object.fromEntries(ids.map(id => [id, units[id] ?? 1])))
+}

@@ -1,5 +1,5 @@
 begin;
-select plan(388);
+select plan(465);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -1715,6 +1715,304 @@ select throws_ok($$select public.assign_item('b2c10000-0000-0000-0000-0000000000
 reset role;
 select is((select revision from public.events where id = 'b2ce0000-0000-0000-0000-000000000001'), (select n from rev7),
   'clearing an item that has nobody does not bump the revision');
+
+-- Batch 4 (0012): claim receipt items by unit ------------------------------------------
+select has_column('public', 'allocations', 'units', 'allocations has a units column');
+select col_is_null('public', 'allocations', 'units', 'allocations.units is nullable (quantity 1 items)');
+select is((select count(*)::int from unnest(array['public.claim_item_units(uuid, integer)', 'public.assign_item_units(uuid, jsonb)']) as f(sig)
+  where has_function_privilege('anon', f.sig, 'execute')), 0, 'anon cannot execute the unit RPCs');
+select is((select count(*)::int from unnest(array['public.claim_item_units(uuid, integer)', 'public.assign_item_units(uuid, jsonb)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute')), 2, 'authenticated can execute the unit RPCs');
+select is((select count(*)::int from unnest(array['public.unit_shares(bigint, integer, jsonb)', 'public.set_self_claim(uuid, integer, boolean)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute') or has_function_privilege('anon', f.sig, 'execute')),
+  0, 'clients cannot execute the internal unit helpers');
+select results_eq($$select participant_user_id::text, amount_cents from public.unit_shares(1000, 3,
+    '[{"participant_user_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":1},{"participant_user_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","units":2}]') order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 667::bigint), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 333::bigint)$$,
+  'unit_shares: 3 x 10.00 over 2/1 units -> 667/333');
+select results_eq($$select participant_user_id::text, amount_cents from public.unit_shares(1000, 3,
+    '[{"participant_user_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","units":1},{"participant_user_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":1},{"participant_user_id":"ffffffff-ffff-ffff-ffff-ffffffffffff","units":1}]') order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 334::bigint), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 333::bigint), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 333::bigint)$$,
+  'unit_shares: equal remainders go to the lowest id (collate C)');
+select results_eq($$select participant_user_id::text, amount_cents from public.unit_shares(1000, 3,
+    '[{"participant_user_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","units":1}]') order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 333::bigint)$$,
+  'unit_shares: with units left over each claimer gets the floor of their units and the rest stays unallocated');
+
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash) values
+  ('b4ee0000-0000-0000-0000-000000000001', 'Units', 'trip_event', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b4-1'),
+  ('b4ee0000-0000-0000-0000-000000000002', 'Units settle', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-b4-2');
+insert into public.event_members (event_id, user_id, display_name, role)
+select e, m.u, m.n, m.r::public.event_role
+from unnest(array['b4ee0000-0000-0000-0000-000000000001', 'b4ee0000-0000-0000-0000-000000000002']::uuid[]) as e
+cross join (values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'A', 'owner'), ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, 'C', 'participant'),
+  ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'F', 'participant')) as m(u, n, r);
+create function pg_temp.itq(p_id uuid, p_qty int, p_total int, p_sort int) returns jsonb language sql as $$
+  select jsonb_build_object('id', p_id, 'description', 'Teh Ais', 'quantity', p_qty, 'total_cents', p_total, 'sort_order', p_sort) $$;
+create function pg_temp.alu(p_item uuid, p_who uuid, p_amt int, p_units jsonb) returns jsonb language sql as $$
+  select jsonb_build_object('item_id', p_item, 'participant_user_id', p_who, 'amount_cents', p_amt, 'units', p_units) $$;
+-- X: item_claim by C. U1 p_q1 x (1000), U2 2 x (700), S1 1 x (500).
+create function pg_temp.xu(p_q1 int) returns jsonb language sql as $$
+  select pg_temp.exp('b4000000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '2200', 'item_claim',
+    jsonb_build_array(pg_temp.itq('b4100000-0000-0000-0000-000000000001', p_q1, 1000, 0), pg_temp.itq('b4100000-0000-0000-0000-000000000002', 2, 700, 1),
+      pg_temp.itq('b4100000-0000-0000-0000-000000000003', 1, 500, 2)), '[]', 'b4ee0000-0000-0000-0000-000000000001') $$;
+-- H2: host_assignment by A, one item 3 x (1000), allocations given.
+create function pg_temp.hu(p_allocs jsonb) returns jsonb language sql as $$
+  select pg_temp.exp('b4000000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '1000', 'host_assignment',
+    jsonb_build_array(pg_temp.itq('b4100000-0000-0000-0000-000000000031', 3, 1000, 0)), p_allocs, 'b4ee0000-0000-0000-0000-000000000001') $$;
+grant execute on function pg_temp.itq(uuid, int, int, int), pg_temp.alu(uuid, uuid, int, jsonb), pg_temp.xu(int),
+  pg_temp.hu(jsonb) to public;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.xu(3))$$, 'C saves an item_claim expense with quantity 3 and 2 items');
+reset role;
+select results_eq($$select quantity from public.expense_items where expense_id = 'b4000000-0000-0000-0000-000000000001' order by sort_order$$,
+  $$values (3), (2), (1)$$, 'item quantities are stored');
+select throws_ok($$insert into public.allocations (expense_id, participant_user_id, amount_cents, source, units)
+    values ('b4000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 0, 'calculated', 0)$$,
+  '23514', null, 'units must be positive');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000001', 2)$$, 'C says they had 2 of 3');
+select throws_ok($$insert into public.allocations (expense_id, item_id, participant_user_id, amount_cents, source, units)
+    values ('b4000000-0000-0000-0000-000000000001', 'b4100000-0000-0000-0000-000000000002', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 0, 'self_claim', 2)$$,
+  '42501', null, 'clients cannot write unit claims directly (no write policy)');
+reset role;
+update rev7 set n = (select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000001', 2)$$,
+  '22023', 'units_exceed_quantity', 'claiming more units than are left is rejected');
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000001', -1)$$,
+  '22023', 'invalid_units', 'negative units are rejected');
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000001', null)$$,
+  '22023', 'invalid_units', 'null units are rejected');
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000003', 2)$$,
+  '22023', 'invalid_units', 'a quantity 1 item takes 0 or 1 unit');
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000001', 1)$$, 'A takes the last unit');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units, source from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 333::bigint, 1, 'self_claim'), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 667::bigint, 2, 'self_claim')$$,
+  '3 x 10.00 claimed 2/1 -> 667/333 by units');
+select is((select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000001'), (select n + 1 from rev7),
+  'a unit claim bumps the revision once (rejected calls change nothing)');
+select is((select metadata from public.activity_log where action = 'item_claimed' order by id desc limit 1),
+  jsonb_build_object('expense_id', 'b4000000-0000-0000-0000-000000000001', 'item_id', 'b4100000-0000-0000-0000-000000000001'),
+  'a unit claim activity is redacted to ids');
+update rev7 set n = (select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000001', 1)$$, 'the same count again');
+select lives_ok($$select public.claim_item('b4100000-0000-0000-0000-000000000001')$$, 'claim_item keeps an existing unit claim');
+reset role;
+select is((select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000001'), (select n from rev7),
+  'repeating a unit claim is a no-op');
+
+-- 2 x 7.00: one unit each -> 350/350; partial claims leave the item unallocated.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select lives_ok($$select public.claim_item('b4100000-0000-0000-0000-000000000002')$$, 'claim_item on a quantity 2 item claims one unit');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000002' order by 1$$,
+  $$values ('ffffffff-ffff-ffff-ffff-ffffffffffff', 350::bigint, 1)$$, 'one of two units claimed: half the item, the rest unallocated');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000002', 1)$$, 'C claims the other unit');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000002' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 350::bigint, 1), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 350::bigint, 1)$$,
+  '2 x 7.00, one unit each -> 350/350');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000002', 0)$$, 'units 0 removes my claim');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000002' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 350::bigint, 1)$$, 'the remaining claimer keeps their unit');
+select is((select action from public.activity_log order by id desc limit 1), 'item_unclaimed', 'units 0 is logged as an unclaim');
+
+-- Quantity 1 items keep the equal split and no units.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000003', 1)$$, 'A claims the quantity 1 item');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select lives_ok($$select public.claim_item('b4100000-0000-0000-0000-000000000003')$$, 'F shares the quantity 1 item');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000003' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 250::bigint, null::int), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 250::bigint, null::int)$$,
+  'a quantity 1 item is still split equally without units');
+
+-- Editing keeps unit claims; lowering the quantity below them is rejected; quantity 1 makes them equal sharers.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.xu(3))$$, 'C re-saves the expense');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 333::bigint, 1), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 667::bigint, 2)$$,
+  'a re-save keeps self-claims with their units');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.xu(2))$$,
+  '22023', 'quantity_below_claims', 'lowering a quantity below the units already claimed is rejected');
+select lives_ok($$select public.save_expense(pg_temp.xu(4))$$, 'raising the quantity is fine');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 250::bigint, 1), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 500::bigint, 2)$$,
+  'a raised quantity leaves a unit unclaimed (floor shares)');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.xu(1))$$, 'quantity 1 turns unit claimers into equal sharers');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500::bigint, null::int), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 500::bigint, null::int)$$,
+  'claims on a quantity 1 item carry no units and split equally');
+
+-- assign_item / assign_item_units (managers).
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.assign_item('b4100000-0000-0000-0000-000000000002', array['cccccccc-cccc-cccc-cccc-cccccccccccc']::uuid[])$$,
+  '22023', 'invalid_units', 'a quantity > 1 item cannot be assigned without units');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002',
+    '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":2},{"member_id":"ffffffff-ffff-ffff-ffff-ffffffffffff","units":1}]')$$,
+  '22023', 'units_exceed_quantity', 'assigned units cannot exceed the quantity');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":0}]')$$,
+  '22023', 'invalid_units', 'assigned units must be at least 1');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":1.5}]')$$,
+  '22023', 'invalid_units', 'assigned units must be whole');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc"}]')$$,
+  '22023', 'invalid_units', 'assigned units are required');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002',
+    '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":1},{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":1}]')$$,
+  '22023', 'invalid_payload', 'a member listed twice is rejected');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc"}')$$,
+  '22023', 'invalid_payload', 'member_units must be an array');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[{"member_id":"dddddddd-dddd-dddd-dddd-dddddddddddd","units":1}]')$$,
+  '22023', 'not_member', 'units cannot go to a non-member');
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000003', '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":2}]')$$,
+  '22023', 'invalid_units', 'a quantity 1 item takes 1 unit per person');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated"}';
+select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[{"member_id":"ffffffff-ffff-ffff-ffff-ffffffffffff","units":1}]')$$,
+  '22023', 'not_allowed', 'a participant who did not create the expense cannot assign units');
+reset role;
+update rev7 set n = (select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002',
+    '[{"member_id":"ffffffff-ffff-ffff-ffff-ffffffffffff","units":1},{"member_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","units":1}]')$$,
+  'the owner assigns one unit each');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units, source from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000002' order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 350::bigint, 1, 'owner'), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 350::bigint, 1, 'owner')$$,
+  'an assignment by units replaces the self-claims');
+select is((select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000001'), (select n + 1 from rev7),
+  'assigning units bumps the revision once');
+select is((select metadata from public.activity_log where action = 'item_assigned' order by id desc limit 1),
+  jsonb_build_object('expense_id', 'b4000000-0000-0000-0000-000000000001', 'item_id', 'b4100000-0000-0000-0000-000000000002',
+    'member_ids', jsonb_build_array('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ffffffff-ffff-ffff-ffff-ffffffffffff')),
+  'a units assignment activity holds ids only');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000002', 1)$$,
+  '22023', 'not_claimable', 'an item assigned by units cannot be self-claimed');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000003',
+    '[{"member_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","units":1},{"member_id":"ffffffff-ffff-ffff-ffff-ffffffffffff","units":1}]')$$,
+  'units of 1 on a quantity 1 item assign it equally');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000003' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 250::bigint, null::int), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 250::bigint, null::int)$$,
+  'quantity 1 assignment through assign_item_units is the equal split');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000002', '[]')$$, 'an empty list clears the item');
+reset role;
+select is((select count(*)::int from public.allocations where item_id = 'b4100000-0000-0000-0000-000000000002'), 0,
+  'the cleared quantity 2 item has nobody');
+
+-- save_expense with units (host_assignment H2: 3 x 10.00).
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 667, '2'),
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 333, '1'))))$$,
+  'save_expense accepts a 2/1 unit assignment of 3 x 10.00');
+reset role;
+select results_eq($$select participant_user_id::text, amount_cents, units, source from public.allocations
+    where item_id = 'b4100000-0000-0000-0000-000000000031' order by 1$$,
+  $$values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 667::bigint, 2, 'owner'), ('ffffffff-ffff-ffff-ffff-ffffffffffff', 333::bigint, 1, 'owner')$$,
+  'saved unit allocations keep their units');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 666, '2'),
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 334, '1'))))$$,
+  '22023', 'invalid_allocation', 'unit amounts must follow the proportional cent rule');
+select throws_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 500, 'null'),
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 500, 'null'))))$$,
+  '22023', 'invalid_units', 'a quantity > 1 item needs units on every share');
+select throws_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 750, '3'),
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 250, '1'))))$$,
+  '22023', 'units_exceed_quantity', 'saved units cannot exceed the quantity');
+select throws_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 1000, '1.5'))))$$,
+  '22023', 'invalid_units', 'saved units must be whole');
+select throws_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 1000, '"3"'))))$$,
+  '22023', 'invalid_units', 'saved units must be a JSON number');
+select throws_ok($$select public.save_expense(pg_temp.exp('b4000000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '500', 'host_assignment',
+    jsonb_build_array(pg_temp.it('b4100000-0000-0000-0000-000000000051', 500, 0)),
+    jsonb_build_array(pg_temp.alu('b4100000-0000-0000-0000-000000000051', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 500, '1')),
+    'b4ee0000-0000-0000-0000-000000000001'))$$,
+  '22023', 'invalid_units', 'a quantity 1 item takes no units');
+select throws_ok($$select public.save_expense(pg_temp.exp('b4000000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '500', 'equal', '[]',
+    jsonb_build_array(jsonb_build_object('item_id', null, 'participant_user_id', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'amount_cents', 500, 'units', 1)),
+    'b4ee0000-0000-0000-0000-000000000001'))$$,
+  '22023', 'invalid_units', 'an equal split takes no units');
+select lives_ok($$select public.save_expense(pg_temp.hu(jsonb_build_array(
+    pg_temp.alu('b4100000-0000-0000-0000-000000000031', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 333, '1'))))$$,
+  'a partial unit assignment is saved (the item stays unresolved)');
+reset role;
+
+-- Settlement: an item is resolved only when every unit is claimed, even when the cents add up.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select lives_ok($$select public.save_expense(pg_temp.exp('b4000000-0000-0000-0000-000000000006', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '100', 'item_claim',
+    jsonb_build_array(pg_temp.itq('b4100000-0000-0000-0000-000000000061', 2, 0, 0), pg_temp.it('b4100000-0000-0000-0000-000000000062', 100, 1)), '[]',
+    'b4ee0000-0000-0000-0000-000000000002'))$$, 'C saves a bill with a free quantity 2 item');
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000061', 1)$$, 'C claims 1 of the 2 free units');
+select lives_ok($$select public.claim_item('b4100000-0000-0000-0000-000000000062')$$, 'C claims the paid item');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.confirm_settlement('b4ee0000-0000-0000-0000-000000000002', 'optimized_direct', null,
+    (select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000002'))$$,
+  '22023', 'unresolved_expenses', 'an item with unclaimed units blocks settlement even when the cents add up');
+select lives_ok($$select public.claim_item_units('b4100000-0000-0000-0000-000000000061', 1)$$, 'A claims the last unit');
+select lives_ok($$select public.confirm_settlement('b4ee0000-0000-0000-0000-000000000002', 'optimized_direct', null,
+    (select revision from public.events where id = 'b4ee0000-0000-0000-0000-000000000002'))$$,
+  'with every unit claimed the event settles');
+reset role;
+select results_eq($$select participant_user_id::text, owed_cents from public.expense_owed_shares('b4000000-0000-0000-0000-000000000006') order by 1$$,
+  $$values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 0::bigint), ('cccccccc-cccc-cccc-cccc-cccccccccccc', 100::bigint)$$,
+  'owed shares follow the unit allocations');
 
 select * from finish();
 rollback;

@@ -16,6 +16,8 @@ export type ClaimAllocation = {
   participantUserId: string
   amountCents: number
   source: AllocationSource
+  /** Units of a quantity > 1 item (claim by unit); null on quantity 1 items. */
+  units: number | null
 }
 
 export type ExpenseClaims = {
@@ -42,6 +44,8 @@ const ACTION_ERROR_CODES = [
   'not_member',
   'invalid_role_change',
   'invalid_payload',
+  'invalid_units',
+  'units_exceed_quantity',
 ] as const
 
 export type ActionErrorCode = (typeof ACTION_ERROR_CODES)[number] | 'not_authenticated' | 'expense_not_found' | 'action_failed'
@@ -78,7 +82,7 @@ type ExpenseClaimsRow = {
   split_method: SplitMethod
   claiming_closed: boolean
   expense_items: Array<{ id: string; description: string; quantity: number; total_cents: number; sort_order: number }>
-  allocations: Array<{ id: string; item_id: string | null; participant_user_id: string; amount_cents: number; source: AllocationSource }>
+  allocations: Array<{ id: string; item_id: string | null; participant_user_id: string; amount_cents: number; source: AllocationSource; units?: number | null }>
   expense_adjustments?: Array<{ id: string; kind: SaveExpenseAdjustment['kind']; label: string | null; amount_cents: number; sort_order: number }>
 }
 
@@ -88,6 +92,14 @@ export function createClaimRepository(client: SupabaseClient = supabase) {
     unclaimItem: (itemId: string) => callAction(client, 'unclaim_item', { item_id: itemId }),
     // One or more distinct members; the server splits the item equally (extra cents by id order).
     assignItem: (itemId: string, memberIds: string[]) => callAction(client, 'assign_item', { item_id: itemId, member_ids: memberIds }),
+    // Quantity > 1 items: how many units I had (0 removes my claim) ...
+    claimItemUnits: (itemId: string, units: number) => callAction(client, 'claim_item_units', { item_id: itemId, units }),
+    // ... and, for managers, who had how many ([] clears the item). The server splits by units.
+    assignItemUnits: (itemId: string, memberUnits: Array<{ memberId: string; units: number }>) =>
+      callAction(client, 'assign_item_units', {
+        item_id: itemId,
+        member_units: memberUnits.map(m => ({ member_id: m.memberId, units: m.units })),
+      }),
     setClaimingClosed: (expenseId: string, closed: boolean) =>
       callAction(client, 'set_claiming_closed', { expense_id: expenseId, closed }),
     async getExpenseClaims(expenseId: string): Promise<ExpenseClaims> {
@@ -96,7 +108,7 @@ export function createClaimRepository(client: SupabaseClient = supabase) {
         .select(
           'id, event_id, creator_user_id, description, total_cents, split_method, claiming_closed, ' +
             'expense_items(id, description, quantity, total_cents, sort_order), ' +
-            'allocations(id, item_id, participant_user_id, amount_cents, source), ' +
+            'allocations(id, item_id, participant_user_id, amount_cents, source, units), ' +
             'expense_adjustments(id, kind, label, amount_cents, sort_order)',
         )
         .eq('id', expenseId)
@@ -121,6 +133,7 @@ export function createClaimRepository(client: SupabaseClient = supabase) {
           participantUserId: a.participant_user_id,
           amountCents: a.amount_cents,
           source: a.source,
+          units: a.units ?? null,
         })),
         adjustments: (row.expense_adjustments ?? [])
           .map(a => ({ id: a.id, kind: a.kind, label: a.label, amountCents: a.amount_cents, sortOrder: a.sort_order }))

@@ -128,7 +128,9 @@
       "date_invalid": "Please choose a valid date.",
       "participants_required": "Choose at least one person to split with.",
       "shares_mismatch": "The amounts must add up to the total.",
-      "items_invalid": "Every item needs a name, a valid price and (if required) an assignee."
+      "items_invalid": "Every item needs a name, a valid price and (if required) an assignee.",
+      "units_exceed_quantity": "An item is given out more times than its quantity.",
+      "units_incomplete": "Give every unit of each item to someone."
     },
     "scan": {
       "previewAlt": "Receipt photo preview",
@@ -202,7 +204,10 @@
     "too_many_attempts": "Still couldn’t sync after several tries.",
     "item_has_claims": "Someone already claimed one of these items, so it cannot be assigned here.",
     "expense_not_found": "This expense could not be found. It may have been deleted.",
-    "delete_failed": "Could not delete the expense. Please try again."
+    "delete_failed": "Could not delete the expense. Please try again.",
+    "invalid_units": "The number of units for an item is not valid.",
+    "units_exceed_quantity": "An item is given out more times than its quantity.",
+    "quantity_below_claims": "Friends already claimed more of an item than the new quantity. Ask them to change their claim first."
   },
   "realtime": {
     "offline": "Reconnecting… data may be out of date."
@@ -241,7 +246,9 @@
     "invalid_payload": "The request could not be read. Please try again.",
     "not_authenticated": "Your session has expired. Please reload and try again.",
     "expense_not_found": "This expense could not be found.",
-    "action_failed": "Something went wrong. Please try again."
+    "action_failed": "Something went wrong. Please try again.",
+    "invalid_units": "That number of units is not valid.",
+    "units_exceed_quantity": "There are not that many left of this item."
   },
   "settlement": {
     "previewTitle": "Settle up",

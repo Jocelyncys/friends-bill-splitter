@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allocateEqual, allocateProportionally, validateCustomAllocation } from './allocation'
+import { allocateByUnits, allocateEqual, allocateProportionally, itemShares, validateCustomAllocation } from './allocation'
 import type { AllocationMap } from './types'
 
 describe('allocation', () => {
@@ -72,5 +72,47 @@ describe('allocation', () => {
     expect(validateCustomAllocation(-100, { a: -100 }).valid).toBe(false)
     expect(validateCustomAllocation(10.5, { a: 10.5 }).valid).toBe(false)
     expect(validateCustomAllocation(-1, {}).valid).toBe(false)
+  })
+})
+
+describe('allocateByUnits (claim by unit)', () => {
+  it('splits 3 x 10.00 = 1000 over 2/1 units as 667/333', () => {
+    expect(allocateByUnits(1000, 3, { ben: 1, ali: 2 })).toEqual({ ali: 667, ben: 333 })
+  })
+
+  it('splits 2 x 3.50 = 700 one unit each as 350/350', () => {
+    expect(allocateByUnits(700, 2, { ali: 1, ben: 1 })).toEqual({ ali: 350, ben: 350 })
+  })
+
+  it('gives equal remainders to the lowest id (code-point order)', () => {
+    expect(allocateByUnits(1000, 3, { c: 1, B: 1, a: 1 })).toEqual({ B: 334, a: 333, c: 333 })
+  })
+
+  it('gives each claimer the floor of their units while units are left, the rest stays unallocated', () => {
+    expect(allocateByUnits(1000, 3, { ali: 1 })).toEqual({ ali: 333 })
+    expect(allocateByUnits(1000, 4, { ali: 1, ben: 2 })).toEqual({ ali: 250, ben: 500 })
+  })
+
+  it('rejects units over the quantity, non-positive or fractional units and a bad quantity', () => {
+    expect(() => allocateByUnits(1000, 3, { ali: 2, ben: 2 })).toThrow()
+    expect(() => allocateByUnits(1000, 3, { ali: 0 })).toThrow()
+    expect(() => allocateByUnits(1000, 3, { ali: 1.5 })).toThrow()
+    expect(() => allocateByUnits(1000, 0, { ali: 1 })).toThrow()
+  })
+})
+
+describe('itemShares', () => {
+  it('splits a quantity 1 item equally and a quantity > 1 item by units', () => {
+    expect(itemShares({ totalCents: 1001, quantity: 1 }, ['b', 'a'])).toEqual({ a: 501, b: 500 })
+    expect(itemShares({ totalCents: 1000, quantity: 3 }, ['a', 'b'], { a: 2, b: 1 })).toEqual({ a: 667, b: 333 })
+  })
+
+  it('counts a claimer without a unit count as one unit', () => {
+    expect(itemShares({ totalCents: 700, quantity: 2 }, ['a', 'b'])).toEqual({ a: 350, b: 350 })
+  })
+
+  it('returns no shares for nobody', () => {
+    expect(itemShares({ totalCents: 700, quantity: 2 }, [])).toEqual({})
+    expect(itemShares({ totalCents: 700, quantity: 1 }, [])).toEqual({})
   })
 })

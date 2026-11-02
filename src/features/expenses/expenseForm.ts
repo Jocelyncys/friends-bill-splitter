@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { allocateEqual, validateCustomAllocation } from '../../domain/allocation'
+import { allocateEqual, itemShares, validateCustomAllocation } from '../../domain/allocation'
 import type { SaveExpensePayload } from './expenseRepository'
 
 // ---- money text <-> integer cents (string parsing only, never float math) ----
@@ -24,19 +24,53 @@ export const centsToText = (cents: number) => `${Math.floor(cents / 100)}.${Stri
 
 export type DraftSplitMethod = 'equal' | 'custom' | 'items' | 'host_assignment'
 
-/** assigneeIds: the people who had the item; it is split equally between them. */
-export type DraftItem = { id: string; description: string; price: string; assigneeIds: string[] }
+/**
+ * price: the line total ("2 x Teh Ais" costs price, not 2 x price). quantity: whole units as text, missing = "1".
+ * assigneeIds: the people who had the item. Quantity 1: split equally between them. Quantity > 1: split by
+ * units[id], the number of units each had (missing = 1).
+ */
+export type DraftItem = {
+  id: string
+  description: string
+  price: string
+  assigneeIds: string[]
+  quantity?: string
+  units?: Record<string, number>
+}
+
+export const MAX_QUANTITY = 999
+
+/** "1".."999" -> number; missing -> 1; anything else -> null. */
+export function parseQuantity(text: string | undefined): number | null {
+  if (text === undefined) return 1
+  if (!/^\d{1,3}$/.test(text.trim())) return null
+  const n = Number(text.trim())
+  return n >= 1 && n <= MAX_QUANTITY ? n : null
+}
+
+/** The units each assignee had: { id: units } on a quantity > 1 item (missing = 1), {} on a quantity 1 item. */
+export function assigneeUnits(item: DraftItem, quantity: number): Record<string, number> {
+  return quantity > 1 ? Object.fromEntries(item.assigneeIds.map(id => [id, item.units?.[id] ?? 1])) : {}
+}
+
+/** Units given to someone on a quantity > 1 item. */
+export const unitsTaken = (units: Record<string, number>) => Object.values(units).reduce((sum, n) => sum + n, 0)
 
 /**
- * Each person's items subtotal (shared items split with allocateEqual), or null while any item has no valid
- * price or nobody assigned. Feeds owedShares for the live "pays" preview.
+ * Each person's items subtotal (shared items split equally, quantity > 1 items by units), or null while any item
+ * has no valid price or quantity, nobody assigned, or units left. Feeds owedShares for the live "pays" preview.
  */
 export function itemCentsByPerson(items: DraftItem[]): Record<string, number> | null {
   const totals: Record<string, number> = {}
   for (const item of items) {
     const cents = parseMoneyToCents(item.price)
-    if (cents === null || item.assigneeIds.length === 0) return null
-    for (const [userId, share] of Object.entries(allocateEqual(cents, item.assigneeIds))) totals[userId] = (totals[userId] ?? 0) + share
+    const quantity = parseQuantity(item.quantity)
+    if (cents === null || quantity === null || item.assigneeIds.length === 0) return null
+    const units = assigneeUnits(item, quantity)
+    if (quantity > 1 && unitsTaken(units) !== quantity) return null
+    for (const [userId, share] of Object.entries(itemShares({ totalCents: cents, quantity }, item.assigneeIds, units))) {
+      totals[userId] = (totals[userId] ?? 0) + share
+    }
   }
   return totals
 }
@@ -71,7 +105,13 @@ const common = {
   expenseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 }
 
-const rowItem = z.object({ id, description: z.string().trim().min(1), priceCents: cents })
+const rowItem = z.object({
+  id,
+  description: z.string().trim().min(1),
+  priceCents: cents,
+  quantity: z.number().int().min(1).max(MAX_QUANTITY),
+  units: z.record(z.string(), z.number().int().min(1)),
+})
 // Itemized (claim) items may carry an existing assignment (one or more people) from the saved expense.
 const claimItem = rowItem.extend({ assigneeIds: z.array(id) })
 // Itemized: what was paid, when it differs from the items total (null = same as the items).
@@ -115,8 +155,19 @@ export function validateDraft(draft: ExpenseDraft): { ok: true; values: ExpenseF
   const errors: FormErrors = {}
   let raw: unknown
   if (draft.splitMethod === 'items' || draft.splitMethod === 'host_assignment') {
-    const items = draft.items.map(item => ({ ...item, priceCents: parseMoneyToCents(item.price) }))
-    if (items.some(item => item.priceCents === null)) errors.items = 'items_invalid'
+    const items = draft.items.map(item => {
+      const quantity = parseQuantity(item.quantity)
+      return { ...item, priceCents: parseMoneyToCents(item.price), quantity, units: quantity ? assigneeUnits(item, quantity) : {} }
+    })
+    if (items.some(item => item.priceCents === null || item.quantity === null)) errors.items = 'items_invalid'
+    // Quantity > 1: never more units than the item has; when the host assigns, every unit has someone.
+    else if (items.some(item => unitsTaken(item.units) > (item.quantity ?? 1))) errors.items = 'units_exceed_quantity'
+    else if (
+      draft.splitMethod === 'host_assignment' &&
+      items.some(item => (item.quantity ?? 1) > 1 && item.assigneeIds.length > 0 && unitsTaken(item.units) < (item.quantity ?? 1))
+    ) {
+      errors.items = 'units_incomplete'
+    }
     // "Amount paid" is optional (empty = the items total) and at least 0.01. Item prices are at least 0.01 too,
     // so save_expense's adjustments_need_items cannot happen from this form.
     const paidCents = draft.amount.trim() === '' ? null : parseMoneyToCents(draft.amount)
@@ -191,7 +242,7 @@ export function buildPayload(ctx: { id: string; eventId: string; category?: stri
       const items = values.items.map((item, sortOrder) => ({
         id: item.id,
         description: item.description,
-        quantity: 1,
+        quantity: item.quantity,
         totalCents: item.priceCents,
         sortOrder,
       }))
@@ -202,16 +253,17 @@ export function buildPayload(ctx: { id: string; eventId: string; category?: stri
       const adjustments =
         paid === itemsCents ? [] : [{ id: ctx.id, kind: 'other' as const, label: null, amountCents: paid - itemsCents, sortOrder: 0 }]
       const totalCents = paid
-      // One allocation per assignee: the equal split of the item (save_expense checks the same rule).
-      // Items with self-claims never carry assignees here (the server keeps their claims).
+      // One allocation per assignee: the equal split of the item, or by units on a quantity > 1 item (save_expense
+      // checks the same rules). Items with self-claims never carry assignees here (the server keeps their claims).
       const allocations = values.items.flatMap(item =>
-        item.assigneeIds.length === 0
-          ? []
-          : Object.entries(allocateEqual(item.priceCents, item.assigneeIds)).map(([participantUserId, amountCents]) => ({
-              itemId: item.id,
-              participantUserId,
-              amountCents,
-            })),
+        Object.entries(itemShares({ totalCents: item.priceCents, quantity: item.quantity }, item.assigneeIds, item.units)).map(
+          ([participantUserId, amountCents]) => ({
+            itemId: item.id,
+            participantUserId,
+            amountCents,
+            ...(item.quantity > 1 ? { units: item.units[participantUserId] } : {}),
+          }),
+        ),
       )
       return {
         ...head,
@@ -237,12 +289,17 @@ export function draftFromPayload(payload: SaveExpensePayload): ExpenseDraft {
       splitMethod: payload.splitMethod === 'item_claim' ? 'items' : 'host_assignment',
       participantIds: [],
       shares: {},
-      items: payload.items.map(item => ({
-        id: item.id,
-        description: item.description,
-        price: centsToText(item.totalCents),
-        assigneeIds: payload.allocations.filter(a => a.itemId === item.id).map(a => a.participantUserId),
-      })),
+      items: payload.items.map(item => {
+        const shares = payload.allocations.filter(a => a.itemId === item.id)
+        return {
+          id: item.id,
+          description: item.description,
+          quantity: String(item.quantity),
+          price: centsToText(item.totalCents),
+          assigneeIds: shares.map(a => a.participantUserId),
+          units: item.quantity > 1 ? Object.fromEntries(shares.map(a => [a.participantUserId, a.units ?? 1])) : {},
+        }
+      }),
     }
   }
   return {

@@ -128,7 +128,9 @@
       "date_invalid": "请选择有效日期。",
       "participants_required": "请至少选择一位分摊对象。",
       "shares_mismatch": "各项金额之和必须等于总额。",
-      "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。"
+      "items_invalid": "每个项目都需要名称、有效价格，以及（如需要）分配对象。",
+      "units_exceed_quantity": "某个项目分出的份数超过了它的数量。",
+      "units_incomplete": "请把每个项目的每一份都分给某人。"
     },
     "scan": {
       "previewAlt": "收据照片预览",
@@ -202,7 +204,10 @@
     "too_many_attempts": "多次尝试后仍无法同步。",
     "item_has_claims": "已有人认领了其中的项目，因此无法在此分配。",
     "expense_not_found": "找不到此开销，可能已被删除。",
-    "delete_failed": "无法删除此开销，请重试。"
+    "delete_failed": "无法删除此开销，请重试。",
+    "invalid_units": "某个项目的份数无效。",
+    "units_exceed_quantity": "某个项目分出的份数超过了它的数量。",
+    "quantity_below_claims": "朋友认领的份数已多于新的数量。请先请他们修改认领。"
   },
   "realtime": {
     "offline": "正在重新连接…数据可能已过时。"
@@ -241,7 +246,9 @@
     "invalid_payload": "无法读取请求，请重试。",
     "not_authenticated": "登录已过期，请重新加载后再试。",
     "expense_not_found": "找不到这笔开销。",
-    "action_failed": "出错了，请重试。"
+    "action_failed": "出错了，请重试。",
+    "invalid_units": "这个份数无效。",
+    "units_exceed_quantity": "这个项目剩下的份数不够。"
   },
   "settlement": {
     "previewTitle": "结算",

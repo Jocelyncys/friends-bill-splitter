@@ -143,6 +143,7 @@ describe('expenseRepository', () => {
     await expect(repository.getExpense('exp-1')).resolves.toEqual({
       creatorUserId: 'user-1',
       claims: { 'item-1': ['user-2', 'user-3'] },
+      claimUnits: {},
       payload: {
         id: 'exp-1', eventId: 'event-1', payerUserId: 'user-1', description: 'Lunch', category: 'food', expenseDate: '2026-10-24',
         totalCents: 1500, splitMethod: 'item_claim',
@@ -160,6 +161,48 @@ describe('expenseRepository', () => {
     expect(select).toHaveBeenCalledWith(expect.stringContaining('expense_adjustments(id, kind, label, amount_cents, sort_order)'))
     expect(from).toHaveBeenCalledWith('expenses')
     expect(eq).toHaveBeenCalledWith('id', 'exp-1')
+  })
+
+  it('sends units only on unit shares and reads them back with self-claim units', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 'exp-1', error: null })
+    await createExpenseRepository({ rpc } as never).saveExpense({
+      ...payload,
+      allocations: [
+        { itemId: 'item-1', participantUserId: 'user-2', amountCents: 500, units: 1 },
+        { itemId: 'item-1', participantUserId: 'user-3', amountCents: 500 },
+      ],
+    })
+    expect(rpc.mock.calls[0][1].payload.allocations).toEqual([
+      { item_id: 'item-1', participant_user_id: 'user-2', amount_cents: 500, units: 1 },
+      { item_id: 'item-1', participant_user_id: 'user-3', amount_cents: 500 },
+    ])
+
+    const row = {
+      id: 'exp-1', event_id: 'event-1', creator_user_id: 'user-1', payer_user_id: 'user-1', description: 'Teh', category: 'food',
+      expense_date: '2026-10-24', total_cents: 1700, split_method: 'item_claim',
+      expense_items: [
+        { id: 'item-1', description: 'Teh Ais', quantity: 3, total_cents: 1000, sort_order: 0 },
+        { id: 'item-2', description: 'Kopi', quantity: 2, total_cents: 700, sort_order: 1 },
+      ],
+      allocations: [
+        { item_id: 'item-1', participant_user_id: 'user-3', amount_cents: 333, source: 'self_claim', units: 1 },
+        { item_id: 'item-1', participant_user_id: 'user-2', amount_cents: 667, source: 'self_claim', units: 2 },
+        { item_id: 'item-2', participant_user_id: 'user-1', amount_cents: 700, source: 'owner', units: 2 },
+      ],
+      expense_adjustments: [],
+    }
+    const from = vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }) }) }) }))
+    const saved = await createExpenseRepository({ from } as never).getExpense('exp-1')
+    expect(saved.claims).toEqual({ 'item-1': ['user-2', 'user-3'] })
+    expect(saved.claimUnits).toEqual({ 'item-1': { 'user-2': 2, 'user-3': 1 } })
+    expect(saved.payload.allocations).toEqual([{ itemId: 'item-2', participantUserId: 'user-1', amountCents: 700, units: 2 }])
+  })
+
+  it.each(['invalid_units', 'units_exceed_quantity', 'quantity_below_claims'])('maps %s to a form error on items', async code => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: '22023', message: code } })
+    await expect(createExpenseRepository({ rpc } as never).saveExpense(payload)).rejects.toMatchObject({
+      formError: { field: 'items', code },
+    })
   })
 
   it('reports a missing expense as expense_not_found', async () => {
