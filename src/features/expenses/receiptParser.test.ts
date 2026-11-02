@@ -165,6 +165,23 @@ describe('parseReceipt quantities', () => {
     expect(item).toMatchObject({ description: 'Teh Ais', quantity: 2, totalCents: 750, lowConfidence: true })
   })
 
+  it.each([
+    ['Kopi O 1.80 x2 3.60', 'Kopi O', 2, 180, 360],
+    ['Milo Dinosaur 2.20 2 4.40', 'Milo Dinosaur', 2, 220, 440],
+  ])('takes the unit price off the name: %j', (line, description, quantity, unitCents, totalCents) => {
+    expect(pick(parseReceipt([line]).items)).toEqual([[description, quantity, unitCents, totalCents]])
+  })
+
+  it('keeps a small leading number in the name unless it divides the total, and flags an unconfirmed quantity', () => {
+    expect(pick(parseReceipt(['7 Up 3.00']).items)).toEqual([['7 Up', 1, 300, 300]])
+    // 450 divides by 3, so "3" may be a quantity: taken, but marked "Check this" (it could be "3 Layer Tea").
+    const [layer] = parseReceipt(['3 Layer Tea 4.50']).items
+    expect(layer).toMatchObject({ description: 'Layer Tea', quantity: 3, unitCents: 150, lowConfidence: true })
+    expect(parseReceipt(['2 Teh Ais 7.00']).items[0].lowConfidence).toBe(true)
+    expect(parseReceipt(['1 Kopi O 2.20']).items[0].lowConfidence).toBeUndefined()
+    expect(parseReceipt(['2 Iced Lemon Tea (4.32/ea) 8.64']).items[0].lowConfidence).toBeUndefined()
+  })
+
   it('does not read a big leading number as a quantity without a unit price to back it', () => {
     expect(pick(parseReceipt(['100 Plus 2.50']).items)).toEqual([['100 Plus', 1, 250, 250]])
   })

@@ -146,6 +146,7 @@ const DANGLING_EA = /\s+ea\s*[)）]\s*$/iu // "... ea)" left after the unit pric
 const QTY_TIMES_UNIT = new RegExp(String.raw`(?:^|\s)(\d{1,3})\s*[x×@]\s*(?:RM\s*)?${MONEY_SRC}$`, 'i') // "2 x 4.20", "2 @ 12.00"
 const AT_UNIT = new RegExp(String.raw`\s*@\s*(?:RM\s*)?${MONEY_SRC}$`, 'i') // "@ 3.50"
 const QTY_SPACE_UNIT = new RegExp(String.raw`\s(\d{1,3})\s+(?:RM\s*)?${MONEY_SRC}$`, 'i') // "3 1.50"
+const UNIT_SPACE_QTY = new RegExp(String.raw`\s(?:RM\s*)?${MONEY_SRC}\s+(\d{1,3})$`, 'i') // "2.20 2"
 const TRAILING_UNIT = new RegExp(String.raw`\s(?:RM\s*)?${MONEY_SRC}$`, 'i') // "3.50" before the total
 const TRAILING_X_QTY = /\s[x×]\s*(\d{1,3})$/i // "x2"
 const QTY_WORD = /\bqty\s*[:.]?\s*(\d{1,3})\b/i // "Qty 2", "Qty: 2"
@@ -176,10 +177,16 @@ function splitQuantity(head: string): Parts {
   const unitOnly = (m: RegExpMatchArray) => {
     unitCents = toCents(m[1], m[2]) ?? undefined
   }
+  const unitAndQty = (m: RegExpMatchArray) => {
+    unitCents = toCents(m[1], m[2]) ?? undefined
+    quantity = Number(m[3])
+    strongQuantity = true
+  }
   const rightEnd: Array<[RegExp, (m: RegExpMatchArray) => void]> = [
     [QTY_TIMES_UNIT, qtyAndUnit],
     [AT_UNIT, unitOnly],
     [QTY_SPACE_UNIT, qtyAndUnit],
+    [UNIT_SPACE_QTY, unitAndQty],
     [TRAILING_UNIT, unitOnly],
   ]
   rightEnd.some(([re, fn]) => take(re, fn))
@@ -188,8 +195,11 @@ function splitQuantity(head: string): Parts {
   text = text.replace(DANGLING_EA, '').trim()
   // Quantity words: "x2", "Qty 2", "2x", then a plain leading "2".
   if (quantity === undefined) {
-    if (
-      take(TRAILING_X_QTY, m => (quantity = Number(m[1]))) ||
+    if (take(TRAILING_X_QTY, m => (quantity = Number(m[1])))) {
+      strongQuantity = true
+      // "Kopi O 1.80 x2": the unit price sits before the x2.
+      if (unitCents === undefined) take(TRAILING_UNIT, unitOnly)
+    } else if (
       take(QTY_WORD, m => (quantity = Number(m[1]))) ||
       take(LEADING_X_QTY, m => (quantity = Number(m[1])))
     ) {
@@ -231,9 +241,15 @@ function resolveItem(head: string, totalCents: number): Omit<ParsedReceiptItem, 
       unsure = true // two amounts that do not fit together
       unitCents = undefined
     }
-  } else if (quantity !== undefined && unitCents === undefined && !parts.strongQuantity && quantity > MAX_UNCONFIRMED_QUANTITY) {
-    description = `${quantity} ${description}` // "100 Plus"
-    quantity = undefined
+  } else if (quantity !== undefined && unitCents === undefined && !parts.strongQuantity && quantity > 1) {
+    // A plain leading number with no unit price to back it ("2 Teh Ais 7.00"): a quantity only when it divides the
+    // total and is small; then the row is flagged so the user checks it. Otherwise it is part of the name
+    // ("7 Up 3.00", "100 Plus 2.50").
+    if (quantity <= MAX_UNCONFIRMED_QUANTITY && totalCents % quantity === 0) unsure = true
+    else {
+      description = `${quantity} ${description}`
+      quantity = undefined
+    }
   }
 
   const q = quantity ?? 1
