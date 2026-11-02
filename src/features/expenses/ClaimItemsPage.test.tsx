@@ -210,3 +210,79 @@ describe('ClaimItemsPage', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })
+
+describe('items with a quantity (claim by unit)', () => {
+  const tehAis: ClaimItemView = { id: 't1', description: 'Teh Ais', quantity: 2, totalCents: 700, claims: [], assigned: false }
+  const stepper = (name: string) =>
+    screen.getByRole('group', { name: name === 'me' ? 'Units you had for Teh Ais' : `Units ${name} had for Teh Ais` })
+  const more = (name: string) => within(stepper(name)).getByRole('button', { name: 'One more' })
+  const less = (name: string) => within(stepper(name)).getByRole('button', { name: 'One less' })
+
+  it('shows the unit price and how many are left, with a stepper instead of the claim button', () => {
+    render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants}
+      items={[{ ...tehAis, claims: [{ userId: 'ben', amountCents: 350, units: 1 }] }]} />)
+    expect(screen.getByText('2 × RM 3.50')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2 left')).toBeInTheDocument()
+    expect(screen.getByText('Claimed by: Ben ×1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Claim for me' })).not.toBeInTheDocument()
+    expect(within(stepper('me')).getByText('0')).toBeInTheDocument()
+    expect(less('me')).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByRole('group', { name: 'Units Ben had for Teh Ais' })).not.toBeInTheDocument()
+  })
+
+  it('saves my units a moment after the last tap and never goes past what is left', async () => {
+    const onClaimUnits = vi.fn().mockResolvedValue(true)
+    render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants}
+      items={[{ ...tehAis, claims: [{ userId: 'ben', amountCents: 350, units: 1 }] }]} onClaimUnits={onClaimUnits} />)
+    await userEvent.click(more('me'))
+    expect(within(stepper('me')).getByText('1')).toBeInTheDocument()
+    expect(more('me')).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(more('me'))
+    expect(within(stepper('me')).getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('None left')).toBeInTheDocument()
+    await vi.waitFor(() => expect(onClaimUnits).toHaveBeenCalledTimes(1))
+    expect(onClaimUnits).toHaveBeenCalledWith('t1', 1)
+    expect(await screen.findByText('Saved')).toBeInTheDocument()
+  })
+
+  it('goes back to my saved units when the save fails', async () => {
+    const onClaimUnits = vi.fn().mockResolvedValue(false)
+    render(<ClaimItemsPage role="participant" currentUserId="alice" participants={participants}
+      items={[{ ...tehAis, claims: [{ userId: 'alice', amountCents: 350, units: 1 }] }]} onClaimUnits={onClaimUnits} />)
+    await userEvent.click(less('me'))
+    expect(within(stepper('me')).getByText('0')).toBeInTheDocument()
+    await vi.waitFor(() => expect(onClaimUnits).toHaveBeenCalledWith('t1', 0))
+    await vi.waitFor(() => expect(within(stepper('me')).getByText('1')).toBeInTheDocument())
+  })
+
+  it('gives managers a stepper per person and saves who had how many', async () => {
+    const onAssignUnits = vi.fn().mockResolvedValue(true)
+    render(<ClaimItemsPage role="owner" currentUserId="alice" splitMethod="host_assignment" participants={participants}
+      items={[{ ...tehAis, quantity: 3, totalCents: 1000 }]} onAssignUnits={onAssignUnits} />)
+    expect(screen.queryByRole('group', { name: 'Who had Teh Ais' })).toBeInTheDocument()
+    expect(screen.getByText('3 × RM 3.33')).toBeInTheDocument()
+    await userEvent.click(more('Ben'))
+    await userEvent.click(more('Alice'))
+    await userEvent.click(more('Alice'))
+    expect(more('Ben')).toHaveAttribute('aria-disabled', 'true')
+    expect(within(stepper('Alice')).getByText('RM 6.67')).toBeInTheDocument()
+    expect(within(stepper('Ben')).getByText('RM 3.33')).toBeInTheDocument()
+    await vi.waitFor(() => expect(onAssignUnits).toHaveBeenCalledTimes(1))
+    expect(onAssignUnits).toHaveBeenCalledWith('t1', { alice: 2, ben: 1 })
+  })
+
+  it('disables the steppers while offline', () => {
+    render(<ClaimItemsPage role="owner" currentUserId="alice" offline participants={participants} items={[tehAis]} />)
+    expect(more('Ben')).toBeDisabled()
+    expect(more('me')).toBeDisabled()
+  })
+
+  it('still saves a unit tap made just before leaving the page', () => {
+    const onAssignUnits = vi.fn().mockResolvedValue(true)
+    const { unmount } = render(<ClaimItemsPage role="owner" currentUserId="alice" splitMethod="host_assignment" participants={participants}
+      items={[tehAis]} onAssignUnits={onAssignUnits} />)
+    fireEvent.click(more('Ben'))
+    unmount()
+    expect(onAssignUnits).toHaveBeenCalledWith('t1', { ben: 1 })
+  })
+})

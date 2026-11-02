@@ -1,25 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckIcon, CloseIcon } from '../../components/icons'
+import { itemShares } from '../../domain/allocation'
 import { formatMoney } from '../../domain/money'
 import type { EventRole, SplitMethod } from '../../domain/types'
 import { PaysList } from './PaysList'
 import { paysRows, sharedEachText, signedMoney } from './shareText'
+import { UnitStepper } from './UnitStepper'
 
-// Quick taps on one item's chips within this time are saved as one call.
+// Quick taps on one item's chips or steppers within this time are saved as one call.
 const SAVE_DELAY_MS = 400
 // "Saved" is announced, then fades out of the way.
 const SAVED_VISIBLE_MS = 3000
 
-const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id))
+type Units = Record<string, number>
+
+/** Ids or units (people with 0 units count as not there), in a form that compares by value. */
+function canon(value: string[] | Units | number): string {
+  if (typeof value === 'number') return String(value)
+  if (Array.isArray(value)) return [...value].sort().join(',')
+  return Object.entries(value)
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([id, n]) => `${id}:${n}`)
+    .join(',')
+}
+
+const withoutZeros = (units: Units): Units => Object.fromEntries(Object.entries(units).filter(([, n]) => n > 0))
+const sum = (units: Units) => Object.values(units).reduce((total, n) => total + n, 0)
 
 export type ClaimItemView = {
   id: string
   description: string
   quantity: number
   totalCents: number
-  /** Current allocations of this item (server-computed integer cents). */
-  claims: Array<{ userId: string; amountCents: number }>
+  /** Current allocations of this item (server-computed integer cents; units on a quantity > 1 item). */
+  claims: Array<{ userId: string; amountCents: number; units?: number | null }>
   /** True when a manager/creator assigned the item (self-claims are then not possible). */
   assigned: boolean
 }
@@ -52,8 +68,16 @@ type Props = {
    * (the chips then go back to the saved people).
    */
   onAssign?: (itemId: string, memberIds: string[]) => Promise<boolean> | void
+  /** Quantity > 1 items: how many units I had (0 = none). Saved like the chips. */
+  onClaimUnits?: (itemId: string, units: number) => Promise<boolean> | void
+  /** Quantity > 1 items, managers: who had how many ({} = nobody). Saved like the chips. */
+  onAssignUnits?: (itemId: string, units: Units) => Promise<boolean> | void
   onToggleClosed?: (closed: boolean) => void
 }
+
+type Pick = string[] | Units | number
+// One pending pick per control: `assign:<item>` (chips or the managers' steppers) and `mine:<item>` (my stepper).
+type PickKey = `assign:${string}` | `mine:${string}`
 
 export function ClaimItemsPage({
   role,
@@ -73,24 +97,44 @@ export function ClaimItemsPage({
   onClaim,
   onUnclaim,
   onAssign,
+  onClaimUnits,
+  onAssignUnits,
   onToggleClosed,
 }: Props) {
   const { t, i18n } = useTranslation()
-  // item id -> people tapped but not saved yet (missing = the saved people), and each item's save status.
-  const [picking, setPicking] = useState<Record<string, string[]>>({})
+  // Picks tapped but not saved yet (missing = the saved state), and each item's save status.
+  const [picking, setPicking] = useState<Partial<Record<PickKey, Pick>>>({})
   const [status, setStatus] = useState<Record<string, 'saving' | 'saved'>>({})
   const pickingRef = useRef(picking)
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const timers = useRef<Partial<Record<PickKey, ReturnType<typeof setTimeout>>>>({})
   const itemsRef = useRef(items) // the saved state when a delayed save runs
   useEffect(() => {
     itemsRef.current = items
   }, [items])
-  const onAssignRef = useRef(onAssign)
+  const callbacks = useRef({ onAssign, onClaimUnits, onAssignUnits })
   useEffect(() => {
-    onAssignRef.current = onAssign
-  }, [onAssign])
+    callbacks.current = { onAssign, onClaimUnits, onAssignUnits }
+  }, [onAssign, onClaimUnits, onAssignUnits])
   const savedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const mounted = useRef(true)
+
+  /** The server's state for a pick key. */
+  const savedPick = (key: PickKey): Pick => {
+    const itemId = key.slice(key.indexOf(':') + 1)
+    const item = itemsRef.current.find(i => i.id === itemId)
+    if (!item) return []
+    if (key.startsWith('mine:')) return item.claims.find(c => c.userId === currentUserId)?.units ?? 0
+    if (item.quantity > 1) return Object.fromEntries(item.claims.map(c => [c.userId, c.units ?? 1]))
+    return item.claims.map(c => c.userId)
+  }
+  const send = (key: PickKey, value: Pick) => {
+    const itemId = key.slice(key.indexOf(':') + 1)
+    const { onAssign: assign, onClaimUnits: claimUnits, onAssignUnits: assignUnits } = callbacks.current
+    if (typeof value === 'number') return claimUnits?.(itemId, value)
+    if (Array.isArray(value)) return assign?.(itemId, value)
+    return assignUnits?.(itemId, withoutZeros(value))
+  }
+
   useEffect(() => {
     mounted.current = true
     const pending = timers.current
@@ -99,13 +143,14 @@ export function ClaimItemsPage({
       mounted.current = false
       for (const timer of Object.values(saved)) clearTimeout(timer)
       // Leaving the page right after a tap still saves it (fire and forget).
-      for (const [itemId, timer] of Object.entries(pending)) {
+      for (const [key, timer] of Object.entries(pending) as Array<[PickKey, ReturnType<typeof setTimeout>]>) {
         clearTimeout(timer)
-        const picked = pickingRef.current[itemId]
-        const current = itemsRef.current.find(item => item.id === itemId)?.claims.map(c => c.userId) ?? []
-        if (picked && !sameIds(picked, current)) void onAssignRef.current?.(itemId, picked)
+        const picked = pickingRef.current[key]
+        if (picked !== undefined && canon(picked) !== canon(savedPick(key))) void send(key, picked)
       }
     }
+    // Runs once: everything it reads goes through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const manage = !settled && (canManage ?? role !== 'participant')
   const locked = offline || busy
@@ -115,20 +160,20 @@ export function ClaimItemsPage({
   const shares = new Map<string, number>()
   let unallocated = 0
   for (const item of items) {
-    const allocated = item.claims.reduce((sum, c) => sum + c.amountCents, 0)
+    const allocated = item.claims.reduce((total, c) => total + c.amountCents, 0)
     unallocated += item.totalCents - allocated
     for (const c of item.claims) shares.set(c.userId, (shares.get(c.userId) ?? 0) + c.amountCents)
   }
   // With an amount paid different from the items, what each person pays is the amount paid split over their items (owedShares), once
   // every item has someone; until then only the item amounts are shown.
-  const itemsCents = items.reduce((sum, item) => sum + item.totalCents, 0)
+  const itemsCents = items.reduce((total, item) => total + item.totalCents, 0)
   const paidCents = totalCents ?? itemsCents + adjustmentCents
   const pays = adjustmentCents !== 0 && unallocated === 0 ? paysRows(paidCents, Object.fromEntries(shares), participants) : []
 
-  const setPick = (itemId: string, ids: string[] | null) => {
+  const setPick = (key: PickKey, value: Pick | null) => {
     const next = { ...pickingRef.current }
-    if (ids) next[itemId] = ids
-    else delete next[itemId]
+    if (value !== null) next[key] = value
+    else delete next[key]
     pickingRef.current = next
     setPicking(next)
   }
@@ -143,27 +188,32 @@ export function ClaimItemsPage({
     })
   }
 
-  const save = async (itemId: string) => {
-    delete timers.current[itemId]
-    const picked = pickingRef.current[itemId]
-    const saved = itemsRef.current.find(item => item.id === itemId)?.claims.map(c => c.userId) ?? []
-    if (!picked || sameIds(picked, saved)) return setPick(itemId, null) // tapped back to where it was
+  const save = async (key: PickKey) => {
+    delete timers.current[key]
+    const itemId = key.slice(key.indexOf(':') + 1)
+    const picked = pickingRef.current[key]
+    if (picked === undefined || canon(picked) === canon(savedPick(key))) return setPick(key, null) // tapped back
     setItemStatus(itemId, 'saving')
-    const ok = (await onAssign?.(itemId, picked)) !== false
+    const ok = (await send(key, picked)) !== false
     if (!mounted.current) return
     // Either way the page now shows the server's state.
-    setPick(itemId, null)
+    setPick(key, null)
     setItemStatus(itemId, ok ? 'saved' : null)
   }
 
-  // Each tap saves; quick taps on the same item are sent as one call.
-  const togglePick = (itemId: string, current: string[], userId: string) => {
+  // Each tap saves; quick taps on the same control are sent as one call.
+  const pick = (key: PickKey, itemId: string, value: Pick) => {
     if (status[itemId] === 'saving') return // aria-disabled: keeps focus, ignores the tap
-    const ids = pickingRef.current[itemId] ?? current
-    setPick(itemId, ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId])
+    setPick(key, value)
     setItemStatus(itemId, null)
-    clearTimeout(timers.current[itemId])
-    timers.current[itemId] = setTimeout(() => void save(itemId), SAVE_DELAY_MS)
+    clearTimeout(timers.current[key])
+    timers.current[key] = setTimeout(() => void save(key), SAVE_DELAY_MS)
+  }
+
+  const shareOf = (item: ClaimItemView, units: Units, id: string) => {
+    const counted = withoutZeros(units)
+    if (!(id in counted) || sum(counted) > item.quantity) return 0
+    return itemShares(item, Object.keys(counted), counted)[id] ?? 0
   }
 
   return (
@@ -184,16 +234,39 @@ export function ClaimItemsPage({
       <div className="row-list">
       {items.map(item => {
         const mine = item.claims.some(c => c.userId === currentUserId)
-        const names = item.claims.map(c => nameOf(c.userId)).join(', ')
-        const current = item.claims.map(c => c.userId)
-        const picked = picking[item.id] ?? current
+        const byUnit = item.quantity > 1
+        const names = item.claims
+          .map(c => (byUnit ? t('claim.nameUnits', { name: nameOf(c.userId), count: c.units ?? 1 }) : nameOf(c.userId)))
+          .join(', ')
         const saving = status[item.id] === 'saving'
+        const canSelfClaim = splitMethod === 'item_claim' && !item.assigned && !settled
+        const assignKey: PickKey = `assign:${item.id}`
+        const mineKey: PickKey = `mine:${item.id}`
+        const savedUnits: Units = Object.fromEntries(item.claims.map(c => [c.userId, c.units ?? 1]))
+        // Units as shown: the managers' pending pick, else my pending count on top of the saved claims.
+        const myPick = picking[mineKey] as number | undefined
+        const shownUnits: Units = (picking[assignKey] as Units | undefined) ??
+          (myPick !== undefined ? { ...savedUnits, [currentUserId]: myPick } : savedUnits)
+        const left = item.quantity - sum(withoutZeros(shownUnits))
+        const current = item.claims.map(c => c.userId)
+        const picked = (picking[assignKey] as string[] | undefined) ?? current
+        const statusLine = (
+          <p className="note claim-assign__status" aria-live="polite">
+            {status[item.id] ? t(status[item.id] === 'saving' ? 'claim.saving' : 'claim.saved') : ''}
+          </p>
+        )
         return (
           <article key={item.id} className={mine ? 'claim-item claim-item--mine' : 'claim-item'}>
             <div className="expense-row">
-              <span>{item.quantity > 1 ? `${item.description} ×${item.quantity}` : item.description}</span>
+              <span>{item.description}</span>
               <strong>{money(item.totalCents)}</strong>
             </div>
+            {byUnit && (
+              <p className="note claim-item__units">
+                <span>{t('claim.unitPrice', { count: item.quantity, price: money(Math.round(item.totalCents / item.quantity)) })}</span>
+                <span aria-live="polite">{left > 0 ? t('claim.unitsLeft', { left, count: item.quantity }) : t('claim.noneLeft')}</span>
+              </p>
+            )}
             <p className="note">
               {item.claims.length === 0
                 ? t('claim.nobody')
@@ -201,8 +274,8 @@ export function ClaimItemsPage({
                   ? t('claim.assignedTo', { names })
                   : t('claim.claimedBy', { names })}
             </p>
-            {item.claims.length > 1 && <p className="note">{sharedEachText(t, money, item.totalCents, item.claims.length)}</p>}
-            {splitMethod === 'item_claim' && !item.assigned && !settled && (
+            {!byUnit && item.claims.length > 1 && <p className="note">{sharedEachText(t, money, item.totalCents, item.claims.length)}</p>}
+            {canSelfClaim && !byUnit && (
               <button
                 type="button"
                 className={mine ? 'chip' : 'chip primary'}
@@ -213,31 +286,65 @@ export function ClaimItemsPage({
                 {mine ? t('claim.unclaim') : t('claim.claimForMe')}
               </button>
             )}
+            {canSelfClaim && byUnit && (
+              <div className="claim-assign">
+                <span className="field__label">{t('claim.howMany')}</span>
+                <UnitStepper
+                  label={t('claim.unitsMine', { item: item.description })}
+                  value={shownUnits[currentUserId] ?? 0}
+                  max={(shownUnits[currentUserId] ?? 0) + left}
+                  disabled={locked || claimingClosed}
+                  pending={saving}
+                  onChange={n => pick(mineKey, item.id, n)}
+                >
+                  {money(shareOf(item, shownUnits, currentUserId))}
+                </UnitStepper>
+                {!manage && statusLine}
+              </div>
+            )}
             {manage && (
               <div className="claim-assign">
                 <span id={`who-had-${item.id}`} className="field__label">{t('claim.whoHad', { item: item.description })}</span>
-                <div className="who-had__people" role="group" aria-labelledby={`who-had-${item.id}`}>
-                  {participants.map(p => {
-                    const on = picked.includes(p.id)
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="chip toggle-chip"
-                        aria-pressed={on}
-                        disabled={locked}
-                        aria-disabled={saving || undefined}
-                        onClick={() => togglePick(item.id, current, p.id)}
-                      >
-                        {on && <CheckIcon />}
-                        {p.name}
-                      </button>
-                    )
-                  })}
-                </div>
-                <p className="note claim-assign__status" aria-live="polite">
-                  {status[item.id] ? t(status[item.id] === 'saving' ? 'claim.saving' : 'claim.saved') : ''}
-                </p>
+                {byUnit ? (
+                  <div className="unit-list" role="group" aria-labelledby={`who-had-${item.id}`}>
+                    {participants.map(p => (
+                      <div key={p.id} className="unit-row">
+                        <span className="unit-row__name">{p.name}</span>
+                        <UnitStepper
+                          label={t('claim.unitsFor', { name: p.name, item: item.description })}
+                          value={shownUnits[p.id] ?? 0}
+                          max={(shownUnits[p.id] ?? 0) + left}
+                          disabled={locked}
+                          pending={saving}
+                          onChange={n => pick(assignKey, item.id, { ...shownUnits, [p.id]: n })}
+                        >
+                          {money(shareOf(item, shownUnits, p.id))}
+                        </UnitStepper>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="who-had__people" role="group" aria-labelledby={`who-had-${item.id}`}>
+                    {participants.map(p => {
+                      const on = picked.includes(p.id)
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="chip toggle-chip"
+                          aria-pressed={on}
+                          disabled={locked}
+                          aria-disabled={saving || undefined}
+                          onClick={() => pick(assignKey, item.id, on ? picked.filter(id => id !== p.id) : [...picked, p.id])}
+                        >
+                          {on && <CheckIcon />}
+                          {p.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {statusLine}
               </div>
             )}
           </article>

@@ -710,7 +710,8 @@ input[type='radio']:focus-visible {
 .item-row {
   clear: both; /* the floated legend may sit right before it when the photo pickers are shown above the form */
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 6.5rem 48px;
+  /* Name on its own line; then quantity, price (the line total) and remove. */
+  grid-template-columns: 4.5rem minmax(0, 1fr) 48px;
   column-gap: 12px;
   align-items: end;
   padding: 4px 0;
@@ -1265,6 +1266,85 @@ input[type='radio']:focus-visible {
 
 .receipt .expense-row + .note {
   margin: 4px 0 0;
+}
+
+/* ---------- Claim by unit ---------- */
+/* "2 × RM 3.50" and "1 of 2 left" on one line under a quantity > 1 item. */
+.claim-item__units {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+/* One row per person: name, then "− 2 +" and their share. */
+.unit-list {
+  display: grid;
+  gap: 4px;
+  justify-self: stretch;
+  margin-top: 6px;
+}
+
+.claim-assign > .unit-list {
+  margin-top: 0;
+}
+
+.unit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+}
+
+.unit-row__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.stepper__button {
+  width: 48px;
+  padding: 0;
+  border-width: 1px;
+  border-color: var(--rose-deep);
+  border-radius: 999px;
+  background: var(--paper);
+}
+
+.stepper__button[aria-disabled='true'] {
+  border-color: var(--rose);
+  color: var(--ink-muted);
+  cursor: default;
+}
+
+.stepper__button[aria-disabled='true']:hover:not(:disabled),
+.stepper__button[aria-disabled='true']:active:not(:disabled) {
+  background: var(--paper);
+  color: var(--ink-muted);
+}
+
+.stepper__value {
+  min-width: 2ch;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  text-align: center;
+}
+
+.stepper__share {
+  min-width: 5.5em;
+  margin-left: 4px;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  text-align: right;
 }
 
 /* ---------- Settlement ---------- */

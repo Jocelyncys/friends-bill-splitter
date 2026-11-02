@@ -118,7 +118,7 @@ test('bilingual screens fit the viewport; guided, active and attention states re
         await page.locator('select:has(option[value="items"])').selectOption('host_assignment')
         await expect(page.locator('.who-had')).toHaveCount(2)
         await page.locator('.who-had').first().getByRole('button').first().click()
-        await page.locator('.item-row').nth(0).locator('input').nth(1).fill('12.34')
+        await page.locator('.item-row').nth(0).locator('input[inputmode="decimal"]').fill('12.34')
         await page.getByLabel(amountPaid[lang]).fill('10.00')
         await expect(page.locator('.group__hint')).toContainText('−')
         await expectNoOverflow(page)

@@ -168,7 +168,10 @@
         "items": "friends claim items",
         "host_assignment": "you assign items"
       }
-    }
+    },
+    "itemN": "Item {{n}}",
+    "qty": "Qty",
+    "itemQuantity": "Item {{n}} qty"
   },
   "expenseError": {
     "payer_not_allowed": "You cannot record an expense paid by someone else.",
@@ -233,7 +236,16 @@
     "paysLine": "Items {{items}} → pays {{pays}}",
     "paysWaiting": "What each person pays, discounts and tax included, appears once every item has someone.",
     "saving": "Saving…",
-    "saved": "Saved"
+    "saved": "Saved",
+    "less": "One less",
+    "more": "One more",
+    "unitPrice": "{{count}} × {{price}}",
+    "unitsLeft": "{{left}} of {{count}} left",
+    "noneLeft": "None left",
+    "unitsFor": "Units {{name}} had for {{item}}",
+    "unitsMine": "Units you had for {{item}}",
+    "howMany": "How many did you have?",
+    "nameUnits": "{{name}} ×{{count}}"
   },
   "actionError": {
     "item_not_found": "This item could not be found.",

@@ -168,7 +168,10 @@
         "items": "朋友自行认领",
         "host_assignment": "由你分配项目"
       }
-    }
+    },
+    "itemN": "项目 {{n}}",
+    "qty": "数量",
+    "itemQuantity": "项目 {{n}} 数量"
   },
   "expenseError": {
     "payer_not_allowed": "你不能记录由他人支付的开销。",
@@ -233,7 +236,16 @@
     "paysLine": "项目 {{items}} → 实付 {{pays}}",
     "paysWaiting": "每个项目都有人后，会显示计入折扣和税费后的每人实付金额。",
     "saving": "保存中…",
-    "saved": "已保存"
+    "saved": "已保存",
+    "less": "减一份",
+    "more": "加一份",
+    "unitPrice": "{{count}} × {{price}}",
+    "unitsLeft": "共 {{count}} 份，剩 {{left}} 份",
+    "noneLeft": "已全部认领",
+    "unitsFor": "{{name}} 的 {{item}} 份数",
+    "unitsMine": "你的 {{item}} 份数",
+    "howMany": "你吃了几份？",
+    "nameUnits": "{{name}} ×{{count}}"
   },
   "actionError": {
     "item_not_found": "找不到这个项目。",

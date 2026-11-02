@@ -20,6 +20,8 @@ import {
   draftFromPayload,
   itemCentsByPerson,
   parseMoneyToCents,
+  parseQuantity,
+  unitsTaken,
   validateDraft,
   type DraftItem,
   type DraftSplitMethod,
@@ -31,6 +33,8 @@ import { recognizeReceipt } from '../ocr/ocrEngine'
 import { PaysList } from './PaysList'
 import { parseReceipt } from './receiptParser'
 import { paysRows, sharedEachText, signedMoney } from './shareText'
+import { UnitStepper } from './UnitStepper'
+import { itemShares } from '../../domain/allocation'
 
 const METHODS: DraftSplitMethod[] = ['equal', 'custom', 'items', 'host_assignment']
 
@@ -44,7 +48,7 @@ type OcrState = 'idle' | 'recognizing' | 'review' | 'failed'
 
 const isUntouched = (items: DraftItem[]) => items.length === 1 && items[0].description === '' && items[0].price === ''
 
-const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', price: '', assigneeIds: [] })
+const blankItem = (): DraftItem => ({ id: crypto.randomUUID(), description: '', quantity: '1', price: '', assigneeIds: [] })
 
 const isItemized = (method: DraftSplitMethod) => method === 'items' || method === 'host_assignment'
 
@@ -122,7 +126,9 @@ export function ExpenseEditorPage() {
         </main>
       )
     }
-    return <EditorForm key={`edit:${editId}`} home={home} saved={result.payload} claims={result.claims} editing />
+    return (
+      <EditorForm key={`edit:${editId}`} home={home} saved={result.payload} claims={result.claims} claimUnits={result.claimUnits} editing />
+    )
   }
   if (draftId && saved?.id !== draftId) return <p role="status">{t('common.loading')}</p>
   return <EditorForm key={draftId ?? 'new'} home={home} saved={draftId ? saved?.payload ?? null : null} />
@@ -135,9 +141,11 @@ type EditorProps = {
   editing?: boolean
   /** item id -> self-claimers; shown read-only, and such items never get allocations from this form. */
   claims?: Record<string, string[]>
+  /** item id -> self-claimer -> units, on quantity > 1 items. */
+  claimUnits?: Record<string, Record<string, number>>
 }
 
-function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) {
+function EditorForm({ home, saved, editing = false, claims = {}, claimUnits = {} }: EditorProps) {
   const labels = displayNames(home.members)
   const nameOf = (userId: string, fallback: string) => labels.get(userId) ?? fallback
   const { t, i18n } = useTranslation()
@@ -215,7 +223,13 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
       if (run !== scanRun.current) return
       const parsed = parseReceipt(lines)
       if (parsed.items.length === 0) throw new Error('no items')
-      const scanned = parsed.items.map(item => ({ id: crypto.randomUUID(), description: item.description, price: centsToText(item.totalCents), assigneeIds: [] }))
+      const scanned = parsed.items.map(item => ({
+        id: crypto.randomUUID(),
+        description: item.description,
+        quantity: '1',
+        price: centsToText(item.totalCents),
+        assigneeIds: [],
+      }))
       // The receipt's Total line is the amount paid. It only describes the scanned items, so it fills Amount paid
       // when they replace an empty form and differ from it.
       const scannedCents = parsed.items.reduce((sum, item) => sum + item.totalCents, 0)
@@ -239,6 +253,14 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
   const toggleAssignee = (index: number, userId: string) => {
     const ids = draft.items[index].assigneeIds
     setItem(index, { assigneeIds: ids.includes(userId) ? ids.filter(id => id !== userId) : [...ids, userId] })
+  }
+  // Quantity > 1: a person with units is an assignee; 0 units takes them off the item.
+  const setUnits = (index: number, userId: string, units: number) => {
+    const item = draft.items[index]
+    const others = item.assigneeIds.filter(id => id !== userId)
+    const nextUnits = Object.fromEntries(others.map(id => [id, item.units?.[id] ?? 1]))
+    if (units > 0) nextUnits[userId] = units
+    setItem(index, { assigneeIds: units > 0 ? [...others, userId] : others, units: nextUnits })
   }
   const money = (cents: number) => formatMoney(cents, home.event.currency, i18n.language)
   const fieldError = (key: keyof FormErrors) => (errors[key] ? <p className="field-error">{t(`editor.errors.${errors[key]}`)}</p> : null)
@@ -274,7 +296,11 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
   // Self-claimed items (friends-claim) count for their claimers: the server splits them with the same equal rule.
   const personItems =
     paidDifference !== 0
-      ? itemCentsByPerson(draft.items.map(item => (item.assigneeIds.length > 0 ? item : { ...item, assigneeIds: claims[item.id] ?? [] })))
+      ? itemCentsByPerson(
+          draft.items.map(item =>
+            item.assigneeIds.length > 0 ? item : { ...item, assigneeIds: claims[item.id] ?? [], units: claimUnits[item.id] ?? {} },
+          ),
+        )
       : null
   const pays = personItems && paidCents !== null ? paysRows(paidCents, personItems, people) : []
 
@@ -374,49 +400,110 @@ function EditorForm({ home, saved, editing = false, claims = {} }: EditorProps) 
             {!scanFirst && photoPicks}
             {receiptUrl && <img className="receipt-preview" src={receiptUrl} alt={t('editor.scan.previewAlt')} />}
             <p className="group__status" aria-live="polite">{ocrState === 'idle' ? '' : ocrMessage}</p>
-            {draft.items.map((item, index) => (
-              <div key={item.id} className="item-row">
-                <label className="field">
-                  <span className="field__label">{t('editor.itemDescription', { n: index + 1 })}</span>
-                  <input value={item.description} onChange={e => setItem(index, { description: e.target.value })} autoComplete="off" />
-                </label>
-                <label className="field">
-                  <span className="field__label">{t('editor.itemPrice', { n: index + 1 })}</span>
-                  <input inputMode="decimal" value={item.price} onChange={e => setItem(index, { price: e.target.value })} autoComplete="off" />
-                </label>
-                {draft.items.length > 1 ? (
-                  <button type="button" className="quiet danger icon-button" onClick={() => set('items', draft.items.filter((_, i) => i !== index))}>
-                    <TrashIcon />
-                    <span className="sr-only">{t('editor.removeItem', { n: index + 1 })}</span>
-                  </button>
-                ) : <span aria-hidden="true" />}
-                {draft.splitMethod === 'host_assignment' && (
-                  <div className="who-had" role="group" aria-labelledby={`${formId}-who-${item.id}`}>
-                    <span id={`${formId}-who-${item.id}`} className="field__label">{t('editor.whoHad', { n: index + 1 })}</span>
-                    <div className="who-had__people">
-                      {home.members.map(m => {
-                        const on = item.assigneeIds.includes(m.userId)
-                        return (
-                          <button key={m.userId} type="button" className="chip toggle-chip" aria-pressed={on} onClick={() => toggleAssignee(index, m.userId)}>
-                            {on && <CheckIcon />}
-                            {nameOf(m.userId, m.displayName)}
-                          </button>
-                        )
-                      })}
+            {draft.items.map((item, index) => {
+              const quantity = parseQuantity(item.quantity)
+              const priceCents = parseMoneyToCents(item.price)
+              const byUnit = quantity !== null && quantity > 1
+              const itemName = item.description.trim() || t('editor.itemN', { n: index + 1 })
+              const units = byUnit ? Object.fromEntries(item.assigneeIds.map(id => [id, item.units?.[id] ?? 1])) : {}
+              const left = byUnit ? quantity - unitsTaken(units) : 0
+              const shares = byUnit && priceCents !== null && left >= 0 ? itemShares({ totalCents: priceCents, quantity }, item.assigneeIds, units) : {}
+              return (
+                <div key={item.id} className="item-row">
+                  <label className="field field--wide">
+                    <span className="field__label">{t('editor.itemDescription', { n: index + 1 })}</span>
+                    <input value={item.description} onChange={e => setItem(index, { description: e.target.value })} autoComplete="off" />
+                  </label>
+                  <label className="field">
+                    <span className="field__label">{t('editor.qty')}</span>
+                    <input
+                      aria-label={t('editor.itemQuantity', { n: index + 1 })}
+                      inputMode="numeric"
+                      value={item.quantity ?? '1'}
+                      onChange={e => setItem(index, { quantity: e.target.value })}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field__label">{t('editor.itemPrice', { n: index + 1 })}</span>
+                    <input inputMode="decimal" value={item.price} onChange={e => setItem(index, { price: e.target.value })} autoComplete="off" />
+                  </label>
+                  {draft.items.length > 1 ? (
+                    <button type="button" className="quiet danger icon-button" onClick={() => set('items', draft.items.filter((_, i) => i !== index))}>
+                      <TrashIcon />
+                      <span className="sr-only">{t('editor.removeItem', { n: index + 1 })}</span>
+                    </button>
+                  ) : <span aria-hidden="true" />}
+                  {byUnit && priceCents !== null && (
+                    <p className="note">{t('claim.unitPrice', { count: quantity, price: money(Math.round(priceCents / quantity)) })}</p>
+                  )}
+                  {draft.splitMethod === 'host_assignment' && (
+                    <div className="who-had" role="group" aria-labelledby={`${formId}-who-${item.id}`}>
+                      <span id={`${formId}-who-${item.id}`} className="field__label">{t('editor.whoHad', { n: index + 1 })}</span>
+                      {byUnit ? (
+                        <>
+                          <div className="unit-list">
+                            {home.members.map(m => {
+                              const name = nameOf(m.userId, m.displayName)
+                              const value = units[m.userId] ?? 0
+                              return (
+                                <div key={m.userId} className="unit-row">
+                                  <span className="unit-row__name">{name}</span>
+                                  <UnitStepper
+                                    label={t('claim.unitsFor', { name, item: itemName })}
+                                    value={value}
+                                    max={value + Math.max(left, 0)}
+                                    onChange={n => setUnits(index, m.userId, n)}
+                                  >
+                                    {money(shares[m.userId] ?? 0)}
+                                  </UnitStepper>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <p className="note" aria-live="polite">
+                            {left > 0 ? t('claim.unitsLeft', { left, count: quantity }) : t('claim.noneLeft')}
+                          </p>
+                        </>
+                      ) : (
+                        <div className="who-had__people">
+                          {home.members.map(m => {
+                            const on = item.assigneeIds.includes(m.userId)
+                            return (
+                              <button key={m.userId} type="button" className="chip toggle-chip" aria-pressed={on} onClick={() => toggleAssignee(index, m.userId)}>
+                                {on && <CheckIcon />}
+                                {nameOf(m.userId, m.displayName)}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
-                {draft.splitMethod === 'items' && claims[item.id] && (
-                  <p className="note">{t('claim.claimedBy', { names: claims[item.id].map(id => nameOf(id, '?')).join(', ') })}</p>
-                )}
-                {draft.splitMethod === 'items' && item.assigneeIds.length > 0 && (
-                  <p className="note">{t('claim.assignedTo', { names: item.assigneeIds.map(id => nameOf(id, '?')).join(', ') })}</p>
-                )}
-                {item.assigneeIds.length > 1 && parseMoneyToCents(item.price) !== null && (
-                  <p className="note">{sharedEachText(t, money, parseMoneyToCents(item.price) as number, item.assigneeIds.length)}</p>
-                )}
-              </div>
-            ))}
+                  )}
+                  {draft.splitMethod === 'items' && claims[item.id] && (
+                    <p className="note">
+                      {t('claim.claimedBy', {
+                        names: claims[item.id]
+                          .map(id => (byUnit ? t('claim.nameUnits', { name: nameOf(id, '?'), count: claimUnits[item.id]?.[id] ?? 1 }) : nameOf(id, '?')))
+                          .join(', '),
+                      })}
+                    </p>
+                  )}
+                  {draft.splitMethod === 'items' && item.assigneeIds.length > 0 && (
+                    <p className="note">
+                      {t('claim.assignedTo', {
+                        names: item.assigneeIds
+                          .map(id => (byUnit ? t('claim.nameUnits', { name: nameOf(id, '?'), count: units[id] ?? 1 }) : nameOf(id, '?')))
+                          .join(', '),
+                      })}
+                    </p>
+                  )}
+                  {!byUnit && item.assigneeIds.length > 1 && priceCents !== null && (
+                    <p className="note">{sharedEachText(t, money, priceCents, item.assigneeIds.length)}</p>
+                  )}
+                </div>
+              )
+            })}
             <div className="group__actions">
               <button type="button" className="add-row" onClick={() => set('items', [...draft.items, blankItem()])}><PlusIcon />{t('editor.addItem')}</button>
             </div>

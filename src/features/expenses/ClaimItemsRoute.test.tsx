@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   claimItem: vi.fn(),
   unclaimItem: vi.fn(),
   assignItem: vi.fn(),
+  claimItemUnits: vi.fn(),
+  assignItemUnits: vi.fn(),
   setClaimingClosed: vi.fn(),
 }))
 vi.mock('../events/eventRepository', () => ({ createEventRepository: () => ({ getEventHome: mocks.getEventHome }) }))
@@ -109,6 +111,31 @@ describe('ClaimItemsRoute', () => {
     await vi.waitFor(() => expect(mocks.assignItem).toHaveBeenCalledWith('i2', ['x']))
     expect(await screen.findByText('Saved')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it('saves my units of a quantity 2 item and shows the server amounts', async () => {
+    const tehAis = { ...claims, totalCents: 700, items: [{ id: 't1', description: 'Teh Ais', quantity: 2, totalCents: 700, sortOrder: 0 }] }
+    mocks.getExpenseClaims.mockResolvedValueOnce(tehAis).mockResolvedValue({
+      ...tehAis,
+      allocations: [{ id: 'a1', itemId: 't1', participantUserId: 'me', amountCents: 350, source: 'self_claim', units: 1 }],
+    })
+    mocks.claimItemUnits.mockResolvedValue(undefined)
+    renderRoute()
+    const mine = await screen.findByRole('group', { name: 'Units you had for Teh Ais' })
+    await userEvent.click(within(mine).getByRole('button', { name: 'One more' }))
+    await vi.waitFor(() => expect(mocks.claimItemUnits).toHaveBeenCalledWith('t1', 1))
+    expect(await screen.findByText('Claimed by: Mia ×1')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2 left')).toBeInTheDocument()
+  })
+
+  it('managers save who had how many as member units', async () => {
+    mocks.getExpenseClaims.mockResolvedValue({
+      ...claims, creatorUserId: 'me', items: [{ id: 't1', description: 'Teh Ais', quantity: 2, totalCents: 700, sortOrder: 0 }],
+    })
+    mocks.assignItemUnits.mockResolvedValue(undefined)
+    renderRoute()
+    await userEvent.click(within(await screen.findByRole('group', { name: 'Units Xan had for Teh Ais' })).getByRole('button', { name: 'One more' }))
+    await vi.waitFor(() => expect(mocks.assignItemUnits).toHaveBeenCalledWith('t1', [{ memberId: 'x', units: 1 }]))
   })
 
   it('shows the net of an older expense with several adjustment rows as one line', async () => {

@@ -70,7 +70,7 @@ export function ClaimItemsRoute() {
       description: item.description,
       quantity: item.quantity,
       totalCents: item.totalCents,
-      claims: rows.map(a => ({ userId: a.participantUserId, amountCents: a.amountCents })),
+      claims: rows.map(a => ({ userId: a.participantUserId, amountCents: a.amountCents, units: a.units })),
       assigned: rows.some(a => a.source !== 'self_claim'),
     }
   })
@@ -93,13 +93,13 @@ export function ClaimItemsRoute() {
     }
   }
   const repository = createClaimRepository()
-  // Chip taps save on their own (no global busy lock), and resolve only after the fresh claims are on screen, so
-  // the chips never flash back to the old state.
-  const assign = async (itemId: string, memberIds: string[]): Promise<boolean> => {
+  // Chip and stepper taps save on their own (no global busy lock), and resolve only after the fresh claims are on
+  // screen, so the controls never flash back to the old state.
+  const saveItem = async (itemId: string, action: () => Promise<void>): Promise<boolean> => {
     setError(previous => (previous?.itemId === itemId ? null : previous))
     let ok = true
     try {
-      await repository.assignItem(itemId, memberIds)
+      await action()
     } catch (failure) {
       ok = false
       setError({ code: failure instanceof ActionError ? failure.code : 'action_failed', itemId })
@@ -136,7 +136,13 @@ export function ClaimItemsRoute() {
       onUnclaim={itemId => void run(() => repository.unclaimItem(itemId))}
       adjustmentCents={claims.adjustments.reduce((sum, adj) => sum + adj.amountCents, 0)}
       totalCents={claims.totalCents}
-      onAssign={assign}
+      onAssign={(itemId, memberIds) => saveItem(itemId, () => repository.assignItem(itemId, memberIds))}
+      onClaimUnits={(itemId, units) => saveItem(itemId, () => repository.claimItemUnits(itemId, units))}
+      onAssignUnits={(itemId, units) =>
+        saveItem(itemId, () =>
+          repository.assignItemUnits(itemId, Object.entries(units).map(([memberId, n]) => ({ memberId, units: n }))),
+        )
+      }
       onToggleClosed={closed => void run(() => repository.setClaimingClosed(expenseId, closed))}
     />
   )

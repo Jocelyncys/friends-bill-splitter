@@ -762,3 +762,78 @@ describe('ExpenseEditorPage (saved expense)', () => {
     })
   })
 })
+
+describe('ExpenseEditorPage (quantity and claim by unit)', () => {
+  const save = () => userEvent.click(screen.getByRole('button', { name: 'Save expense' }))
+  async function startHostAssign() {
+    renderEditor()
+    await userEvent.type(await screen.findByLabelText('Description'), 'Kopitiam')
+    await openMore()
+    await userEvent.selectOptions(screen.getByLabelText('Split method'), 'host_assignment')
+    await userEvent.type(screen.getByLabelText('Item 1 name'), 'Teh Ais')
+    await userEvent.type(screen.getByLabelText('Item 1 price'), '7.00')
+    const qty = screen.getByLabelText('Item 1 qty')
+    await userEvent.clear(qty)
+    await userEvent.type(qty, '2')
+  }
+  const stepper = (name: string) => screen.getByRole('group', { name: `Units ${name} had for Teh Ais` })
+
+  it('shows the unit price and a stepper per person, then saves the units', async () => {
+    saveExpense.mockResolvedValue({ id: 'x' })
+    await startHostAssign()
+    expect(screen.getByText('2 × RM 3.50')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Alice', pressed: false })).not.toBeInTheDocument()
+    expect(screen.getByText('2 of 2 left')).toBeInTheDocument()
+    await userEvent.click(within(stepper('Alice')).getByRole('button', { name: 'One more' }))
+    await userEvent.click(within(stepper('Bob')).getByRole('button', { name: 'One more' }))
+    expect(screen.getByText('None left')).toBeInTheDocument()
+    expect(within(stepper('Bob')).getByRole('button', { name: 'One more' })).toHaveAttribute('aria-disabled', 'true')
+    await save()
+    await waitFor(() => expect(saveExpense).toHaveBeenCalledTimes(1))
+    expect(saveExpense.mock.calls[0][0]).toMatchObject({
+      totalCents: 700,
+      items: [{ description: 'Teh Ais', quantity: 2, totalCents: 700 }],
+      allocations: [
+        { participantUserId: 'u-a', amountCents: 350, units: 1 },
+        { participantUserId: 'u-b', amountCents: 350, units: 1 },
+      ],
+    })
+  })
+
+  it('asks for every unit to have someone before saving', async () => {
+    await startHostAssign()
+    await userEvent.click(within(stepper('Alice')).getByRole('button', { name: 'One more' }))
+    await save()
+    expect(await screen.findByText('Give every unit of each item to someone.')).toBeInTheDocument()
+    expect(saveExpense).not.toHaveBeenCalled()
+  })
+
+  it('reopens a saved quantity 3 item with its units', async () => {
+    getExpense.mockResolvedValue({
+      creatorUserId: 'u-a',
+      claims: {},
+      claimUnits: {},
+      payload: {
+        id: 'x-4', eventId: 'ev-1', payerUserId: 'u-a', description: 'Kopitiam', category: 'food', expenseDate: '2026-10-20',
+        totalCents: 1000, splitMethod: 'host_assignment',
+        items: [{ id: 'it-1', description: 'Teh Ais', quantity: 3, totalCents: 1000, sortOrder: 0 }],
+        allocations: [
+          { itemId: 'it-1', participantUserId: 'u-a', amountCents: 667, units: 2 },
+          { itemId: 'it-1', participantUserId: 'u-b', amountCents: 333, units: 1 },
+        ],
+        adjustments: [],
+      },
+    })
+    saveExpense.mockResolvedValue({ id: 'x-4' })
+    renderEditor('/event/ev-1/expenses/x-4/edit')
+    expect(await screen.findByLabelText('Item 1 qty')).toHaveValue('3')
+    expect(within(stepper('Alice')).getByText('2')).toBeInTheDocument()
+    expect(within(stepper('Alice')).getByText('RM 6.67')).toBeInTheDocument()
+    await save()
+    await waitFor(() => expect(saveExpense).toHaveBeenCalledTimes(1))
+    expect(saveExpense.mock.calls[0][0].allocations).toEqual([
+      { itemId: 'it-1', participantUserId: 'u-a', amountCents: 667, units: 2 },
+      { itemId: 'it-1', participantUserId: 'u-b', amountCents: 333, units: 1 },
+    ])
+  })
+})
