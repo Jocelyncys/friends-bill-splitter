@@ -10,7 +10,8 @@ async function expectNoOverflow(page: Page) {
   // grows to fit overflowing content, which would hide the overflow being checked for.
   const viewport = page.viewportSize()?.width ?? 0
   // Let transitions settle first: a chevron mid-rotation briefly sticks out of its button.
-  await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)))
+  // A transition cut short rejects `finished` with AbortError; that also means it has settled.
+  await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished.catch(() => {}))))
   const problems = await page.evaluate(viewport => {
     const found: string[] = []
     const width = Math.min(window.innerWidth, viewport)
