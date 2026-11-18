@@ -13,6 +13,7 @@ export function HomePage() {
         <button type="button" className="primary" onClick={() => navigate('/new/single_bill')}><ReceiptIcon />{t('home.singleBill')}</button>
         <button type="button" onClick={() => navigate('/new/trip_event')}><PeopleIcon />{t('home.tripEvent')}</button>
       </div>
+      <p className="app-version">v{__APP_VERSION__} · {__APP_COMMIT__}</p>
     </main>
   )
 }

@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import react from '@vitejs/plugin-react'
 import { loadEnv, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -18,9 +20,24 @@ function cspPlugin(supabaseUrl: string | undefined): Plugin {
   }
 }
 
+// Shown on the start page so people can tell which build they have. CI provides GITHUB_SHA;
+// local builds ask git and fall back to 'dev'.
+function commitId(): string {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7)
+  try {
+    return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  } catch {
+    return 'dev'
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(JSON.parse(readFileSync('package.json', 'utf8')).version),
+    __APP_COMMIT__: JSON.stringify(commitId()),
+  },
   plugins: [
     react(),
     cspPlugin(loadEnv(mode, process.cwd(), 'VITE_').VITE_SUPABASE_URL),
