@@ -4,13 +4,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm run lint
       - run: npm test -- --run
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: public/ocr-models
           key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.mjs') }}
@@ -20,8 +20,8 @@ jobs:
   supabase:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npx supabase start
@@ -32,8 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: npm }
       - run: npm ci
       # Test-only: every browser context is a new anonymous user. Edits this runner's checkout only;
@@ -46,7 +46,7 @@ jobs:
       - name: Point the app at the local Supabase
         run: |
           npx supabase status -o env | grep -E '^(API_URL|PUBLISHABLE_KEY)=' | sed -e 's/^API_URL=/VITE_SUPABASE_URL=/' -e 's/^PUBLISHABLE_KEY=/VITE_SUPABASE_PUBLISHABLE_KEY=/' -e 's/"//g' >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: public/ocr-models
           key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.mjs') }}
@@ -55,7 +55,7 @@ jobs:
       # The list reporter prints retried-then-passed tests under "flaky" in its summary; the html report keeps them too.
       - run: npx playwright test
       - if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
