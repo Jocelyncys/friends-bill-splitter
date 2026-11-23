@@ -339,6 +339,8 @@ button:disabled {
   justify-content: space-between;
   gap: 12px;
   padding: 12px var(--gutter);
+  /* viewport-fit=cover: stay clear of a status bar / notch drawn over the page. */
+  padding-top: calc(12px + env(safe-area-inset-top));
   border-bottom: 1px solid var(--rose);
 }
 
