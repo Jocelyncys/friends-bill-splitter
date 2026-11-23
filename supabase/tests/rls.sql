@@ -1,5 +1,5 @@
 begin;
-select plan(478);
+select plan(511);
 
 select has_table('public', 'events', 'events table exists');
 select has_table('public', 'event_members', 'event_members table exists');
@@ -181,11 +181,11 @@ reset role;
 -- Task 4: create_event / join_event RPCs -----------------------------------
 select is((select has_function_privilege('anon', 'public.create_event(text, public.event_mode, text, text)', 'execute')),
   false, 'anon cannot execute create_event');
-select is((select has_function_privilege('anon', 'public.join_event(text, text)', 'execute')),
+select is((select has_function_privilege('anon', 'public.join_event(text, text, uuid)', 'execute')),
   false, 'anon cannot execute join_event');
 select is((select has_function_privilege('authenticated', 'public.create_event(text, public.event_mode, text, text)', 'execute')),
   true, 'authenticated can execute create_event');
-select is((select has_function_privilege('authenticated', 'public.join_event(text, text)', 'execute')),
+select is((select has_function_privilege('authenticated', 'public.join_event(text, text, uuid)', 'execute')),
   true, 'authenticated can execute join_event');
 
 create temp table rpc_result (event_id uuid, invite_token text);
@@ -2071,6 +2071,143 @@ set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","r
 select throws_ok($$select public.assign_item_units('b4100000-0000-0000-0000-000000000061', '[{"member_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","units":2}]')$$,
   '22023', 'event_not_open', 'units cannot be assigned once the event is settled');
 reset role;
+
+-- Host-added people (guests) ------------------------------------------------------------------
+-- Event G (open): A owner, C participant. Event H (settled): A owner, C participant, guest Gus.
+select is((select has_function_privilege('anon', 'public.invite_guests(text)', 'execute')),
+  true, 'anon can list an invite''s guests (the join page, before signing in)');
+select is((select count(*)::int from unnest(array['public.add_guest_member(uuid, text)', 'public.remove_guest_member(uuid, uuid)']) as f(sig)
+  where has_function_privilege('anon', f.sig, 'execute')), 0, 'anon cannot add or remove guests');
+select is((select count(*)::int from unnest(array['public.add_guest_member(uuid, text)', 'public.remove_guest_member(uuid, uuid)']) as f(sig)
+  where has_function_privilege('authenticated', f.sig, 'execute')), 2, 'authenticated can call the guest RPCs');
+
+insert into auth.users (id, instance_id, aud, role)
+values ('a9999999-9999-9999-9999-999999999999', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated');
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('a9e00000-0000-0000-0000-000000000001', 'Guests', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  encode(extensions.digest('tokG', 'sha256'), 'hex'));
+insert into public.event_members (event_id, user_id, display_name, role) values
+  ('a9e00000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner'),
+  ('a9e00000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant');
+create function pg_temp.guest(p_name text) returns uuid language sql stable as $$
+  select user_id from public.event_members
+  where event_id = 'a9e00000-0000-0000-0000-000000000001' and is_guest and display_name = p_name $$;
+grant execute on function pg_temp.guest(text) to public;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.add_guest_member('a9e00000-0000-0000-0000-000000000001', 'Chen')$$,
+  '22023', 'not_allowed', 'a participant cannot add people');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd","role":"authenticated"}';
+select throws_ok($$select public.add_guest_member('a9e00000-0000-0000-0000-000000000001', 'Chen')$$,
+  '22023', 'not_allowed', 'a non-member cannot add people');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select throws_ok($$select public.add_guest_member('a9e00000-0000-0000-0000-000000000001', '   ')$$,
+  '22023', 'invalid_display_name', 'a blank guest name is rejected');
+select throws_ok($$select public.add_guest_member('a9e00000-0000-0000-0000-000000000001', repeat('x', 41))$$,
+  '22023', 'invalid_display_name', 'a guest name over 40 characters is rejected');
+select ok(public.add_guest_member('a9e00000-0000-0000-0000-000000000001', '  Chen  ') is not null, 'the owner adds Chen by name');
+select ok(public.add_guest_member('a9e00000-0000-0000-0000-000000000001', 'Dan') is not null, 'the owner adds Dan by name');
+select throws_ok($$select public.set_member_role('a9e00000-0000-0000-0000-000000000001', pg_temp.guest('Chen'), 'cohost')$$,
+  '23514', null, 'a guest can never become a co-host');
+-- The guest paid and shares the bill with the owner: guests work anywhere a member id does.
+select is(public.save_expense(pg_temp.exp('a9a00000-0000-0000-0000-000000000001', pg_temp.guest('Chen'), '1000', 'equal', '[]',
+    jsonb_build_array(pg_temp.al(null, pg_temp.guest('Chen'), 500), pg_temp.al(null, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500)),
+    'a9e00000-0000-0000-0000-000000000001')),
+  'a9a00000-0000-0000-0000-000000000001'::uuid, 'an expense paid by and shared with a guest saves');
+select throws_ok($$select public.remove_guest_member('a9e00000-0000-0000-0000-000000000001', pg_temp.guest('Chen'))$$,
+  '22023', 'member_in_use', 'a guest in an expense cannot be removed');
+select throws_ok($$select public.remove_guest_member('a9e00000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$,
+  '22023', 'not_member', 'remove_guest_member never removes a member who signs in');
+select lives_ok($$select public.remove_guest_member('a9e00000-0000-0000-0000-000000000001', pg_temp.guest('Dan'))$$,
+  'an unused guest can be removed');
+reset role;
+select results_eq($$select display_name, role::text, is_guest from public.event_members
+    where event_id = 'a9e00000-0000-0000-0000-000000000001' and is_guest$$,
+  $$values ('Chen', 'participant', true)$$, 'Chen is a trimmed participant guest and Dan is gone');
+select ok(not exists(select 1 from auth.users u where u.id = pg_temp.guest('Chen')), 'a guest id is not an auth user');
+select is((select count(*)::int from public.activity_log where event_id = 'a9e00000-0000-0000-0000-000000000001'
+    and action in ('guest_added', 'guest_removed')), 3, 'adding and removing guests is logged');
+
+set local role anon;
+select results_eq($$select display_name from public.invite_guests('tokG')$$, $$values ('Chen'::text)$$,
+  'the invite link lists the event''s guests');
+select is((select count(*)::int from public.invite_guests('not-a-token')), 0, 'a wrong token lists nobody');
+reset role;
+
+-- Taking over a guest on join.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"a9999999-9999-9999-9999-999999999999","role":"authenticated"}';
+select throws_ok($$select public.join_event('tokG', 'Chen', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$,
+  '22023', 'not_member', 'a member who signs in cannot be taken over');
+select throws_ok($$select public.join_event('tokG', 'Chen', gen_random_uuid())$$,
+  '22023', 'not_member', 'an unknown guest id is rejected');
+reset role;
+create temp table chen_id as select pg_temp.guest('Chen') as id;
+grant select on chen_id to public;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"a9999999-9999-9999-9999-999999999999","role":"authenticated"}';
+select lives_ok($$select public.join_event('tokG', ' Chen Real ', (select id from chen_id))$$, 'the real Chen takes over the guest');
+reset role;
+select results_eq($$select user_id::text, display_name, role::text, is_guest from public.event_members
+    where event_id = 'a9e00000-0000-0000-0000-000000000001'
+      and user_id not in ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc')$$,
+  $$values ('a9999999-9999-9999-9999-999999999999', 'Chen Real', 'participant', false)$$,
+  'the guest row now belongs to the joiner, with their name');
+select is((select payer_user_id from public.expenses where id = 'a9a00000-0000-0000-0000-000000000001'),
+  'a9999999-9999-9999-9999-999999999999'::uuid, 'the guest''s payments move to the joiner');
+select results_eq($$select participant_user_id::text, amount_cents from public.allocations
+    where expense_id = 'a9a00000-0000-0000-0000-000000000001' order by 1$$,
+  $$values ('a9999999-9999-9999-9999-999999999999', 500::bigint), ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 500::bigint)$$,
+  'the guest''s shares move to the joiner');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select ok(public.add_guest_member('a9e00000-0000-0000-0000-000000000001', 'Eve') is not null, 'the owner adds Eve');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.join_event('tokG', 'Eve', pg_temp.guest('Eve'))$$,
+  '22023', 'already_member', 'a member cannot also take over a guest');
+reset role;
+
+-- Settled event H: owners/co-hosts mark a guest's transfers for them.
+insert into public.events (id, name, mode, owner_user_id, invite_token_hash)
+values ('a9e00000-0000-0000-0000-000000000002', 'Guests settled', 'single_bill', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hashH');
+insert into public.event_members (event_id, user_id, display_name, role, is_guest) values
+  ('a9e00000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A', 'owner', false),
+  ('a9e00000-0000-0000-0000-000000000002', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'C', 'participant', false),
+  ('a9e00000-0000-0000-0000-000000000002', 'a9b00000-0000-0000-0000-000000000009', 'Gus', 'participant', true);
+update public.events set state = 'settled', settled_at = now() where id = 'a9e00000-0000-0000-0000-000000000002';
+insert into public.settlements (id, event_id, method, confirmed_by)
+values ('a9500000-0000-0000-0000-000000000001', 'a9e00000-0000-0000-0000-000000000002', 'optimized_direct', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+insert into public.settlement_transfers (id, settlement_id, payer_user_id, receiver_user_id, amount_cents, state, ordinal) values
+  ('a9700000-0000-0000-0000-000000000001', 'a9500000-0000-0000-0000-000000000001', 'a9b00000-0000-0000-0000-000000000009', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 100, 'pending', 1),
+  ('a9700000-0000-0000-0000-000000000002', 'a9500000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'a9b00000-0000-0000-0000-000000000009', 200, 'sent', 2),
+  ('a9700000-0000-0000-0000-000000000003', 'a9500000-0000-0000-0000-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 300, 'pending', 3),
+  ('a9700000-0000-0000-0000-000000000004', 'a9500000-0000-0000-0000-000000000001', 'a9b00000-0000-0000-0000-000000000009', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 400, 'pending', 4);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+select lives_ok($$select public.mark_payment_sent('a9700000-0000-0000-0000-000000000001')$$, 'the owner marks a guest''s payment as sent');
+select lives_ok($$select public.confirm_payment_received('a9700000-0000-0000-0000-000000000002')$$, 'the owner confirms a payment to a guest');
+select throws_ok($$select public.mark_payment_sent('a9700000-0000-0000-0000-000000000003')$$,
+  '22023', 'not_allowed', 'the owner cannot mark sent for a member who signs in');
+select throws_ok($$select public.add_guest_member('a9e00000-0000-0000-0000-000000000002', 'Late')$$,
+  '22023', 'event_not_open', 'no guests can be added to a settled event');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}';
+select throws_ok($$select public.mark_payment_sent('a9700000-0000-0000-0000-000000000004')$$,
+  '22023', 'not_allowed', 'a participant cannot act for a guest');
+reset role;
+select results_eq($$select id::text, state::text from public.settlement_transfers
+    where settlement_id = 'a9500000-0000-0000-0000-000000000001' order by ordinal$$,
+  $$values ('a9700000-0000-0000-0000-000000000001', 'sent'), ('a9700000-0000-0000-0000-000000000002', 'confirmed'),
+    ('a9700000-0000-0000-0000-000000000003', 'pending'), ('a9700000-0000-0000-0000-000000000004', 'pending')$$,
+  'only the transfers the owner may act on changed');
 
 select * from finish();
 rollback;

@@ -46,6 +46,9 @@ const ACTION_ERROR_CODES = [
   'invalid_payload',
   'invalid_units',
   'units_exceed_quantity',
+  'invalid_display_name',
+  'member_in_use',
+  'already_member',
 ] as const
 
 export type ActionErrorCode = (typeof ACTION_ERROR_CODES)[number] | 'not_authenticated' | 'expense_not_found' | 'action_failed'

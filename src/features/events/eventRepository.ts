@@ -2,11 +2,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import type { EventMode, EventRole, EventState } from '../../domain/types'
 import { EXPENSE_SUMMARY_COLUMNS, toExpenseSummary, type ExpenseRow, type ExpenseSummary } from '../expenses/expenseRepository'
-import { callAction } from '../expenses/claimRepository'
+import { ActionError, callAction, toActionErrorCode } from '../expenses/claimRepository'
 
 export type CreateEventInput = { name: string; mode: EventMode; currency: 'MYR'; displayName: string }
 
-export type EventMember = { userId: string; displayName: string; role: EventRole }
+/** isGuest: added by an owner/co-host by name only; never signs in (the host acts for them). */
+export type EventMember = { userId: string; displayName: string; role: EventRole; isGuest?: boolean }
+
+export type InviteGuest = { memberId: string; displayName: string }
 
 export type AttentionItem = { kind: 'unclaimed_items'; expenseId: string; description: string; unallocatedCents: number }
 
@@ -51,14 +54,37 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       rememberName(displayName)
       return { eventId: row.event_id, inviteToken: row.invite_token }
     },
-    async joinEvent(inviteToken: string, displayName: string) {
+    /** guestId: take over that host-added person (their items and payments become the joiner's). */
+    async joinEvent(inviteToken: string, displayName: string, guestId?: string) {
       const name = displayName.trim()
-      const { data, error } = await client.rpc('join_event', { invite_token: inviteToken, display_name: name })
+      const { data, error } = await client.rpc('join_event', {
+        invite_token: inviteToken,
+        display_name: name,
+        ...(guestId ? { guest_id: guestId } : {}),
+      })
       if (error) throw error
       const row = firstRow<{ event_id: string }>(data, 'join_event')
       rememberName(name)
       return row.event_id
     },
+    /** Host-added people of an open event, for the join page; works before signing in. */
+    async listInviteGuests(inviteToken: string): Promise<InviteGuest[]> {
+      const { data, error } = await client.rpc('invite_guests', { invite_token: inviteToken })
+      if (error) throw error
+      return ((data ?? []) as Array<{ member_id: string; display_name: string }>).map(g => ({
+        memberId: g.member_id,
+        displayName: g.display_name,
+      }))
+    },
+    /** Owner/co-host: adds a person by name only; resolves to their member id. Failures throw ActionError. */
+    async addGuest(eventId: string, displayName: string): Promise<string> {
+      const { data, error } = await client.rpc('add_guest_member', { event_id: eventId, display_name: displayName.trim() })
+      if (error) throw new ActionError(toActionErrorCode(error), error)
+      return data as string
+    },
+    /** Owner/co-host: removes a host-added person who is not in any expense. */
+    removeGuest: (eventId: string, memberId: string) =>
+      callAction(client, 'remove_guest_member', { event_id: eventId, member_id: memberId }),
     // Owner only, participant <-> cohost; failures throw ActionError.
     setMemberRole: (eventId: string, memberId: string, role: Exclude<EventRole, 'owner'>) =>
       callAction(client, 'set_member_role', { event_id: eventId, member_id: memberId, role }),
@@ -67,7 +93,7 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       const [session, eventResult, membersResult, expensesResult] = await Promise.all([
         client.auth.getSession(),
         client.from('events').select('id, name, mode, currency, state, revision').eq('id', eventId).maybeSingle(),
-        client.from('event_members').select('user_id, display_name, role').eq('event_id', eventId).order('joined_at'),
+        client.from('event_members').select('user_id, display_name, role, is_guest').eq('event_id', eventId).order('joined_at'),
         client
           .from('expenses')
           .select(`${EXPENSE_SUMMARY_COLUMNS}, allocations(amount_cents), expense_adjustments(amount_cents)`)
@@ -78,10 +104,11 @@ export function createEventRepository(client: SupabaseClient = supabase) {
       if (eventResult.error?.code === 'PGRST116' || (!eventResult.error && !eventResult.data)) throw new Error('not_member')
       for (const result of [eventResult, membersResult, expensesResult]) if (result.error) throw result.error
 
-      const members = (membersResult.data as Array<{ user_id: string; display_name: string; role: EventRole }>).map(m => ({
+      const members = (membersResult.data as Array<{ user_id: string; display_name: string; role: EventRole; is_guest?: boolean }>).map(m => ({
         userId: m.user_id,
         displayName: m.display_name,
         role: m.role,
+        isGuest: m.is_guest ?? false,
       }))
       const me = members.find(m => m.userId === session.data.session?.user.id)
       if (!me) throw new Error('not_member')

@@ -4,6 +4,7 @@ import { CheckIcon, CloseIcon } from '../../components/icons'
 import { itemShares } from '../../domain/allocation'
 import { formatMoney } from '../../domain/money'
 import type { EventRole, SplitMethod } from '../../domain/types'
+import { AddPersonForm } from '../events/AddPersonForm'
 import { PaysList } from './PaysList'
 import { paysRows, sharedEachText, signedMoney } from './shareText'
 import { UnitStepper } from './UnitStepper'
@@ -73,6 +74,11 @@ type Props = {
   /** Quantity > 1 items, managers: who had how many ({} = nobody). Saved like the chips. */
   onAssignUnits?: (itemId: string, units: Units) => Promise<boolean> | void
   onToggleClosed?: (closed: boolean) => void
+  /**
+   * Owner/co-host: adds someone by name who was not invited. Resolves to their member id, or null when it failed.
+   * Added from a quantity 1 item, they are also picked for that item.
+   */
+  onAddPerson?: (name: string) => Promise<string | null>
 }
 
 type Pick = string[] | Units | number
@@ -100,6 +106,7 @@ export function ClaimItemsPage({
   onClaimUnits,
   onAssignUnits,
   onToggleClosed,
+  onAddPerson,
 }: Props) {
   const { t, i18n } = useTranslation()
   // Picks tapped but not saved yet (missing = the saved state), and each item's save status.
@@ -210,6 +217,18 @@ export function ClaimItemsPage({
     timers.current[key] = setTimeout(() => void save(key), SAVE_DELAY_MS)
   }
 
+  const addPerson = async (item: ClaimItemView, name: string): Promise<boolean> => {
+    const id = await onAddPerson?.(name)
+    if (!id) return false
+    if (item.quantity === 1 && mounted.current) {
+      const key: PickKey = `assign:${item.id}`
+      const current = (pickingRef.current[key] as string[] | undefined) ?? (savedPick(key) as string[])
+      if (!current.includes(id)) pick(key, item.id, [...current, id])
+    }
+    return true
+  }
+  const canAddPeople = manage && onAddPerson !== undefined
+
   const shareOf = (item: ClaimItemView, units: Units, id: string) => {
     // Claims saved before units existed keep the server's equal split until someone changes them.
     if (item.claims.some(c => c.units == null) && canon(units) === canon(Object.fromEntries(item.claims.map(c => [c.userId, c.units ?? 1])))) {
@@ -308,7 +327,7 @@ export function ClaimItemsPage({
                 {!(manage && unitRows.length > 0) && statusLine}
               </div>
             )}
-            {manage && !(byUnit && unitRows.length === 0) && (
+            {manage && (canAddPeople || !(byUnit && unitRows.length === 0)) && (
               <div className="claim-assign">
                 <span id={`who-had-${item.id}`} className="field__label">{t('claim.whoHad', { item: item.description })}</span>
                 {byUnit ? (
@@ -350,6 +369,7 @@ export function ClaimItemsPage({
                     })}
                   </div>
                 )}
+                {canAddPeople && <AddPersonForm collapsible disabled={locked} onAdd={name => addPerson(item, name)} />}
                 {statusLine}
               </div>
             )}

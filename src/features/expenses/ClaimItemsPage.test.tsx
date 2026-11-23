@@ -310,4 +310,51 @@ describe('items with a quantity (claim by unit)', () => {
     unmount()
     expect(onAssignUnits).toHaveBeenCalledWith('t1', { ben: 1 })
   })
+
+  describe('adding a person who was not invited', () => {
+    it('lets a manager add someone from an item, then picks them for that item', async () => {
+      const onAddPerson = vi.fn().mockResolvedValue('guest-1')
+      const onAssign = vi.fn().mockResolvedValue(true)
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} onAddPerson={onAddPerson} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Add person' }))
+      await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), '  Chen ')
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      expect(onAddPerson).toHaveBeenCalledWith('Chen')
+      await vi.waitFor(() => expect(onAssign).toHaveBeenCalledWith('i1', ['guest-1']))
+      expect(screen.getByRole('button', { name: 'Add person' })).toBeInTheDocument() // form closed again
+    })
+
+    it('keeps the typed name when adding failed and requires a name', async () => {
+      const onAddPerson = vi.fn().mockResolvedValue(null)
+      const onAssign = vi.fn()
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} onAssign={onAssign} onAddPerson={onAddPerson} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Add person' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      expect(screen.getByRole('alert')).toHaveTextContent('Please enter a name.')
+      expect(onAddPerson).not.toHaveBeenCalled()
+      await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Chen')
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      expect(onAddPerson).toHaveBeenCalledWith('Chen')
+      expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Chen')
+      expect(onAssign).not.toHaveBeenCalled()
+    })
+
+    it('is not offered to participants or without onAddPerson', () => {
+      const { unmount } = render(<ClaimItemsPage role="participant" currentUserId="ben" participants={participants} items={[unclaimed]} onAddPerson={vi.fn()} />)
+      expect(screen.queryByRole('button', { name: 'Add person' })).not.toBeInTheDocument()
+      unmount()
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={participants} items={[unclaimed]} />)
+      expect(screen.queryByRole('button', { name: 'Add person' })).not.toBeInTheDocument()
+    })
+
+    it('offers it on a quantity > 1 item even when the manager is the only other row', async () => {
+      const onAddPerson = vi.fn().mockResolvedValue('guest-1')
+      const beer: ClaimItemView = { id: 'i2', description: 'Beer', quantity: 3, totalCents: 3000, claims: [], assigned: false }
+      render(<ClaimItemsPage role="owner" currentUserId="alice" participants={[{ id: 'alice', name: 'Alice' }]} items={[beer]} onAddPerson={onAddPerson} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Add person' }))
+      await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Chen')
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      expect(onAddPerson).toHaveBeenCalledWith('Chen')
+    })
+  })
 })

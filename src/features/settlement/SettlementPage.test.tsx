@@ -227,4 +227,35 @@ describe('SettlementPage', () => {
       expect(screen.getByText('Received')).toBeInTheDocument()
     })
   })
+
+  describe('host-added people', () => {
+    const transfers = [
+      { id: 't1', payerId: 'guest', receiverId: 'alice', amountCents: 1000, state: 'pending' as const },
+      { id: 't2', payerId: 'alice', receiverId: 'guest', amountCents: 500, state: 'sent' as const },
+    ]
+    const names = { alice: 'Alice', guest: 'Chen', owner: 'Olive' }
+
+    it('lets an owner/co-host mark sent and confirm received for a guest', async () => {
+      const onMarkSent = vi.fn()
+      const onConfirmReceived = vi.fn()
+      render(<SettlementPage phase="payment" currentUserId="owner" role="owner" names={names} guestIds={['guest']} transfers={transfers}
+        onMarkSent={onMarkSent} onConfirmReceived={onConfirmReceived} onOverride={vi.fn()} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Mark sent for Chen' }))
+      expect(onMarkSent).toHaveBeenCalledWith('t1')
+      await userEvent.click(screen.getByRole('button', { name: 'Confirm received for Chen' }))
+      expect(onConfirmReceived).toHaveBeenCalledWith('t2')
+    })
+
+    it('does not let a participant act for a guest', () => {
+      render(<SettlementPage phase="payment" currentUserId="bob" role="participant" names={names} guestIds={['guest']} transfers={transfers}
+        onMarkSent={vi.fn()} onConfirmReceived={vi.fn()} />)
+      expect(screen.queryByRole('button', { name: /for Chen/ })).not.toBeInTheDocument()
+    })
+
+    it('does not let a manager act for a member who signs in', () => {
+      render(<SettlementPage phase="payment" currentUserId="owner" role="owner" names={names} guestIds={[]} transfers={transfers}
+        onMarkSent={vi.fn()} onConfirmReceived={vi.fn()} />)
+      expect(screen.queryByRole('button', { name: /Mark sent|Confirm received/ })).not.toBeInTheDocument()
+    })
+  })
 })

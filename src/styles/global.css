@@ -1748,3 +1748,41 @@ input[type='radio']:focus-visible {
 .bottom-nav a:focus-visible {
   outline-offset: -3px;
 }
+
+/* ---------- Host-added people ---------- */
+.add-person {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  flex-basis: 100%;
+}
+
+.add-person__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.add-person__open {
+  border-style: dashed;
+}
+
+.person-row__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: end;
+}
+
+.guest-picks {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.guest-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}

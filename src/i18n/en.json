@@ -10,7 +10,8 @@
     "copy": "Copy",
     "copied": "Copied",
     "yourName": "Your name",
-    "back": "Back"
+    "back": "Back",
+    "cancel": "Cancel"
   },
   "home": {
     "chooseMode": "What would you like to split?",
@@ -34,7 +35,17 @@
     },
     "makeCohost": "Make co-host: {{name}}",
     "makeParticipant": "Make participant: {{name}}",
-    "offline": "You are offline. Role changes need an internet connection."
+    "offline": "You are offline. Role changes need an internet connection.",
+    "addPerson": "Add person",
+    "addPersonTitle": "Add someone without inviting them",
+    "addPersonName": "Name",
+    "addPersonHint": "You can assign their items and mark their payments for them. If they open the invite link later, they can take over this name.",
+    "addPersonSubmit": "Add",
+    "addingPerson": "Adding…",
+    "addPersonNameRequired": "Please enter a name.",
+    "guest": "Added by host",
+    "removeGuest": "Remove {{name}}",
+    "offlineAdd": "You are offline. Adding people needs an internet connection."
   },
   "create": {
     "title": "Create an event",
@@ -52,7 +63,10 @@
     "submitting": "Joining…",
     "invalidInvite": "This invite link is not valid or has expired.",
     "failed": "Could not join the event. Please try again.",
-    "nameRequired": "Please enter your name."
+    "nameRequired": "Please enter your name.",
+    "guestQuestion": "Are you one of these people?",
+    "guestHint": "The host already added these people. Pick your name to take over your items.",
+    "guestNone": "No, I am new here"
   },
   "event": {
     "loadFailed": "Could not load this event.",
@@ -274,7 +288,10 @@
     "expense_not_found": "This expense could not be found.",
     "action_failed": "Something went wrong. Please try again.",
     "invalid_units": "That number of units is not valid.",
-    "units_exceed_quantity": "There are not that many left of this item."
+    "units_exceed_quantity": "There are not that many left of this item.",
+    "invalid_display_name": "Please enter a name of 1 to 40 characters.",
+    "member_in_use": "This person is in an expense. Remove them from it first.",
+    "already_member": "You have already joined this event, so you cannot take over another name."
   },
   "settlement": {
     "previewTitle": "Settle up",
@@ -352,7 +369,9 @@
     "addDetails": "Add receiving details",
     "missingDetailsWarningTitle": "No payment details yet",
     "missingDetailsWarning": "{{name}} has not added receiving details yet. Mark as sent anyway?",
-    "markSentAnyway": "Mark as sent"
+    "markSentAnyway": "Mark as sent",
+    "markSentFor": "Mark sent for {{name}}",
+    "confirmReceivedFor": "Confirm received for {{name}}"
   },
   "paymentForm": {
     "title": "Your receiving details",

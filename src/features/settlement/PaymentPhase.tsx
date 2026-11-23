@@ -33,6 +33,8 @@ export type PaymentPhaseProps = {
   onOverride?: (transferId: string, reason: string) => void | boolean | Promise<void | boolean>
   /** Transfer ids whose receiver has not added details yet (known without showing details). */
   missingDetailsFor?: string[]
+  /** Host-added people: they never sign in, so an owner/co-host marks their payments for them. */
+  guestIds?: string[]
 }
 
 const MAX_REASON = 500
@@ -47,6 +49,7 @@ export function PaymentPhase({
   errorMessage,
   detailsForm,
   missingDetailsFor = [],
+  guestIds = [],
   onShowDetails,
   onMarkSent,
   onConfirmReceived,
@@ -87,6 +90,8 @@ export function PaymentPhase({
             currency={currency}
             busy={busy}
             missingKnown={transfer.id !== undefined && missingDetailsFor.includes(transfer.id)}
+            actForPayer={isManager && guestIds.includes(transfer.payerId)}
+            actForReceiver={isManager && guestIds.includes(transfer.receiverId)}
             onShowDetails={onShowDetails}
             onMarkSent={onMarkSent}
             onConfirmReceived={onConfirmReceived}
@@ -108,9 +113,12 @@ type RowProps = {
   currency: string
   busy: boolean
   missingKnown: boolean
+  /** An owner/co-host acting for a host-added payer / receiver. */
+  actForPayer?: boolean
+  actForReceiver?: boolean
 } & Pick<PaymentPhaseProps, 'onShowDetails' | 'onMarkSent' | 'onConfirmReceived' | 'onOverride'>
 
-function TransferRow({ transfer, me, isManager, nameOf, currency, busy, missingKnown, onShowDetails, onMarkSent, onConfirmReceived, onOverride }: RowProps) {
+function TransferRow({ transfer, me, isManager, nameOf, currency, busy, missingKnown, actForPayer = false, actForReceiver = false, onShowDetails, onMarkSent, onConfirmReceived, onOverride }: RowProps) {
   const { t, i18n } = useTranslation()
   const { id, payerId, receiverId, amountCents } = transfer
   const state = transfer.state ?? 'pending'
@@ -169,11 +177,15 @@ function TransferRow({ transfer, me, isManager, nameOf, currency, busy, missingK
       {visibleDetails && visibleDetails !== 'missing' && <DetailsView details={visibleDetails} />}
 
       <div className="transfer__actions">
-        {isPayer && state === 'pending' && onMarkSent && id && (
-          <button type="button" className="primary" onClick={() => (missing ? setWarnSent(true) : onMarkSent(id))} disabled={busy}><CheckIcon />{t('payments.markSent')}</button>
+        {(isPayer || actForPayer) && state === 'pending' && onMarkSent && id && (
+          <button type="button" className="primary" onClick={() => (missing ? setWarnSent(true) : onMarkSent(id))} disabled={busy}>
+            <CheckIcon />{isPayer ? t('payments.markSent') : t('payments.markSentFor', { name: nameOf(payerId) })}
+          </button>
         )}
-        {isReceiver && state === 'sent' && onConfirmReceived && id && (
-          <button type="button" className="primary" onClick={() => onConfirmReceived(id)} disabled={busy}><CheckIcon />{t('payments.confirmReceived')}</button>
+        {(isReceiver || actForReceiver) && state === 'sent' && onConfirmReceived && id && (
+          <button type="button" className="primary" onClick={() => onConfirmReceived(id)} disabled={busy}>
+            <CheckIcon />{isReceiver ? t('payments.confirmReceived') : t('payments.confirmReceivedFor', { name: nameOf(receiverId) })}
+          </button>
         )}
         {isPayer && state !== 'confirmed' && onShowDetails && (
           <button type="button" onClick={() => void showDetails()} disabled={busy || !id}>{t('payments.showDetails')}</button>

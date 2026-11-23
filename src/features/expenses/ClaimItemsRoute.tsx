@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useOutletContext, useParams } from 'react-router-dom'
 import type { ShellContext } from '../../components/shellContext'
+import { createEventRepository } from '../events/eventRepository'
 import { displayNames } from '../events/memberNames'
 import { EventStatus } from '../events/EventStatus'
 import { useEventHome } from '../events/useEventHome'
@@ -118,6 +119,19 @@ export function ClaimItemsRoute() {
     return ok
   }
 
+  // Owner/co-host: a person who was not invited; they appear in the chips once the event reloads.
+  const addPerson = async (name: string): Promise<string | null> => {
+    setError(null)
+    try {
+      return await createEventRepository().addGuest(eventId, name)
+    } catch (failure) {
+      setError({ code: failure instanceof ActionError ? failure.code : 'action_failed' })
+      return null
+    } finally {
+      shell?.refresh()
+    }
+  }
+
   return (
     <ClaimItemsPage
       role={home.me.role}
@@ -144,6 +158,7 @@ export function ClaimItemsRoute() {
         )
       }
       onToggleClosed={closed => void run(() => repository.setClaimingClosed(expenseId, closed))}
+      onAddPerson={home.me.role === 'participant' ? undefined : addPerson}
     />
   )
 }

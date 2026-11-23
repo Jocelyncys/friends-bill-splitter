@@ -174,6 +174,7 @@ export function SettlementRoute({ phase }: { phase: 'preview' | 'payment' }) {
       currentUserId={home.me.userId}
       role={home.me.role}
       names={names}
+      guestIds={home.members.filter(m => m.isGuest).map(m => m.userId)}
       currency={home.event.currency}
       busy={busy}
       errorMessage={errorMessage ?? (loadFailed ? t('event.loadFailed') : undefined)}

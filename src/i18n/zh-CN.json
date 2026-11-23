@@ -10,7 +10,8 @@
     "copy": "复制",
     "copied": "已复制",
     "yourName": "你的名字",
-    "back": "返回"
+    "back": "返回",
+    "cancel": "取消"
   },
   "home": {
     "chooseMode": "你想怎样分账？",
@@ -34,7 +35,17 @@
     },
     "makeCohost": "设为共同主持：{{name}}",
     "makeParticipant": "设为参与者：{{name}}",
-    "offline": "你目前离线。更改角色需要网络连接。"
+    "offline": "你目前离线。更改角色需要网络连接。",
+    "addPerson": "添加成员",
+    "addPersonTitle": "直接添加成员（无需邀请）",
+    "addPersonName": "名字",
+    "addPersonHint": "你可以替他们分配项目、标记付款。之后他们打开邀请链接时，可以认领这个名字。",
+    "addPersonSubmit": "添加",
+    "addingPerson": "添加中…",
+    "addPersonNameRequired": "请填写名字。",
+    "guest": "由主持人添加",
+    "removeGuest": "移除 {{name}}",
+    "offlineAdd": "你目前离线。添加成员需要网络连接。"
   },
   "create": {
     "title": "创建活动",
@@ -52,7 +63,10 @@
     "submitting": "加入中…",
     "invalidInvite": "此邀请链接无效或已过期。",
     "failed": "无法加入活动，请重试。",
-    "nameRequired": "请填写你的名字。"
+    "nameRequired": "请填写你的名字。",
+    "guestQuestion": "你是以下其中一位吗？",
+    "guestHint": "主持人已经添加了这些人。选择你的名字，即可接手你的项目。",
+    "guestNone": "不是，我是新加入的"
   },
   "event": {
     "loadFailed": "无法加载此活动。",
@@ -274,7 +288,10 @@
     "expense_not_found": "找不到这笔开销。",
     "action_failed": "出错了，请重试。",
     "invalid_units": "这个份数无效。",
-    "units_exceed_quantity": "这个项目剩下的份数不够。"
+    "units_exceed_quantity": "这个项目剩下的份数不够。",
+    "invalid_display_name": "请填写 1 到 40 个字符的名字。",
+    "member_in_use": "此人仍在某笔开销中，请先将其移出。",
+    "already_member": "你已加入此活动，不能再认领其他名字。"
   },
   "settlement": {
     "previewTitle": "结算",
@@ -352,7 +369,9 @@
     "addDetails": "添加收款信息",
     "missingDetailsWarningTitle": "尚无收款信息",
     "missingDetailsWarning": "{{name}} 还没有添加收款信息。仍要标记为已付款吗？",
-    "markSentAnyway": "标记为已付款"
+    "markSentAnyway": "标记为已付款",
+    "markSentFor": "替 {{name}} 标记为已付款",
+    "confirmReceivedFor": "替 {{name}} 确认已收款"
   },
   "paymentForm": {
     "title": "你的收款信息",

@@ -65,13 +65,38 @@ describe('eventRepository', () => {
     expect(localStorage.getItem('preferredName')).toBeNull()
   })
 
+  it('joins as a host-added person only when a guest id is given', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ event_id: 'event-1' }], error: null })
+    const repository = createEventRepository({ rpc } as never)
+    await repository.joinEvent('tok', 'Ali')
+    expect(rpc).toHaveBeenLastCalledWith('join_event', { invite_token: 'tok', display_name: 'Ali' })
+    await repository.joinEvent('tok', ' Ali ', 'guest-1')
+    expect(rpc).toHaveBeenLastCalledWith('join_event', { invite_token: 'tok', display_name: 'Ali', guest_id: 'guest-1' })
+  })
+
+  it('lists invite guests, adds and removes guests', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: [{ member_id: 'g1', display_name: 'Chen' }], error: null })
+      .mockResolvedValueOnce({ data: 'g2', error: null })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: '22023', message: 'member_in_use' } })
+    const repository = createEventRepository({ rpc } as never)
+    await expect(repository.listInviteGuests('tok')).resolves.toEqual([{ memberId: 'g1', displayName: 'Chen' }])
+    expect(rpc).toHaveBeenLastCalledWith('invite_guests', { invite_token: 'tok' })
+    await expect(repository.addGuest('event-1', ' Dan ')).resolves.toBe('g2')
+    expect(rpc).toHaveBeenLastCalledWith('add_guest_member', { event_id: 'event-1', display_name: 'Dan' })
+    await repository.removeGuest('event-1', 'g2')
+    expect(rpc).toHaveBeenLastCalledWith('remove_guest_member', { event_id: 'event-1', member_id: 'g2' })
+    await expect(repository.removeGuest('event-1', 'g1')).rejects.toMatchObject({ code: 'member_in_use' })
+  })
+
   it('loads the event home model with attention items and the group total', async () => {
     const results: Record<string, Result> = {
       events: { data: { id: 'event-1', name: 'Penang Trip', mode: 'trip_event', currency: 'MYR', state: 'open', revision: 3 }, error: null },
       event_members: {
         data: [
-          { user_id: 'user-1', display_name: 'Dee', role: 'owner' },
-          { user_id: 'user-2', display_name: 'Ali', role: 'participant' },
+          { user_id: 'user-1', display_name: 'Dee', role: 'owner', is_guest: false },
+          { user_id: 'user-2', display_name: 'Ali', role: 'participant', is_guest: true },
         ],
         error: null,
       },
@@ -91,10 +116,10 @@ describe('eventRepository', () => {
 
     await expect(repository.getEventHome('event-1')).resolves.toEqual({
       event: { id: 'event-1', name: 'Penang Trip', mode: 'trip_event', currency: 'MYR', state: 'open', revision: 3 },
-      me: { userId: 'user-1', role: 'owner', displayName: 'Dee' },
+      me: { userId: 'user-1', role: 'owner', displayName: 'Dee', isGuest: false },
       members: [
-        { userId: 'user-1', displayName: 'Dee', role: 'owner' },
-        { userId: 'user-2', displayName: 'Ali', role: 'participant' },
+        { userId: 'user-1', displayName: 'Dee', role: 'owner', isGuest: false },
+        { userId: 'user-2', displayName: 'Ali', role: 'participant', isGuest: true },
       ],
       expenses: [
         { id: 'exp-2', description: 'Lunch', totalCents: 1200, payerUserId: 'user-2', creatorUserId: 'user-2', splitMethod: 'item_claim', createdAt: '2026-10-24T12:00:00Z' },
